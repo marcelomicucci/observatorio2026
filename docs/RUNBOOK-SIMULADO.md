@@ -36,7 +36,7 @@ cd observatorio2026
 python -m pytest tests/ -q
 ```
 
-Os 41 testes rodam contra os payloads reais baixados em 20/09. Se algum
+Os 94 testes rodam contra os payloads reais baixados em 20/09. Se algum
 quebrar, o contrato mudou — investigar antes de ligar qualquer coisa.
 
 ```bash
@@ -66,6 +66,30 @@ folga para EA20 movido por mudança        3,6 req/s
 Se o piso passar do teto, o coletor **recusa iniciar** em vez de estourar o
 limite do TSE e comer um bloqueio de 10 minutos.
 
+```bash
+python -m obs2026.cli preparar
+```
+
+Baixa e guarda em disco **tudo que o painel busca fora do TSE**: perfis de
+candidato, fotos e malha territorial. Depois disso a única dependência de
+rede é o próprio TSE. Numa noite de apuração a internet oscila, e foto
+sumindo do projetor no meio do evento é constrangimento evitável.
+
+```bash
+python scripts/criar_atalhos.py
+```
+
+Põe três arquivos em `Desktop\eleicao2026\`, ao lado dos históricos:
+
+| Arquivo | Para quê |
+|---|---|
+| `Iniciar Observatório 2026.cmd` | sobe o servidor e abre o painel sozinho |
+| `Observatório 2026 — painel.url` | painel, com o servidor já no ar |
+| `Observatório 2026 — telão.url` | a janela que vai para o projetor |
+
+Rodar uma vez basta. Não estão versionados de propósito: um `.url` guarda
+caminho absoluto, e isso é da máquina, não do projeto.
+
 ---
 
 ## Durante cada janela
@@ -80,7 +104,7 @@ Roda descoberta, controle e uma amostra municipal, aplicando as 11
 invariantes contábeis a cada arquivo. Só seguir se sair
 **"Nenhuma divergência contábil crítica"**.
 
-### 2. Coleta contínua
+### 2. Coleta contínua, já projetando
 
 ```bash
 python -m obs2026.cli coletar
@@ -89,6 +113,21 @@ python -m obs2026.cli coletar
 Um lockfile impede um segundo coletor na mesma máquina. O limite do TSE é
 **por IP**, não por processo: dois coletores somam requisições e o operador
 só descobre no bloqueio.
+
+Com `projecao.ativa: true` em `config/collector.yaml` (o padrão), o mesmo
+processo projeta todas as disputas a cada `intervalo_s` e grava cada uma no
+diário de auditoria. **Isso é o que dá pontos ao gráfico de convergência**:
+sem registro ao longo da noite o gráfico tem um ponto só e não prova nada.
+
+Não espere a coleta acabar para projetar. A pergunta que a convergência
+responde — *a projeção estava certa antes de o resultado aparecer?* — só se
+responde com o registro feito **enquanto** o resultado ainda não apareceu.
+Projetar depois seria escrever a previsão com o resultado na mão.
+
+A simulação roda em thread separada e nunca bloqueia a busca; disputa que
+falha é registrada e a rodada segue; rodada que estoura o intervalo
+recomeça em vez de enfileirar. Nada disso derruba a apuração, que é o que
+importa.
 
 ### 3. Carga e painel, em outro terminal
 
@@ -100,8 +139,73 @@ python -m obs2026.cli carregar
 python -m uvicorn obs2026.api.app:app --port 8026
 ```
 
+Ou, para as duas coisas de uma vez, o atalho `Iniciar Observatório 2026.cmd`
+na pasta.
+
 Painel em `http://localhost:8026`. A carga é reexecutável: rodar de novo não
-duplica snapshot nem voto.
+duplica snapshot nem voto. O registro de projeções lê o arquivo bruto
+direto, então **não depende** de `carregar` ter rodado.
+
+### 4. Telão
+
+Abra o painel, aba **Telão**, botão **Abrir telão ↗**. Arraste a janela nova
+para o projetor e deixe em tela cheia (F11).
+
+No próprio telão: **espaço** pausa, **setas** navegam, **R** recarrega.
+
+O carrossel vem de `config/telao.yaml`, versionado. Duas formas de mudar:
+
+- **Permanente** — editar o arquivo. O telão relê sozinho a cada 2 min.
+- **Durante a apuração** — em qualquer pesquisa do painel, **＋ enviar para a
+  lista do telão** acrescenta o recorte que estiver na tela. Na aba Telão a
+  lista pode ser reordenada, cronometrada e posta no ar com **usar esta lista
+  no telão**.
+
+A lista vive **no navegador**, não no servidor: não existe rota que grave o
+roteiro, porque administração com escrita aberta a qualquer um é o oposto do
+§10. Consequências práticas, que importam na hora: outra máquina não vê essa
+lista, e a captura de imagens lê o arquivo. Se a sequência improvisada ficou
+boa, **copiar como YAML** e colar em `config/telao.yaml` — aí ela vale para
+todos e fica versionada.
+
+As duas janelas conversam por `BroadcastChannel`, que só liga janelas do
+**mesmo navegador**. Segundo monitor funciona; segunda máquina, não — lá o
+telão roda sozinho pelo roteiro do arquivo, sem controle ao vivo.
+
+### 5. Mandar no grupo, quando pedirem
+
+```bash
+python -m obs2026.cli compartilhar
+```
+
+Fotografa as telas do roteiro, escreve a legenda com os números **daquele
+instante** e deixa as imagens na área de transferência. No grupo do WhatsApp:
+**Ctrl+V**.
+
+```bash
+python -m obs2026.cli compartilhar --telas 0,3 --abrir
+```
+
+```bash
+python -m obs2026.cli compartilhar --cargo 3 --uf pa
+```
+
+O último fotografa um recorte que nem está no roteiro. Tudo vai para
+`data/telao/AAAA-MM-DD/`, com as legendas num `.txt` ao lado.
+
+**O envio é seu, de propósito.** A API oficial do WhatsApp não entrega para
+grupos; robô em cima do WhatsApp Web contraria os termos e arrisca o número
+justamente na noite em que ele é mais necessário; e projeção eleitoral
+circulando sem ninguém ter olhado é exatamente o que não deve sair de um
+laço automático. O comando faz o trabalho todo e para um passo antes.
+
+Se a tela não renderizar, **nenhuma imagem é gravada** e o comando diz qual
+tela pulou e por quê. Mandar para um grupo a foto de uma tela quebrada é
+pior do que não mandar foto.
+
+A legenda fecha sempre dizendo que o número não é oficial. Imagem
+encaminhada perde o contexto de origem no primeiro repasse; o texto vai
+colado nela.
 
 ---
 
@@ -115,6 +219,9 @@ duplica snapshot nem voto.
 | **payload fora de contrato** | recusa ingerir, registra `ParseError` | comparar com a fixture; o bruto está salvo |
 | **divergência contábil crítica** | bloqueia projeção, mantém apuração no ar | ler o código da invariante em `quality/checks.py` |
 | **queda do processo** | bruto em disco está íntegro | religar e rodar `carregar` — é idempotente |
+| **projeção falha numa disputa** | registra e segue; a coleta não para | ver `falhas` no resumo do `coletar` |
+| **captura não grava imagem** | recusa a foto e diz qual tela e por quê | o servidor está no ar? a tela resolve? |
+| **telão preto no projetor** | mantém o último recorte se o controle fechar | F5 na janela do telão; o roteiro volta do arquivo |
 
 Regra que não se quebra: **nunca multiplicar IPs para contornar limite.**
 

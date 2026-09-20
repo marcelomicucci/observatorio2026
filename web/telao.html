@@ -181,10 +181,46 @@ try {
 const p = new URLSearchParams(location.search);
 if (p.get('cargo')) recorte.cargo = p.get('cargo');
 if (p.get('uf')) recorte.uf = p.get('uf');
+if (p.get('municipio')) recorte.municipio = p.get('municipio');
 if (p.get('camada')) recorte.camada = p.get('camada');
+if (p.get('titulo')) recorte.titulo = p.get('titulo');
+if (recorte.municipio) {
+  // §3 não é opcional e não depende de quem montou a URL: recorte municipal
+  // sempre sai com o aviso de que liderar ali não é ser eleito por ali.
+  recorte.aviso_recorte = 'Recorte do voto. A disputa é decidida '
+    + (recorte.cargo === '1' ? 'no total do Brasil'
+       : 'no total de ' + (recorte.uf || '').toUpperCase())
+    + ' — liderar aqui não é ser eleito por aqui.';
+}
+
+/* Modo estático: uma tela, parada, sem carrossel e sem atualização
+ * automática. É o que a captura de imagem usa.
+ *
+ * Um navegador sem cabeça fotografando o telão normal fotografaria uma tela
+ * em movimento: o carrossel pode trocar de recorte entre o carregamento e o
+ * clique do obturador, e a imagem sairia com o título de um lugar e os
+ * números de outro. Aqui os temporizadores simplesmente não são criados.
+ *
+ * `?tela=N` escolhe a tela pelo `indice` do roteiro — o índice do arquivo,
+ * não a posição depois de filtrar as inválidas. Se a tela N tiver erro de
+ * resolução, a captura falha em vez de fotografar outra: uma foto que sai
+ * com o município errado é pior do que uma foto que não sai. */
+const ESTATICO = p.get('estatico') === '1';
+const TELA_FIXA = p.get('tela') !== null ? parseInt(p.get('tela'), 10) : null;
+
+/* Marca para o obturador: enquanto não for '1', a página ainda está
+ * desenhando. Sem isso a captura teria que adivinhar um tempo de espera, e
+ * adivinhar erra sempre para um dos lados — foto em branco ou foto tardia. */
+function prontidao(v) {
+  document.documentElement.setAttribute('data-pronto', v);
+}
+prontidao('0');
 
 let canal = null;
 try {
+  // No modo estático ninguém pode mudar o recorte: um comando do controle
+  // chegando durante a captura trocaria a tela debaixo do obturador.
+  if (ESTATICO) throw new Error('captura: sem canal de controle');
   canal = new BroadcastChannel('observatorio-telao');
   canal.onmessage = ev => {
     const d = ev.data || {};
@@ -198,6 +234,11 @@ try {
       carregar();
     } else if (d.tipo === 'roteiro') {
       roteiro = d.roteiro || [];
+      // Lista montada na sessão: a releitura periódica do arquivo não pode
+      // derrubá-la. Sem esta marca, dois minutos depois de o operador montar
+      // a sequência o telão voltaria sozinho ao roteiro do arquivo — no meio
+      // da apuração, sem ninguém entender por quê.
+      roteiroDeSessao = !!d.daSessao;
       iTela = 0; pausado = false; irPara(0);
     } else if (d.tipo === 'comando') {
       if (d.acao === 'pausar') pausado = true;
@@ -221,6 +262,7 @@ async function get(u) {
  * Tela com erro de resolução é PULADA, nunca exibida: projetar o município
  * errado é pior do que pular a tela. */
 let roteiro = [];
+let roteiroDeSessao = false;
 let iTela = 0;
 let pausado = false;
 let restante = 0;
@@ -229,6 +271,7 @@ let tempoTela = 0;
 const telasValidas = () => roteiro.filter(t => !t.erro);
 
 async function carregarRoteiro() {
+  if (roteiroDeSessao) return;   // a lista do operador manda
   try {
     const r = await get('/telao/roteiro');
     roteiro = r.dados || [];
@@ -354,6 +397,7 @@ async function carregar() {
     poe(corpo, el('div', {cls: 'vazio'},
       `${cargo.nome} é decidido em cada estado. Escolha a UF na tela de `
       + 'controle.'));
+    prontidao('erro');
     return;
   }
 
@@ -386,6 +430,7 @@ async function carregar() {
     if (!res.dados.length) {
       poe(corpo, el('div', {cls: 'vazio'},
         res.status_motivo || 'sem dados para este recorte'));
+      prontidao('erro');
       return;
     }
 
@@ -448,8 +493,9 @@ async function carregar() {
     const caixaMapa = el('div', {cls: 'mapa'});
     poe(corpo, caixaMapa, lado);
 
+    let pintura = Promise.resolve();
     if (mapa && mapa.dados && mapa.dados.length) {
-      MAPA.desenhar(caixaMapa, mapa.dados, {
+      pintura = MAPA.desenhar(caixaMapa, mapa.dados, {
         // O desenho tambem pode terminar tarde; o alvo ja foi substituido
         // se outra tela assumiu, entao pintar nele e inofensivo.
         malha: mapa.malha, camada: recorte.camada || 'definicao',
@@ -459,6 +505,10 @@ async function carregar() {
     } else {
       poe(caixaMapa, el('div', {cls: 'vazio'}, 'sem mapa para este recorte'));
     }
+    // No telão ao vivo o mapa aparece quando ficar pronto — esperar por ele
+    // deixaria os números parados. Na captura é o contrário: uma foto do
+    // mapa ainda em branco não serve para nada.
+    if (ESTATICO) await pintura;
 
     // Horário da fonte e da captura, sempre — inclusive no telão (§5.1).
     document.getElementById('fonte').replaceChildren(
@@ -469,16 +519,51 @@ async function carregar() {
   } catch (err) {
     if (!desatualizada()) {
       poe(corpo, el('div', {cls: 'vazio'}, 'erro: ' + err.message));
+      // A captura lê isto e recusa gravar: mandar para um grupo a foto de
+      // uma tela de erro é pior do que não mandar foto nenhuma.
+      prontidao('erro');
     }
+    return;
   }
   if (desatualizada()) return;
   document.getElementById('atualizacao').textContent =
     'atualizado às ' + new Date().toLocaleTimeString('pt-BR',
       {timeZone: 'America/Sao_Paulo'});
+  prontidao('1');
 }
 
 (async () => {
   await carregarRoteiro();
+
+  if (ESTATICO) {
+    // Uma tela, parada. Nenhum temporizador: o carrossel não pode trocar de
+    // recorte entre o carregamento e o obturador.
+    // O rodapé de progresso sai da foto: "tela 1/5 · 20s" é instrumento do
+    // operador, não informação para quem vai receber a imagem.
+    document.getElementById('passo').textContent = '';
+    document.getElementById('progresso').style.width = '0';
+    if (TELA_FIXA !== null) {
+      const t = roteiro.find(x => x.indice === TELA_FIXA);
+      if (!t) {
+        prontidao('erro');
+        console.error(`tela ${TELA_FIXA} não existe no roteiro`);
+        return;
+      }
+      if (t.erro) {
+        // Cair para outra tela seria fotografar o lugar errado com o título
+        // certo. A captura prefere não sair.
+        prontidao('erro');
+        console.error(`tela ${TELA_FIXA} não resolve: ${t.erro}`);
+        return;
+      }
+      roteiro = [t];
+      aplicarTela(t);
+    } else {
+      await carregar();
+    }
+    return;
+  }
+
   if (telasValidas().length) irPara(0); else carregar();
   setInterval(tique, 1000);
   // Atualização dos dados, independente da troca de telas: o telão não

@@ -18,3 +18,6 @@ data/previsoes/
 data/cache/
 
 data/cache/fotos/
+
+# Imagens do telao: derivadas, reproduziveis e pesadas.
+data/telao/

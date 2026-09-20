@@ -470,10 +470,12 @@ def carregar(env_name: str = ENV_OPT,
 from .cli_prever import (registrar as _registrar_previsao,  # noqa: E402
                          registrar_ensaio as _registrar_ensaio,
                          registrar_preparo as _registrar_preparo)
+from .cli_compartilhar import registrar as _registrar_compartilhar  # noqa: E402
 
 _registrar_previsao(app, ENV_OPT)
 _registrar_ensaio(app, ENV_OPT)
 _registrar_preparo(app, ENV_OPT)
+_registrar_compartilhar(app, ENV_OPT)
 
 
 if __name__ == "__main__":
