@@ -1,0 +1,61 @@
+# Ambientes de divulgação do TSE.
+#
+# REGRA DURA (spec §2.2): os códigos de eleição NÃO são fixados a partir de
+# exemplos. Os valores abaixo existem apenas como *seed* para montar a URL do
+# ele-c.json (EA11). Tudo o que estiver em `elections` é descoberto e
+# sobrescrito pelo catálogo oficial em tempo de execução; divergência entre o
+# seed e o catálogo é registrada como quality_flag, nunca silenciada.
+#
+# Fonte dos parâmetros de simulado, consultada em 2026-09-20:
+# https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados
+
+environments:
+  simulado2026:
+    label: "Simulado TSE 2026 (2ª janela: 22, 23 e 24/09, 9h-12h e 14h-17h)"
+    base: "https://resultados-sim.tse.jus.br/simulado"
+    ambiente: "simulado2026"
+    official: false
+    # `ciclo` e `cd_pleito` vêm do EA11; o seed serve só para o primeiro fetch.
+    seed:
+      ciclo: "ele2026"
+      cd_pleito: "17801"
+      elections: ["21270", "21272", "21274"]
+
+  oficial2026:
+    label: "Produção TSE 2026 — códigos a publicar pelo TSE"
+    # Pendência declarada pelo TSE: 'Quanto aos códigos do ambiente de produção,
+    # serão publicados oportunamente.' Nada aqui é chute; o coletor recusa
+    # operar neste ambiente enquanto base/ambiente estiverem nulos.
+    base: null
+    ambiente: null
+    official: true
+    seed:
+      ciclo: null
+      cd_pleito: null
+      elections: []
+
+# Domínios permitidos (spec §10). Qualquer host fora desta lista é recusado,
+# inclusive após redirecionamento.
+allowed_hosts:
+  - "resultados-sim.tse.jus.br"
+  - "resultados.tse.jus.br"
+
+# Cargos de interesse do produto. `cd` vem do EA11 (carg/cp), não é inventado.
+# nv (vagas) é lido do payload EA20 e confrontado com `expected_seats`.
+cargos:
+  presidente:
+    cd: "1"
+    abrangencia_decisoria: "br"
+    expected_seats: 1
+    # Presidente é a única disputa que inclui o exterior (ZZ).
+    includes_exterior: true
+  governador:
+    cd: "3"
+    abrangencia_decisoria: "uf"
+    expected_seats: 1
+    includes_exterior: false
+  senador:
+    cd: "5"
+    abrangencia_decisoria: "uf"
+    expected_seats: 2      # 2026: duas vagas por UF — confrontar com carg.nv
+    includes_exterior: false

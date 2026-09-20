@@ -1,0 +1,58 @@
+# Orçamento de requisições e cadência (spec §8.1).
+#
+# TSE: máximo 100 req/s por IP; excesso => bloqueio de 10 min, reiniciado a cada
+# nova tentativa durante a penalidade. 404 repetido também bloqueia.
+# Teto interno deliberadamente conservador.
+
+rate:
+  # Teto interno. O TSE permite 100 req/s por IP; 20 e o teto conservador de
+  # primeiro contato proposto na especificacao (§8.1), mantido para os
+  # simulados de 22-24/09. Ele NAO e suficiente para a noite de apuracao: com
+  # a cadencia abaixo sobram ~3,6 req/s para o EA20 movido por mudanca, e a
+  # estimativa de mudancas na noite de eleicao fica acima disso. O valor final
+  # sai da medicao do simulado (ver `obs2026 orcamento` e o relatorio do
+  # ensaio), nao de chute. Qualquer alteracao passa pela trava
+  # `CollectorConfig.assert_budget`, que recusa cadencia que estoure o teto.
+  max_rps: 20.0          # teto global compartilhado por TODOS os processos do IP
+  burst: 20
+  jitter_ms: [0, 120]
+  connect_timeout_s: 5.0
+  read_timeout_s: 20.0
+
+retry:
+  max_attempts: 4
+  backoff_base_s: 0.5
+  backoff_max_s: 30.0
+  retry_on_status: [500, 502, 503, 504]
+
+circuit:
+  # 404 isolado: suspende a fonte e manda revalidar catálogo.
+  not_found_suspend_s: 600
+  # Série de erros na mesma fonte: interrompe para não provocar bloqueio.
+  error_streak_trip: 5
+  error_streak_cooldown_s: 300
+  # 429 / bloqueio: respeita a penalidade inteira sem insistir.
+  blocked_cooldown_s: 660
+
+cadence:
+  # EA14 (Brasil) e EA15 (por UF) são o mecanismo de detecção de mudança.
+  # Custo por ciclo: n_eleicoes x (1 EA14 + 28 EA15).
+  accompaniment_interval_s: 20
+  # Varredura de reconciliação: busca EA20 de TODAS as unidades, independente
+  # de mudança detectada, para corrigir EA14/EA15 defasados ou perdidos.
+  # É ROTATIVA: o coletor empurra uma fatia proporcional a cada 5 s, em vez de
+  # despejar os 16.897 alvos de uma vez. Mesmo ciclo completo, carga plana.
+  # A 900 s (proposta original do §8.1) o custo seria 18,8 req/s — sozinho
+  # estoura o teto de 20. A 1800 s cai para 9,4 req/s e o piso total fica em
+  # 16,4 req/s, com folga para a detecção. Medido, não estimado.
+  reconcile_interval_s: 1800
+  # Controle nacional/UF do EA20 (não depende de detecção).
+  control_interval_s: 20
+  # Teto de itens EA20 despachados por ciclo, para a fila não engolir o budget.
+  max_inflight_results: 400
+
+priority:
+  # Peso na fila: eleitorado da unidade x fator. Territórios grandes e atrasados
+  # primeiro, mas com envelhecimento para nenhum ficar sem atendimento.
+  aging_boost_per_minute: 0.15
+  control_weight: 1000000

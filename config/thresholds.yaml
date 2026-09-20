@@ -1,0 +1,39 @@
+# Limiares de liberação do forecast (spec §4.7 / §11.2).
+#
+# Este arquivo é CONGELADO E ASSINADO antes da operação. O motor recusa publicar
+# probabilidades se o hash registrado no forecast_run não bater com o hash deste
+# arquivo no momento da execução.
+#
+# Os valores abaixo são PROPOSTAS. Nenhum foi homologado por backtest ainda;
+# enquanto `homologated: false`, o produto opera em 'cenario_exploratorio' e não
+# publica probabilidade de vitória.
+
+homologated: false
+signed_by: null
+signed_at: null
+
+release_gates:
+  # Nenhuma projeção antes de o eleitorado estar conciliado.
+  min_electorate_reconciled_pct: 100.0
+  # Residual não conciliado precisa estar explicitamente modelado.
+  allow_unreconciled_if_modeled: true
+
+  # Cobertura mínima por estrato (não um limiar nacional único).
+  min_strata_with_data_pct: 60.0
+  min_electorate_counted_pct: 10.0
+
+  # Atraso crítico: nenhuma unidade com peso decisivo pode estar parada.
+  max_stale_minutes_for_decisive_unit: 20
+  decisive_unit_electorate_share: 0.02
+
+  # Contabilidade: qualquer divergência crítica suspende a projeção.
+  max_accounting_divergence_votes: 0
+
+  # Gate estatístico (§11.2): só libera se vencer o M0 e calibrar.
+  must_beat_m0_median_error: true
+  interval_coverage_tolerance_pp: 5.0
+
+monte_carlo:
+  n_sims: 5000
+  seed: 20261004
+  max_mc_standard_error_pp: 0.15

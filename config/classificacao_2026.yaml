@@ -1,0 +1,43 @@
+# Classificação política — §6.
+#
+# ESTE ARQUIVO ESTÁ VAZIO DE PROPÓSITO.
+#
+# Classificar um partido como esquerda, centro ou direita é ato editorial, não
+# cálculo. O §6 exige, para CADA entrada: fonte, justificativa, autor, data,
+# validade temporal e grau de controvérsia. O §12 lista a curadoria da
+# classificação ideológica como decisão de execução ainda pendente.
+#
+# Enquanto `curador` for nulo e `entradas` estiver vazia, o mapa ideológico
+# aparece desabilitado na interface, com o motivo — e as camadas de apuração
+# continuam disponíveis. É melhor um mapa desligado do que um mapa errado com
+# autoria inventada.
+#
+# Três dimensões SEPARADAS. Uma não determina a outra:
+#   ideologia         esquerda | centro_esquerda | centro | centro_direita | direita
+#   posicao_governo   governo | oposicao | independente
+#   alianca_estadual  registrada por UF, não herdada do cabeça de chapa
+#
+# Não existe categoria "indefinido": ausência de classificação é ausência de
+# linha, e tem padrão visual próprio (hachura) — nunca o amarelo do centro.
+
+versao: "2026.0"
+ano: 2026
+curador: null
+publicada_em: null
+
+entradas: []
+
+# Modelo de uma entrada, para quando a curadoria acontecer:
+#
+# entradas:
+#   - entidade_tipo: partido
+#     entidade_id: "SIGLA"
+#     ideologia: centro_direita
+#     posicao_governo: independente
+#     fonte: "referência publicada e verificável"
+#     justificativa: "por que esta categoria e não a vizinha"
+#     autor: "nome de quem decidiu"
+#     decidido_em: 2026-09-30
+#     valido_de: 2026-01-01
+#     valido_ate: null
+#     grau_controversia: 2        # 0 consensual .. 3 fortemente disputada
