@@ -21,7 +21,7 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-41 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
+67 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
 mudou.
 
 ```bash
@@ -48,7 +48,7 @@ python -m obs2026.cli auditar-csv ../eleitorado_eleicao_capilaridade.csv.zip
 
 | | |
 |---|---|
-| **Coletor** | funcionando. 161 requisições contra o TSE, 0 erros, 0 404, 0 bloqueios |
+| **Coletor** | funcionando. 386 capturas do TSE, 0 erros, 0 404, 0 bloqueios |
 | **Parsers** | EA11, EA12, EA14/EA15, EA20 — validados contra payloads reais |
 | **Qualidade** | 11 invariantes contábeis, 0 divergências críticas em 362 arquivos |
 | **Banco** | 14 tabelas, 5.784 geografias, 4.367 resultados carregados |
