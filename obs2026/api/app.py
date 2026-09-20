@@ -30,7 +30,7 @@ from typing import Any
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -204,6 +204,33 @@ def _filtro_municipio(codigo: str):
     if len(c) == 7 and c.isdigit():
         return Geography.cd_ibge == c
     return Geography.cd_tse == c.zfill(5)
+
+
+def _abrangencia_do_recorte(ct: Contest, uf: str | None,
+                            municipio: str | None) -> str:
+    """Em que nível ler, dado o recorte pedido.
+
+    A disputa tem uma abrangência que decide — Brasil para presidente, UF
+    para governador e senador. Pedir um recorte **menor** que ela é legítimo
+    e comum ("presidente em Belém", "presidente no PA"): não é a disputa, é
+    o voto daquele território, e quem responde precisa avisar isso (§3).
+
+    Esta função existe porque a regra estava escrita duas vezes, e as duas
+    cópias tinham o mesmo furo:
+
+        if uf and abr in ("uf", "mu"): filtra por uf
+
+    Para presidente `abr` é `"br"`, então a condição era falsa e o `uf` era
+    **descartado em silêncio**: `/candidates?cargo=1&uf=pa` devolvia o
+    número do Brasil inteiro com a cara de resultado do Pará — 10,5 milhões
+    de votos num estado cujo total é 4,6 milhões. Filtro que não pode ser
+    aplicado tem que mudar a pergunta ou recusá-la, nunca responder outra.
+    """
+    if municipio:
+        return "mu"
+    if uf:
+        return "uf"
+    return ct.abrangencia_decisoria
 
 
 def _contest_or_404(s: Session, cargo: str, eleicao: str | None) -> Contest:
@@ -588,10 +615,31 @@ def health():
 _WEB = Path(__file__).resolve().parent.parent.parent / "web"
 
 
+def _html_com_versao(arquivo: Path) -> HTMLResponse:
+    """Serve o HTML com `mapa.js` versionado pela data do arquivo.
+
+    Cabeçalho de cache resolve o próximo carregamento; não resolve o que já
+    está guardado. Um navegador que cacheou `/mapa.js` sem instrução
+    aplica prazo heurístico e segue servindo a versão antiga — o painel
+    mostrava camadas de mapa que não existiam mais no código.
+
+    Versionar o endereço torna a questão inexistente: arquivo novo, URL
+    nova, nada a invalidar. O carimbo sai da própria mtime, então ninguém
+    precisa lembrar de incrementar um número.
+    """
+    html = arquivo.read_text(encoding="utf-8")
+    try:
+        v = int((_WEB / "mapa.js").stat().st_mtime)
+    except OSError:
+        v = 0
+    html = html.replace('src="/mapa.js"', f'src="/mapa.js?v={v}"')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/", include_in_schema=False)
 def painel():
     """Serve o painel. O navegador só fala com esta API, nunca com o TSE."""
-    return FileResponse(_WEB / "index.html", media_type="text/html")
+    return _html_com_versao(_WEB / "index.html")
 
 
 # Registrado por último, quando os auxiliares acima já existem.

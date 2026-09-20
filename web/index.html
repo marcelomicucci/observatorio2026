@@ -754,9 +754,19 @@ async function viewResultado() {
       `Escolha uma UF acima. ${cargo.nome} é decidido em cada estado, `
       + 'não no total nacional.');
   }
+  /* Presidente com UF escolhida é RECORTE do voto, não a disputa.
+   *
+   * Clicar num estado no mapa grava `st.uf` — e para presidente a trilha de
+   * escopo não mostra seletor de UF, então o recorte ficava invisível. Pedir
+   * `abrangencia=br` junto com `uf=pa` não casa com geografia nenhuma, e a
+   * tela respondia "nenhuma geografia para o filtro pedido" sem que houvesse
+   * como descobrir o porquê. O recorte agora é legítimo e visível: muda a
+   * abrangência, e o §3 aparece por escrito. */
+  const recorte = cargo.abr === 'br' && !!st.uf;
+  const abr = recorte ? 'uf' : cargo.abr;
   const qs = `cargo=${cargo.cd}` + (st.uf ? `&uf=${st.uf}` : '');
   const [res, cands, def] = await Promise.all([
-    get(`/results?abrangencia=${cargo.abr}&${qs}`),
+    get(`/results?abrangencia=${abr}&${qs}`),
     get(`/candidates?${qs}`),
     get(`/decided?${qs}`).catch(() => null),
   ]);
@@ -775,7 +785,23 @@ async function viewResultado() {
     .slice().sort((a, b) => b.oficial.votos - a.oficial.votos);
   const maxPct = Math.max(...lista.map(c => c.oficial.pct || 0), 0);
 
-  const out = [kpis(u, dfn)];
+  const out = [];
+
+  if (recorte) {
+    out.push(el('div', {cls: 'nota aten'},
+      el('b', {}, `${cargo.nome} em ${st.uf.toUpperCase()} — recorte do `
+                + 'voto. '),
+      'A disputa é decidida no total do Brasil; liderar aqui não é ser '
+      + 'eleito por aqui. ',
+      el('button', {
+        style: 'font-size:12px;padding:2px 10px;border-radius:999px;'
+             + 'border:1px solid var(--line);background:var(--panel);'
+             + 'color:var(--fg);cursor:pointer',
+        onclick: () => { st.uf = ''; },
+      }, 'voltar ao Brasil')));
+  }
+
+  out.push(kpis(u, dfn));
 
   if (dfn && dfn.sub_judice_em_jogo) {
     out.push(el('div', {cls: 'nota aten'},
@@ -846,9 +872,92 @@ function detalhesTecnicos(res, u) {
 
 /* ----------------------------------------------------------------- mapa */
 
+/* Filtro territorial: região, estado, município.
+ *
+ * O mapa antes só tinha "ver municípios", que abria os 5.570 de uma vez —
+ * útil para ver o país e inútil para olhar um lugar. Aqui cada nível
+ * estreita o anterior, e o mapa acompanha: região reenquadra, estado abre
+ * os municípios daquele estado, município destaca um.
+ *
+ * Região sai do primeiro dígito do código IBGE, que o próprio IBGE usa
+ * para isso — não é tabela nossa a manter. */
+function filtroTerritorial(m, abr) {
+  /* As cinco regiões são fixas, não derivadas do que está carregado.
+   * Derivar parecia elegante e quebrava: com o mapa aberto nos municípios
+   * de um estado, os dados só têm uma região, e o seletor perdia as outras
+   * quatro — justamente quando o operador quer sair dali. */
+  const regioes = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'];
+
+  const sel = (rotulo, valor, opcoes, aoMudar, vazio) => el('label', {
+    style: 'display:inline-flex;flex-direction:column;gap:3px;'
+         + 'font-size:11.5px;color:var(--muted)',
+  }, rotulo, el('select', {
+    onchange: e => aoMudar(e.target.value),
+    style: 'background:var(--bg);color:var(--fg);border:1px solid '
+         + 'var(--line);border-radius:6px;padding:5px 8px;font:inherit;'
+         + 'font-size:13px;min-width:150px',
+  }, el('option', {value: ''}, vazio),
+     ...opcoes.map(([v, t]) => el('option', {
+       value: v, selected: String(valor || '') === String(v) ? '' : null,
+     }, t))));
+
+  const kids = [
+    sel('Região', st.regiao, regioes.map(r => [r, r]),
+        v => { st.regiao = v; st.uf = ''; st.municipio = ''; },
+        'todas as regiões'),
+    sel('Estado', st.uf,
+        // Região desconhecida não exclui: com o mapa aberto nos municípios
+        // de um estado só esse estado tem região conhecida, e esconder os
+        // outros 26 prenderia o operador onde ele está.
+        UFS.filter(u => {
+          if (!st.regiao) return true;
+          const r = ufNaRegiao(m, u);
+          return r == null || r === st.regiao;
+        }).map(u => [u, u.toUpperCase()]),
+        v => { st.uf = v; st.municipio = ''; st.detalhe = v ? 'mu' : ''; },
+        'todos os estados'),
+  ];
+
+  // Município só faz sentido com o mapa já em municípios: a lista de 5.570
+  // num seletor é pior do que não ter seletor.
+  if (abr === 'mu' && st.uf) {
+    const munis = [...m.dados]
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      .map(d => [d.cd_ibge, d.nome + (d.capital ? ' (capital)' : '')]);
+    kids.push(sel('Município', st.municipio, munis,
+                  v => { st.municipio = v; }, `todos (${munis.length})`));
+  }
+
+  if (st.regiao || st.uf || st.municipio) {
+    kids.push(el('button', {
+      style: 'align-self:flex-end;font-size:12px;padding:5px 12px;'
+           + 'border-radius:999px;border:1px solid var(--line);'
+           + 'background:var(--panel);color:var(--muted);cursor:pointer',
+      onclick: () => {
+        st.regiao = ''; st.uf = ''; st.municipio = ''; st.detalhe = '';
+      },
+    }, 'limpar filtro'));
+  }
+  return el('div', {
+    style: 'display:flex;gap:11px;align-items:flex-end;flex-wrap:wrap;'
+         + 'margin:2px 0 14px',
+  }, ...kids);
+}
+
+/* Região de uma UF, lida do dado já carregado. Quando o mapa está em
+ * municípios os dados são de uma UF só, então o índice vem de uma tabela
+ * mínima derivada do mesmo primeiro dígito — nunca de palpite. */
+const REGIAO_POR_UF = {};
+function ufNaRegiao(m, sigla) {
+  for (const d of m.dados) {
+    if (d.uf && d.regiao) REGIAO_POR_UF[d.uf] = d.regiao;
+  }
+  return REGIAO_POR_UF[sigla] || null;
+}
+
 async function viewMapa() {
   const cargo = cargoAtual();
-  const abr = st.detalhe === 'mu' ? 'mu' : 'uf';
+  const abr = (st.detalhe === 'mu' || st.uf) ? 'mu' : 'uf';
   const uf = (abr === 'mu' && st.uf) ? `&uf=${st.uf}` : '';
   const m = await get(
     `/map-layers?cargo=${cargo.cd}&abrangencia=${abr}${uf}`);
@@ -857,7 +966,16 @@ async function viewMapa() {
     return el('div', {cls: 'estado'}, m.status_motivo || 'sem dados');
   }
 
-  const camadaId = st.camada || 'definicao';
+  // Região filtra o que é desenhado quando o mapa é nacional. Em
+  // municípios de uma UF não há o que filtrar por região.
+  const dados = (st.regiao && abr === 'uf')
+    ? m.dados.filter(d => d.regiao === st.regiao) : m.dados;
+  if (!dados.length) {
+    return el('div', {cls: 'estado'},
+      `nenhum território com dado em ${st.regiao}`);
+  }
+
+  const camadaId = MAPA.CAMADAS[st.camada] ? st.camada : 'lider';
   const camada = MAPA.CAMADAS[camadaId];
   const wrap = el('div', {});
 
@@ -870,11 +988,9 @@ async function viewMapa() {
       'aria-selected': 'false', disabled: '',
       title: 'Classificação ideológica pendente de curadoria com autoria',
       style: 'opacity:.45;cursor:not-allowed',
-    }, 'Bloco ideológico'),
-    el('button', {
-      'aria-selected': String(abr === 'mu'),
-      onclick: () => { st.detalhe = abr === 'mu' ? '' : 'mu'; },
-    }, abr === 'mu' ? '◂ voltar a estados' : 'ver municípios')));
+    }, 'Bloco ideológico')));
+
+  wrap.append(filtroTerritorial(m, abr));
 
   wrap.append(el('div', {cls: 'nota'}, el('b', {}, camada.rotulo + '. '),
                  camada.nota));
@@ -886,23 +1002,45 @@ async function viewMapa() {
   const pe = el('div', {});
   wrap.append(caixa, barra, pe);
 
+  /* Enquadramento. Uma região é um prefixo de código IBGE tão legítimo
+   * quanto uma UF: o mesmo mecanismo que evita desenhar o Brasil para
+   * mostrar Alagoas serve para mostrar o Nordeste. */
+  const digitoRegiao = st.regiao
+    ? ((dados.find(d => d.regiao === st.regiao) || {}).cd_ibge || '')[0]
+    : null;
+  const recorte = abr === 'mu' ? m.recorte_ibge
+                : (digitoRegiao || null);
+
   (async () => {
     try {
-      const r = await MAPA.desenhar(caixa, m.dados, {
-        malha: m.malha, camada: camadaId, recorte: m.recorte_ibge,
+      const r = await MAPA.desenhar(caixa, dados, {
+        malha: m.malha, camada: camadaId, recorte,
+        destaque: st.municipio || null,
         largura: 760, altura: abr === 'mu' ? 640 : 540,
         aoClicar: d => {
-          if (abr === 'uf' && cargoAtual().abr === 'uf') {
-            st.uf = d.uf; st.visao = 'resultado';
-          } else if (abr === 'uf') { st.uf = d.uf; st.detalhe = 'mu'; }
+          if (abr === 'mu') { st.municipio = d.cd_ibge; return; }
+          // No mapa de estados, clicar abre aquele estado: para governador
+          // e senador é a disputa que decide, para presidente é o recorte.
+          st.uf = d.uf; st.municipio = ''; st.detalhe = 'mu';
         },
       });
+      const sel = st.municipio
+        ? dados.find(d => d.cd_ibge === st.municipio) : null;
       poe(pe,
-        MAPA.legenda(r.camada, r.ctx, m.dados),
+        sel ? el('div', {cls: 'nota'},
+                el('b', {}, sel.nome + '/' + (sel.uf || '').toUpperCase()
+                          + '. '),
+                MAPA.descreve(sel, r.camada, r.ctx),
+                ` · ${fmt(sel.eleitorado)} eleitores`,
+                sel.unidade_decide ? null
+                  : ' · recorte do voto: liderar aqui não é ser eleito '
+                  + 'por aqui.') : null,
+        MAPA.legenda(r.camada, r.ctx, dados),
         el('div', {cls: 'nota'}, el('b', {}, 'Área não é eleitorado. '),
            m.aviso_cartografico),
         el('div', {cls: 'nota'},
-           `${fmt(m.dados.length)} territórios com dado`
+           `${fmt(dados.length)} territórios com dado`
+           + (st.regiao && abr === 'uf' ? ` em ${st.regiao}` : '')
            + (r.semDado ? ` · ${fmt(r.semDado)} sem dado (hachura)` : '')),
         m.nota_territorial
           ? el('div', {cls: 'nota'}, el('b', {}, 'Atenção. '),
@@ -911,10 +1049,10 @@ async function viewMapa() {
           ? el('div', {cls: 'nota aten'},
                el('b', {}, 'Divergência territorial. '),
                m.quality_flags.join(' · ')) : null,
-        tabelaMapa(m, r.camada, r.ctx));
+        tabelaMapa({...m, dados}, r.camada, r.ctx));
       poe(barra,
         el('label', {}, 'Mesma informação, ponderada por eleitores'),
-        MAPA.barraPonderada(m.dados, r.camada, r.ctx));
+        MAPA.barraPonderada(dados, r.camada, r.ctx));
     } catch (e) {
       poe(caixa, el('div', {cls: 'estado'},
         el('span', {cls: 'tag err'}, 'erro no mapa'), ' ' + e.message));
@@ -928,21 +1066,37 @@ function tabelaMapa(m, camada, ctx) {
   return el('details', {open: m.abrangencia === 'uf' ? '' : null},
     el('summary', {}, `Tabela equivalente (${fmt(linhas.length)} territórios)`),
     el('table', {},
+      // Uma coluna por fato, sem repetir. A versão antiga tinha a coluna da
+      // camada — que já era "o líder" — mais uma coluna "Líder" ao lado
+      // dela, e a margem saía como "0,0% pp" porque o formatador de
+      // percentual já põe o símbolo.
       el('thead', {}, el('tr', {}, el('th', {}, 'Território'),
         el('th', {}, 'UF'), el('th', {cls: 'num'}, 'Eleitorado'),
-        el('th', {}, camada.rotulo), el('th', {}, 'Líder'),
-        el('th', {cls: 'num'}, 'Margem'), el('th', {cls: 'num'}, 'Apurado'))),
-      el('tbody', {}, ...linhas.slice(0, 600).map(d => el('tr', {},
-        el('td', {}, d.nome,
-           d.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null),
-        el('td', {}, d.uf.toUpperCase()),
-        el('td', {cls: 'num'}, fmt(d.eleitorado)),
-        el('td', {}, MAPA.descreve(d, camada, ctx)),
-        el('td', {}, d.lider_nome || '—'),
-        el('td', {cls: 'num'}, d.margem_pp == null
-          ? el('span', {cls: 'null'}, 'n/d') : pct(d.margem_pp, 1) + ' pp'),
-        el('td', {cls: 'num'}, d.cobertura_pct == null
-          ? el('span', {cls: 'null'}, 'n/d') : pct(d.cobertura_pct, 1)))))));
+        el('th', {}, '1º'), el('th', {cls: 'num'}, '%'),
+        el('th', {cls: 'hide-sm'}, '2º'), el('th', {cls: 'num hide-sm'}, '%'),
+        el('th', {cls: 'num'}, 'Margem'), el('th', {}, 'Situação'),
+        el('th', {cls: 'num'}, 'Apurado'))),
+      el('tbody', {}, ...linhas.slice(0, 600).map(d => {
+        const e = MAPA.estadoDe(d);
+        const n = (v, c) => v == null
+          ? el('span', {cls: 'null'}, 'n/d') : pct(v, c == null ? 1 : c);
+        return el('tr', {},
+          el('td', {}, d.nome,
+             d.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null),
+          el('td', {}, d.uf.toUpperCase()),
+          el('td', {cls: 'num'}, fmt(d.eleitorado)),
+          el('td', {}, d.lider_nome || '—'),
+          el('td', {cls: 'num'}, n(d.lider_pct, 2)),
+          el('td', {cls: 'hide-sm'}, d.segundo_nome || '—'),
+          el('td', {cls: 'num hide-sm'}, n(d.segundo_pct, 2)),
+          el('td', {cls: 'num'}, d.margem_pp == null
+            ? el('span', {cls: 'null'}, 'n/d')
+            : d.margem_pp.toFixed(1).replace('.', ',') + ' pp'),
+          el('td', {}, e
+            ? el('span', {cls: 'tag'}, e.sim + ' ' + e.txt)
+            : el('span', {cls: 'null'}, 'em aberto')),
+          el('td', {cls: 'num'}, n(d.cobertura_pct)));
+      }))));
 }
 
 /* ------------------------------------------------------------- projeção */

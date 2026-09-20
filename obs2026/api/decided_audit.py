@@ -41,10 +41,10 @@ def register(app) -> None:
         serve para ler o território, não para atribuir mandato (§3).
         """
         ct = M._contest_or_404(s, cargo, eleicao)
-        abr = "mu" if municipio else ct.abrangencia_decisoria
+        abr = M._abrangencia_do_recorte(ct, uf, municipio)
         gq = select(Geography.id).where(
             Geography.environment == M._ENV_NAME, Geography.tipo == abr)
-        if uf and abr in ("uf", "mu"):
+        if uf:
             gq = gq.where(Geography.uf == uf.lower())
         if municipio:
             gq = gq.where(M._filtro_municipio(municipio))

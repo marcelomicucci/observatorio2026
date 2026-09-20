@@ -293,3 +293,56 @@ def test_senado_tem_duas_vagas_no_catalogo(cliente):
 def test_exportacao_tem_limite_obrigatorio(cliente):
     assert cliente.get("/api/v1/exports?cargo=5&limite=999999").status_code \
         == 400
+
+
+def test_recorte_por_uf_em_disputa_nacional_nao_devolve_o_brasil(cliente):
+    """Filtro que nao pode ser aplicado nao pode virar outra pergunta.
+
+    `/candidates?cargo=1&uf=pa` pede o voto para presidente no Para. A
+    abrangencia que DECIDE presidente e `br`, e o codigo antigo so filtrava
+    por UF quando a abrangencia era `uf` ou `mu` — para presidente a
+    condicao era falsa e o `uf` sumia em silencio. A rota devolvia o total
+    do Brasil com a cara de resultado do Para: 10,5 milhoes de votos num
+    estado cujo total de votos a concorrentes e 4,6 milhoes.
+
+    Numero errado que parece certo e pior que erro visivel, e este ia para
+    o telao e para o grupo de WhatsApp.
+    """
+    br = cliente.get("/api/v1/candidates?cargo=1").json()
+    pa = cliente.get("/api/v1/candidates?cargo=1&uf=pa").json()
+    sp = cliente.get("/api/v1/candidates?cargo=1&uf=sp").json()
+
+    def votos(d):
+        return sum(c["oficial"]["votos"] for c in d["dados"][0]["candidatos"])
+
+    assert votos(pa) < votos(br)
+    assert votos(sp) < votos(br)
+    assert votos(pa) != votos(sp)
+
+    # E o recorte tem que fechar com o total daquela UF, nao com o do pais.
+    res = cliente.get("/api/v1/results?cargo=1&abrangencia=uf&uf=pa").json()
+    maior = max(c["oficial"]["votos"] for c in pa["dados"][0]["candidatos"])
+    assert maior <= res["dados"][0]["votos"]["validos_computados"]
+
+
+def test_recorte_por_uf_nao_afirma_eleito_em_disputa_nacional(cliente):
+    """Presidente nao e eleito por estado (§3).
+
+    O selo "eleito segundo TSE" so pode aparecer na abrangencia que decide.
+    Num recorte, ele fica em branco — nao em `false`, que seria afirmar que
+    a pessoa nao foi eleita.
+    """
+    pa = cliente.get("/api/v1/candidates?cargo=1&uf=pa").json()
+    for c in pa["dados"][0]["candidatos"]:
+        assert c["oficial"]["eleito_segundo_tse"] is None
+
+    br = cliente.get("/api/v1/candidates?cargo=1").json()
+    assert any(c["oficial"]["eleito_segundo_tse"] is not None
+               for c in br["dados"][0]["candidatos"])
+
+
+def test_decided_marca_o_recorte_por_uf_como_nao_decisorio(cliente):
+    d = cliente.get("/api/v1/decided?cargo=1&uf=pa").json()
+    assert d["dados"][0]["recorte_nao_decisorio"] is True
+    nacional = cliente.get("/api/v1/decided?cargo=1").json()
+    assert nacional["dados"][0]["recorte_nao_decisorio"] is False

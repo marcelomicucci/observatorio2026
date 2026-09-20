@@ -22,6 +22,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+#: Região pelo primeiro dígito do código IBGE. Não é convenção nossa: é a
+#: própria numeração do IBGE, em que o 1 abre o Norte, o 2 o Nordeste e
+#: assim por diante. Derivar daqui evita manter uma tabela de 27 UFs que
+#: precisaria ser conferida à mão e que ninguém lembraria de atualizar.
+REGIOES = {"1": "Norte", "2": "Nordeste", "3": "Sudeste",
+           "4": "Sul", "5": "Centro-Oeste"}
+
 _WEB = Path(__file__).resolve().parent.parent.parent / "web"
 
 
@@ -49,12 +56,18 @@ def register(app) -> None:
         Rota separada do painel, não um modo dele: a densidade de informação
         é outra. O que se lê a 40 cm não se lê a 4 m.
         """
-        return FileResponse(_WEB / "telao.html", media_type="text/html")
+        return M._html_com_versao(_WEB / "telao.html")
 
     @app.get("/mapa.js", include_in_schema=False)
     def mapa_js():
+        # `no-cache` não é "não guarde": é "confira antes de usar". Sem
+        # isto o navegador aplica cache heurístico e pode servir uma versão
+        # antiga do desenho do mapa depois de uma correção — na noite da
+        # apuração, com o projetor ligado, ninguém vai desconfiar do cache.
+        # O ETag do FileResponse faz a revalidação custar quase nada.
         return FileResponse(_WEB / "mapa.js",
-                            media_type="application/javascript")
+                            media_type="application/javascript",
+                            headers={"Cache-Control": "no-cache"})
 
     @app.get("/api/v1/map-layers")
     def camadas_do_mapa(cargo: str, eleicao: str | None = None,
@@ -130,6 +143,8 @@ def register(app) -> None:
             validos.sort(key=lambda r: -r.votos)
 
             lider = cands.get(validos[0].candidate_id) if validos else None
+            segundo = (cands.get(validos[1].candidate_id)
+                       if len(validos) > 1 else None)
             v1 = validos[0].votos if validos else 0
             v2 = validos[1].votos if len(validos) > 1 else 0
 
@@ -153,6 +168,17 @@ def register(app) -> None:
                 estado_def = "em_aberto"
 
             cd_geo = (g.cd_ibge if tipo == "mu" else cod_uf.get(g.uf))
+            den = t.validos_computados
+
+            # Esta unidade decide a disputa, ou é recorte do voto?
+            #
+            # Governador e senador se decidem na UF, então o mapa de UFs
+            # mostra a unidade que elege. Presidente se decide no total do
+            # Brasil: nenhum estado e nenhum município elege presidente, e
+            # pintar um deles de "eleito" seria afirmar o que o §3 proíbe.
+            decide = (tipo == ct.abrangencia_decisoria)
+            eleito = bool(decide and lider is not None and lider.eleito)
+
             linhas.append({
                 # Chave de junção com a malha: código IBGE, sempre.
                 "cd_ibge": cd_geo,
@@ -165,9 +191,23 @@ def register(app) -> None:
                 "lider_nome": lider.nome_urna if lider else None,
                 "lider_partido": lider.partido_sigla if lider else None,
                 "lider_votos": v1,
+                "lider_pct": (100.0 * v1 / den) if den else None,
+                # O segundo colocado vem junto: líder e margem deixaram de
+                # ser camadas separadas, e ler "44,2% contra 38,9%" diz o
+                # que "margem 5,3 pp" sozinho não diz.
+                "segundo_sqcand": segundo.sqcand if segundo else None,
+                "segundo_nome": segundo.nome_urna if segundo else None,
+                "segundo_partido": segundo.partido_sigla if segundo else None,
+                "segundo_votos": v2 if segundo else None,
+                "segundo_pct": (100.0 * v2 / den) if (den and segundo)
+                               else None,
                 # Margem sobre votos a concorrentes, a base que decide.
-                "margem_pp": ((100.0 * (v1 - v2) / t.validos_computados)
-                              if t.validos_computados else None),
+                "margem_pp": ((100.0 * (v1 - v2) / den) if den else None),
+                "regiao": REGIOES.get((cd_geo or "")[:1]),
+                "unidade_decide": decide,
+                # Só onde a unidade decide. Em recorte fica `false` porque a
+                # afirmação "eleito aqui" não existe (§3).
+                "eleito_tse": eleito,
                 "cobertura_pct": ((100.0 * t.eleitorado_apurado
                                    / t.eleitorado_total)
                                   if t.eleitorado_total else None),

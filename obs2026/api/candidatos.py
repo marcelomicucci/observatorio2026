@@ -36,15 +36,13 @@ def register(app) -> None:
                    municipio: str | None = None,
                    s: Session = Depends(M.get_session)):
         ct = M._contest_or_404(s, cargo, eleicao)
-        abr = ct.abrangencia_decisoria
+        # Recorte do voto: o mapa e o telao pedem "Presidente em Belem" ou
+        # "Presidente no PA", que nao sao a unidade que decide (§3).
+        abr = M._abrangencia_do_recorte(ct, uf, municipio)
 
-        # Recorte municipal: o mapa e o telao pedem "Presidente em Belem",
-        # que e recorte do voto, nao a unidade que decide (§3).
-        if municipio:
-            abr = "mu"
         gq = select(Geography).where(Geography.environment == M._ENV_NAME,
                                      Geography.tipo == abr)
-        if uf and abr in ("uf", "mu"):
+        if uf:
             gq = gq.where(Geography.uf == uf.lower())
         if municipio:
             gq = gq.where(M._filtro_municipio(municipio))
