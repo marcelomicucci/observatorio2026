@@ -318,7 +318,8 @@ def registrar_ensaio(app: typer.Typer, env_opt) -> None:
                 modelo="m1", model_version="m1-0.1-ensaio",
                 thresholds_hash=thr.config_hash,
                 thresholds_homologados=thr.homologated,
-                estado_publicacao="cenario_exploratorio", nomes=c2.nomes))
+                estado_publicacao="cenario_exploratorio", nomes=c2.nomes,
+                concorrentes_observados=c2.concorrentes_observados))
 
         notas = [audit.avaliar(
             r, final, concorrentes_final=ctx.concorrentes_observados,

@@ -16,18 +16,18 @@
    Cada nível tem peso visual próprio, então não se confundem entre si. */
 :root{
   --bg:#fff; --fg:#14181f; --muted:#5b6472; --line:#e2e6ec; --linha2:#f0f3f7;
-  --panel:#f7f9fb; --acento:#1a5fb4;
+  --panel:#f7f9fb; --acento:#1a5fb4; --proj:#6b3fa0;
   --alerta:#b45309; --erro:#b91c1c; --ok:#15803d;
   --radius:10px;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
   --bg:#0f1218; --fg:#e8ecf2; --muted:#98a2b0; --line:#252b35; --linha2:#1a1f27;
-  --panel:#161b22; --acento:#6aa8f0;
+  --panel:#161b22; --acento:#6aa8f0; --proj:#c4a4ef;
   --alerta:#fbbf24; --erro:#f87171; --ok:#4ade80;
 }}
 :root[data-theme=dark]{
   --bg:#0f1218; --fg:#e8ecf2; --muted:#98a2b0; --line:#252b35; --linha2:#1a1f27;
-  --panel:#161b22; --acento:#6aa8f0;
+  --panel:#161b22; --acento:#6aa8f0; --proj:#c4a4ef;
   --alerta:#fbbf24; --erro:#f87171; --ok:#4ade80;
 }
 *{box-sizing:border-box}
@@ -205,6 +205,7 @@ const VISOES = [
   {id: 'resultado', nome: 'Resultado'},
   {id: 'mapa', nome: 'Mapa'},
   {id: 'projecao', nome: 'Projeção'},
+  {id: 'convergencia', nome: 'Convergência'},
   {id: 'auditoria', nome: 'Auditoria'},
   {id: 'telao', nome: 'Telão'},
 ];
@@ -719,6 +720,184 @@ async function viewProjecao() {
       + 'homologação.'));
 }
 
+/* --------------------------------------------------------- convergência */
+
+/* Gráfico de convergência. SVG inline, sem biblioteca: um gráfico de linha
+ * com faixa é pouca geometria, e uma dependência externa numa tela que vai
+ * ao ar na noite da apuração é risco sem retorno.
+ *
+ * Leitura: apurado em linha cheia, projetado em tracejado com faixa de 80%.
+ * O par cheio/tracejado importa — a leitura não pode depender só de cor. */
+function grafConvergencia(cand) {
+  const W = 680, H = 210, ml = 48, mr = 12, mt = 10, mb = 26;
+  const pts = cand.pontos.filter(p => p.pct_projetado != null);
+  if (pts.length < 2) {
+    return el('div', {cls: 'nota'},
+      'série curta demais para um gráfico: ' + pts.length + ' ponto(s).');
+  }
+
+  const ys = [];
+  for (const p of pts) {
+    ys.push(p.pct_q100, p.pct_q900, p.pct_projetado);
+    if (p.pct_apurado != null) ys.push(p.pct_apurado);
+  }
+  if (cand.pct_final != null) ys.push(cand.pct_final);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const folga = Math.max(0.4, (y1 - y0) * 0.14);
+  y0 -= folga; y1 += folga;
+
+  const X = c => ml + (Math.max(0, Math.min(100, c)) / 100) * (W - ml - mr);
+  const Y = v => mt + (1 - (v - y0) / (y1 - y0 || 1)) * (H - mt - mb);
+  const S = (t, a = {}) => {
+    const n = document.createElementNS('http://www.w3.org/2000/svg', t);
+    for (const [k, v] of Object.entries(a)) if (v != null) n.setAttribute(k, v);
+    return n;
+  };
+
+  const svg = S('svg', {viewBox: '0 0 ' + W + ' ' + H, width: '100%',
+    role: 'img', style: 'max-width:100%;height:auto;display:block',
+    'aria-label': 'Convergência de ' + cand.nome});
+
+  for (const v of [y0, (y0 + y1) / 2, y1]) {
+    svg.append(S('line', {x1: ml, x2: W - mr, y1: Y(v), y2: Y(v),
+      stroke: 'var(--line)', 'stroke-width': 1}));
+    const t = S('text', {x: ml - 6, y: Y(v) + 3, 'text-anchor': 'end',
+      'font-size': 10, fill: 'var(--muted)'});
+    t.textContent = v.toFixed(1).replace('.', ',') + '%';
+    svg.append(t);
+  }
+  for (const c of [0, 25, 50, 75, 100]) {
+    const t = S('text', {x: X(c), y: H - 8, 'text-anchor': 'middle',
+      'font-size': 10, fill: 'var(--muted)'});
+    t.textContent = c + '%';
+    svg.append(t);
+  }
+  const rot = S('text', {x: ml, y: H - 8, 'text-anchor': 'start',
+    'font-size': 9, fill: 'var(--muted)', opacity: 0});
+  svg.append(rot);
+
+  const cima = pts.map(p => X(p.cobertura_pct) + ',' + Y(p.pct_q900));
+  const baixo = pts.slice().reverse()
+    .map(p => X(p.cobertura_pct) + ',' + Y(p.pct_q100));
+  svg.append(S('polygon', {points: cima.concat(baixo).join(' '),
+    fill: 'var(--proj)', opacity: 0.22}));
+
+  if (cand.pct_final != null) {
+    svg.append(S('line', {x1: ml, x2: W - mr,
+      y1: Y(cand.pct_final), y2: Y(cand.pct_final),
+      stroke: 'var(--fg)', 'stroke-width': 1, 'stroke-dasharray': '1 4',
+      opacity: 0.5}));
+  }
+
+  const linha = (campo, cor, tracejado, largura) => {
+    const d = pts.filter(p => p[campo] != null)
+      .map((p, i) => (i ? 'L' : 'M') + X(p.cobertura_pct) + ' '
+           + Y(p[campo])).join(' ');
+    return S('path', {d, fill: 'none', stroke: cor,
+      'stroke-width': largura || 2,
+      'stroke-linejoin': 'round', 'stroke-dasharray': tracejado});
+  };
+  // Projetado primeiro, por baixo; apurado por cima e mais grosso: o
+  // apurado e fato, a projecao e estimativa, e a hierarquia visual diz isso.
+  svg.append(linha('pct_projetado', 'var(--proj)', '7 4', 2));
+  svg.append(linha('pct_apurado', 'var(--acento)', null, 2.6));
+
+  for (const p of pts) {
+    if (p.pct_apurado == null) continue;
+    const c = S('circle', {cx: X(p.cobertura_pct), cy: Y(p.pct_apurado),
+      r: 2.5, fill: 'var(--acento)'});
+    const t = S('title');
+    t.textContent = p.cobertura_pct.toFixed(1) + '% apurado\n'
+      + 'contado: ' + p.pct_apurado.toFixed(2) + '%\n'
+      + 'projetado: ' + p.pct_projetado.toFixed(2) + '% ('
+      + p.pct_q100.toFixed(1) + '–' + p.pct_q900.toFixed(1) + ')';
+    c.append(t);
+    svg.append(c);
+  }
+  return svg;
+}
+
+function legendaConvergencia() {
+  const item = (estilo, txt) => el('span', {},
+    el('i', {cls: 'sw', style: estilo}), txt);
+  return el('div', {cls: 'legend'},
+    item('background:var(--acento)', 'apurado (linha cheia)'),
+    item('background:var(--proj)', 'projetado (tracejado)'),
+    item('background:var(--proj);opacity:.3', 'intervalo de 80%'),
+    item('background:var(--fg);opacity:.5', 'resultado final'));
+}
+
+async function viewConvergencia() {
+  const amb = st.diario ? 'ambiente=' + st.diario + '&' : '';
+  const d = await get('/convergencia?' + amb + 'top=4');
+  rodape(d);
+  const cabeca = [
+    el('div', {cls: 'visoes'},
+      el('button', {'aria-selected': String(!st.diario),
+        onclick: () => { st.diario = ''; }}, 'Apuração real'),
+      el('button', {
+        'aria-selected': String(st.diario === 'ensaio-simulado2026'),
+        title: 'Série produzida por "obs2026 ensaiar-auditoria", com ordem '
+             + 'de chegada sintética',
+        onclick: () => { st.diario = 'ensaio-simulado2026'; }}, 'Ensaio')),
+  ];
+  if (!d.dados.length) {
+    return el('div', {}, ...cabeca,
+      el('div', {cls: 'estado'}, d.status_motivo || 'sem registros'));
+  }
+  const out = [
+    ...cabeca,
+    el('div', {cls: 'nota'}, el('b', {}, 'O que este gráfico responde. '),
+       d.nota),
+    legendaConvergencia(),
+  ];
+
+  for (const s2 of d.dados) {
+    out.push(el('h2', {}, s2.serie));
+    out.push(el('div', {cls: 'nota'},
+      s2.execucoes + ' projeções registradas · cobertura de '
+      + pct(s2.cobertura_min, 1) + ' a ' + pct(s2.cobertura_max, 1)
+      + ' · modelo ', el('code', {}, s2.model_version),
+      s2.encerrada ? ' · disputa encerrada' : ' · apuração em andamento'));
+
+    for (const cand of s2.candidatos) {
+      out.push(el('div', {style: 'margin:14px 0'},
+        el('div', {style: 'display:flex;justify-content:space-between;'
+                 + 'align-items:baseline;gap:10px;flex-wrap:wrap'},
+          el('b', {}, cand.nome),
+          el('span', {style: 'font-size:12px;color:var(--muted)'},
+            cand.pct_final != null ? 'final ' + pct(cand.pct_final) : '',
+            cand.distancia_final_pp != null
+              ? ' · distância no último ponto: '
+                + cand.distancia_final_pp.toFixed(2).replace('.', ',') + ' pp'
+              : '')),
+        grafConvergencia(cand)));
+    }
+
+    out.push(el('details', {},
+      el('summary', {}, 'Tabela equivalente'),
+      el('table', {},
+        el('thead', {}, el('tr', {}, el('th', {}, 'Candidato'),
+          el('th', {cls: 'num'}, 'Cobertura'),
+          el('th', {cls: 'num'}, 'Apurado'),
+          el('th', {cls: 'num'}, 'Projetado'),
+          el('th', {cls: 'num'}, 'Faixa 80%'), el('th', {}, 'Estado'))),
+        el('tbody', {}, ...s2.candidatos.flatMap(cand =>
+          cand.pontos.map(p => el('tr', {},
+            el('td', {}, cand.nome),
+            el('td', {cls: 'num'}, pct(p.cobertura_pct, 1)),
+            el('td', {cls: 'num'}, p.pct_apurado == null
+              ? el('span', {cls: 'null'}, 'n/d') : pct(p.pct_apurado)),
+            el('td', {cls: 'num'}, pct(p.pct_projetado)),
+            el('td', {cls: 'num'}, p.pct_q100.toFixed(1) + '–'
+              + p.pct_q900.toFixed(1)),
+            el('td', {}, el('span', {cls: 'tag'}, p.estado_publicacao)))))))));
+  }
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Nada é recalculado. '),
+    d.aviso));
+  return el('div', {}, ...out);
+}
+
 /* ------------------------------------------------------------ auditoria */
 
 async function viewAuditoria() {
@@ -780,7 +959,7 @@ async function render() {
     }
     const fn = {resultado: viewResultado, mapa: viewMapa,
                 projecao: viewProjecao, auditoria: viewAuditoria,
-                telao: viewTelao
+                convergencia: viewConvergencia, telao: viewTelao
                }[st.visao || 'resultado'];
     poe(main, await fn());
   } catch (e) {

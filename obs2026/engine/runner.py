@@ -177,5 +177,6 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
             thresholds_hash=thr.config_hash,
             thresholds_homologados=thr.homologated,
             estado_publicacao=estado, nomes=ctx.nomes,
+            concorrentes_observados=ctx.concorrentes_observados,
         ))
     return fc, dfn, ctx, registro

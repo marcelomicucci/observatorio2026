@@ -101,6 +101,11 @@ class Registro:
     disputa_matematicamente_definida: bool
     segundo_turno_matematicamente_definido: bool
     avisos: tuple[str, ...] = field(default_factory=tuple)
+    #: Votos a concorrentes JA contados no momento do registro. Sem ele o
+    #: grafico de convergencia precisaria estimar o denominador do
+    #: observado, e comparar duas linhas com denominadores diferentes e pior
+    #: do que nao comparar.
+    concorrentes_observados: int = 0
 
     @property
     def cobertura_pct(self) -> float:
@@ -171,7 +176,8 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
              pendente_min: int, pendente_max: int,
              modelo: str, model_version: str, thresholds_hash: str,
              thresholds_homologados: bool, estado_publicacao: str,
-             nomes: dict[str, str] | None = None) -> Registro:
+             nomes: dict[str, str] | None = None,
+             concorrentes_observados: int = 0) -> Registro:
     """Monta o registro a partir de um `Forecast` e de uma `Definicao`."""
     nomes = nomes or {}
     q = forecast.quantis((0.10, 0.50, 0.90))
@@ -219,6 +225,7 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
         segundo_turno_matematicamente_definido=(
             definicao.segundo_turno_definido),
         avisos=definicao.avisos,
+        concorrentes_observados=concorrentes_observados,
     )
 
 
