@@ -577,5 +577,7 @@ def painel():
 
 # Registrado por último, quando os auxiliares acima já existem.
 from . import decided_audit as _decided_audit  # noqa: E402
+from . import geo as _geo  # noqa: E402
 
 _decided_audit.register(app)
+_geo.register(app)

@@ -295,3 +295,66 @@ usa — responde 200 normalmente.
 Consequência prática: o download dos históricos precisa passar por navegador
 real. Não há automação legítima possível a partir de um cliente HTTP simples,
 e não se tenta contornar.
+
+---
+
+## Achados da construção do mapa
+
+### `q` do Senado confirmado por dois dados independentes
+
+| fonte | vagas | `tv/c` | `q` (escolhas válidas por comparecente) |
+|---|---:|---:|---:|
+| AC 2018, real | 2 | **2,0000** | **1,7926** |
+| AC 2022, real | 1 | 1,0000 | 0,9406 |
+| Simulado 2026 | 2 | 2,0000 | 1,7029 |
+
+As duas eleições com duas vagas dão `q` perto de **1,8**, nenhuma em 2,0.
+Supor duas escolhas válidas por eleitor superestimaria o total de votos do
+Senado em cerca de 12%. A regra do §4.6 fica confirmada com dado real, não
+apenas com dado de teste.
+
+E fica claro por que **2018 é o histórico que importa** para o Senado: 2022
+teve uma vaga por UF e não serve para estimar `q`.
+
+### Um município com código IBGE fora da faixa da própria UF
+
+**Boa Esperança do Norte (MT)**, município novo, vem no EA12 com código IBGE
+`5300109`. O prefixo `53` é a faixa do **Distrito Federal**; Mato Grosso é
+`51`.
+
+Isso quebrou a primeira versão do mapa de UFs, que derivava o código do
+estado a partir do primeiro município encontrado: MT recebia `53`,
+desaparecia do mapa, e o DF aparecia duplicado. A correção é usar a **moda**
+dos prefixos, e a divergência vira `quality_flag` visível na interface em vez
+de sumir.
+
+Vale como aviso geral: município criado entre censos é exatamente onde
+qualquer correspondência territorial quebra, e é o caso que nenhum teste
+sintético produz.
+
+### A rampa sequencial precisa de guarda contra faixa degenerada
+
+Com todas as UFs a 100,00% de apuração, uma rampa que vai do mínimo ao máximo
+transforma diferenças de centésimo em contraste visual forte — e sugere
+diferença onde não há. O mesmo aconteceria no início da noite, com quase tudo
+em zero.
+
+O mapa detecta faixa degenerada, pinta em tom único e diz na legenda que a
+distribuição é uniforme. Mapa que inventa variação é pior do que mapa
+monocromático.
+
+### A malha do IBGE junta por código, sem pareamento por nome
+
+`servicodados.ibge.gov.br` entrega a malha territorial com `codarea` igual ao
+`cdi` do EA12: 2 dígitos para UF, 7 para município. A junção é por código
+oficial ponta a ponta.
+
+Tamanhos, após reduzir as coordenadas a 3 casas decimais (~110 m, bem abaixo
+do que um mapa de 800 px distingue):
+
+| malha | feições | original | servido |
+|---|---:|---:|---:|
+| UF | 27 | 0,10 MB | 0,09 MB |
+| Municípios | 5.570 | 3,61 MB | 2,97 MB |
+
+Diferente do CDN de resultados, este host responde normalmente a `curl`.

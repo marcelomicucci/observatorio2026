@@ -118,6 +118,7 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);
 </footer>
 </div>
 
+<script src="/mapa.js"></script>
 <script>
 const API = '/api/v1';
 const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
@@ -426,47 +427,121 @@ async function viewProjecao() {
 
 async function viewMapa() {
   const cargo = st.cargo || '1';
-  const uf = st.uf ? `&uf=${st.uf}` : '';
+  const tab = st.tab || 'nacional';
+  // Municípios quando a aba pede; UF nas demais — que é a unidade que de
+  // fato decide governador e senador.
+  const abr = tab === 'municipios' ? 'mu' : 'uf';
+  const uf = (abr === 'mu' && st.uf) ? `&uf=${st.uf}` : '';
   const [m, cl] = await Promise.all([
-    get(`/map?cargo=${cargo}${uf}`), get('/classifications'),
+    get(`/map-layers?cargo=${cargo}&abrangencia=${abr}${uf}`),
+    get('/classifications'),
   ]);
   metaBar(m);
-  const c = cl.dados;
-  const out = [];
-
-  if (c.estado === 'curadoria_pendente') {
-    out.push(el('div', {cls: 'note'},
-      el('b', {}, 'Mapa ideológico desabilitado. '), c.motivo));
+  if (!m.dados.length) {
+    return el('div', {cls: 'state'}, m.status_motivo || 'sem dados');
   }
-  out.push(el('div', {cls: 'legend'}, ...Object.entries(c.paleta).map(
-    ([k, v]) => el('span', {},
-      el('i', {cls: 'sw', style: `background:${v}`}),
-      el('span', {}, c.simbolos[k] || ''), ' ', k.replace(/_/g, '-')))),
-    el('span', {},
-      el('i', {cls: 'sw', style: 'background:repeating-linear-gradient(45deg,#ccc,#ccc 2px,#fff 2px,#fff 5px)'}),
-      ' sem classificação'));
-  out.push(el('div', {cls: 'note'}, m.aviso_cartografico,
-    ' A leitura não depende só de cor: cada bloco tem símbolo e rótulo, e o ' +
-    'mapa sempre vem acompanhado da tabela abaixo.'));
 
+  const camadaId = st.camada || 'lider';
+  const camada = MAPA.CAMADAS[camadaId];
+  const wrap = el('div', {});
+
+  // seletor de camada
+  wrap.append(el('div', {cls: 'modes'},
+    ...Object.entries(MAPA.CAMADAS).map(([id, c]) => el('button', {
+      'aria-pressed': String(id === camadaId),
+      onclick: () => { st.camada = id; },
+    }, c.rotulo)),
+    el('button', {
+      'aria-pressed': 'false', disabled: '',
+      title: cl.dados.motivo || 'curadoria pendente',
+      style: 'opacity:.5;cursor:not-allowed',
+    }, 'Bloco ideológico (desabilitado)')));
+
+  wrap.append(el('div', {cls: 'note'}, el('b', {}, camada.rotulo + '. '),
+                 camada.nota));
+
+  const caixa = el('div', {style: 'background:var(--panel);border:1px solid '
+                                + 'var(--line);border-radius:10px;padding:6px'});
+  wrap.append(caixa);
+  caixa.append(el('div', {cls: 'state'}, 'desenhando o mapa…'));
+
+  const barra = el('div', {style: 'margin-top:14px'});
+  wrap.append(barra);
+
+  const rodape = el('div', {});
+  wrap.append(rodape);
+
+  // Desenha depois de devolver o nó, para o painel não travar enquanto
+  // 5.570 polígonos viram caminhos SVG.
+  (async () => {
+    try {
+      const r = await MAPA.desenhar(caixa, m.dados, {
+        malha: m.malha, camada: camadaId,
+        largura: 760, altura: abr === 'mu' ? 660 : 560,
+        aoClicar: d => {
+          if (abr === 'uf') { st.uf = d.uf; st.tab = 'estados'; }
+        },
+      });
+      rodape.replaceChildren(
+        MAPA.legenda(r.camada, r.ctx, m.dados),
+        el('div', {cls: 'note'}, el('b', {}, 'Área não é eleitorado. '),
+          m.aviso_cartografico),
+        el('div', {cls: 'note'},
+          `${fmt(m.dados.length)} territórios com dado`
+          + (r.semDado ? ` · ${fmt(r.semDado)} sem dado (hachura)` : '')),
+        tabelaMapa(m, camada, r.ctx));
+      // replaceChildren insere a string "null" se receber null — ao
+      // contrário do helper el(), que os descarta. Por isso o condicional
+      // fica fora da chamada.
+      if (m.nota_territorial) {
+        rodape.insertBefore(
+          el('div', {cls: 'note'}, el('b', {}, 'Atenção. '),
+             m.nota_territorial),
+          rodape.lastChild);
+      }
+      if (m.quality_flags && m.quality_flags.length) {
+        rodape.insertBefore(
+          el('div', {cls: 'note', style: 'border-left-color:var(--alerta)'},
+             el('b', {}, 'Divergência territorial. '),
+             m.quality_flags.join(' · ')),
+          rodape.lastChild);
+      }
+      barra.replaceChildren(
+        el('label', {}, 'Mesma informação, ponderada por eleitores'),
+        MAPA.barraPonderada(m.dados, r.camada, r.ctx));
+    } catch (e) {
+      caixa.replaceChildren(el('div', {cls: 'state'},
+        el('span', {cls: 'tag err'}, 'erro no mapa'), ' ', String(e.message)));
+    }
+  })();
+
+  return wrap;
+}
+
+function tabelaMapa(m, camada, ctx) {
+  // Alternativa tabular completa ao mapa (§11.3): tudo que o mapa mostra
+  // tem de ser legível sem ele.
   const linhas = [...m.dados].sort((a, b) => b.eleitorado - a.eleitorado);
-  out.push(el('table', {},
-    el('thead', {}, el('tr', {},
-      el('th', {}, 'Município'), el('th', {cls: 'hide-sm'}, 'IBGE'),
-      el('th', {}, 'UF'), el('th', {}, 'Partido líder'),
-      el('th', {}, 'Bloco'), el('th', {cls: 'num'}, 'Margem'),
-      el('th', {cls: 'num'}, 'Eleitorado'), el('th', {cls: 'num'}, 'Apurado'))),
-    el('tbody', {}, ...linhas.slice(0, 400).map(x => el('tr', {},
-      el('td', {}, x.nome),
-      el('td', {cls: 'hide-sm'}, el('code', {}, x.cd_ibge || '—')),
-      el('td', {}, x.uf.toUpperCase()),
-      el('td', {}, x.lider_partido || '—'),
-      el('td', {}, el('span', {cls: 'null'}, 'não classificado')),
-      el('td', {cls: 'num'}, x.margem_pp == null ? '—' :
-        pct(x.margem_pp, 1) + ' pp'),
-      el('td', {cls: 'num'}, fmt(x.eleitorado)),
-      el('td', {cls: 'num'}, pct(x.cobertura_pct, 1) || '—'))))));
-  return el('div', {}, ...out);
+  const cabeca = ['Território', 'UF', 'Eleitorado', camada.rotulo,
+                  'Líder', 'Margem', 'Apurado'];
+  return el('details', {open: m.abrangencia === 'uf' ? '' : null},
+    el('summary', {style: 'cursor:pointer;margin:12px 0;font-size:13px'},
+      `Tabela equivalente (${fmt(linhas.length)} territórios)`),
+    el('table', {},
+      el('thead', {}, el('tr', {}, ...cabeca.map((h, i) =>
+        el('th', {cls: i >= 2 && i !== 3 && i !== 4 ? 'num' : null}, h)))),
+      el('tbody', {}, ...linhas.slice(0, 600).map(d => el('tr', {},
+        el('td', {}, d.nome,
+          d.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null),
+        el('td', {}, d.uf.toUpperCase()),
+        el('td', {cls: 'num'}, fmt(d.eleitorado)),
+        el('td', {}, MAPA.descreve(d, camada, ctx)),
+        el('td', {}, d.lider_nome || '—'),
+        el('td', {cls: 'num'}, d.margem_pp == null
+          ? el('span', {cls: 'null'}, 'n/d')
+          : pct(d.margem_pp, 1) + ' pp'),
+        el('td', {cls: 'num'}, d.cobertura_pct == null
+          ? el('span', {cls: 'null'}, 'n/d') : pct(d.cobertura_pct, 1)))))));
 }
 
 async function viewHistorico() {

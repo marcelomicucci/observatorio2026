@@ -295,3 +295,27 @@ def test_consolidado_traz_intervalo_de_confianca_da_propria_metrica(tmp_path):
     v = next(iter(resumo.values()))
     assert v["cobertura_ic95"] is not None
     assert v["amostra_pequena"] is True
+
+
+# ------------------------------------------------------------- geografia ---
+
+def test_prefixo_ibge_da_uf_usa_a_moda_e_nao_o_primeiro():
+    """Boa Esperanca do Norte (MT) tem codigo IBGE 5300109.
+
+    O prefixo 53 e a faixa do Distrito Federal, nao a do Mato Grosso (51).
+    Derivar o codigo da UF pelo primeiro municipio encontrado dava 53 ao
+    estado inteiro: MT sumia do mapa e o DF aparecia duplicado.
+
+    Este teste reproduz a situacao com dados sinteticos, para a regra valer
+    mesmo que o municipio troque de codigo no futuro.
+    """
+    from collections import Counter
+    municipios = [("mt", "5300109")] + [("mt", f"51{i:05d}") for i in range(9)]
+    prefixos: dict[str, Counter] = {}
+    for uf, cd in municipios:
+        prefixos.setdefault(uf, Counter())[cd[:2]] += 1
+    cod_uf = {uf: c.most_common(1)[0][0] for uf, c in prefixos.items()}
+    assert cod_uf["mt"] == "51"
+    divergentes = [(uf, p, n) for uf, c in prefixos.items()
+                   for p, n in c.items() if p != cod_uf[uf]]
+    assert divergentes == [("mt", "53", 1)]

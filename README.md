@@ -21,7 +21,7 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-89 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
+90 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
 mudou.
 
 ```bash
@@ -70,7 +70,8 @@ python -m obs2026.cli ensaiar-auditoria senador --uf al
 | **Motor** | M0, M1, Senado, Monte Carlo e backtest funcionando — **não homologado** |
 | **Definição matemática** | funcionando: limite determinístico, sem modelo |
 | **Auditoria de projeções** | funcionando: diário append-only + avaliação |
-| **Históricos** | 2022 lido e conferido; **2018 pendente** |
+| **Históricos** | 2018 e 2022 lidos e conferidos, zero violações de invariante |
+| **Mapa** | malha do IBGE, 4 camadas, junção por código IBGE oficial |
 | **Mapa ideológico** | máquina pronta, **curadoria pendente por desenho** |
 | **Projeção publicada** | **não**, e o sistema diz por quê |
 
@@ -152,11 +153,10 @@ data/raw/        arquivo bruto (fora do git)
 1. **Capturar as janelas de 22–24/09**, especialmente a fase de transição de
    0% a 100%. É a única chance antes de outubro de exercitar `A_pendente` com
    apuração em andamento — os arquivos da 1ª janela já estão todos finais.
-2. **Baixar os históricos de 2018.** Os dois arquivos de 2022 já estão lidos
-   e conferidos (zero violações de invariante). Faltam
-   `votacao_candidato_munzona_2018` e `detalhe_votacao_munzona_2018` — e 2018
-   é o que importa para o Senado, por ser a última eleição com **duas vagas
-   por UF**, como 2026. Em 2022 foi uma só.
+2. **Calibrar com os históricos**, que já estão baixados e conferidos.
+   2018 é o que importa para o Senado: última eleição com duas vagas por UF,
+   `tv/c` = 2,0000 exato e `q` = 1,7926 escolhas válidas por comparecente.
+   Em 2022 o Senado teve uma vaga só (`tv/c` = 1,0000).
 3. **Medir e fixar `max_rps`** a partir do simulado. A folga atual de
    3,6 req/s não basta para a noite de apuração.
 4. **Corrigir a dependência dos σ com a cobertura.** Aos 5% contados, os
