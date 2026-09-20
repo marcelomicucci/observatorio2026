@@ -3,7 +3,7 @@
 Acompanhamento da apuração de presidente, governador e senador, com projeção
 dos territórios pendentes e análise territorial e institucional do voto.
 
-Implementação da [especificação v1.0](../Especificacoes_Observatorio_Eleitoral_2026.md).
+Implementação da [especificação v1.0](docs/fonte/Especificacoes_Observatorio_Eleitoral_2026.md).
 Validado contra os payloads reais do servidor de simulado do TSE em
 20/09/2026.
 
@@ -39,7 +39,7 @@ python -m uvicorn obs2026.api.app:app --port 8026
 Painel em `http://localhost:8026`, API em `/api/docs`.
 
 ```bash
-python -m obs2026.cli auditar-csv ../eleitorado_eleicao_capilaridade.csv.zip
+python -m obs2026.cli auditar-csv docs/fonte/eleitorado_eleicao_capilaridade.csv.zip
 ```
 
 ---
@@ -117,6 +117,7 @@ obs2026/
   ingest/        conciliação da base de eleitorado
 web/             painel
 tests/fixtures/  payloads reais do TSE de 20/09/2026
+docs/fonte/      especificação v1.0 e base de eleitorado recebida
 data/raw/        arquivo bruto (fora do git)
 ```
 
