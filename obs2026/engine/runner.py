@@ -40,9 +40,31 @@ class Contexto:
     sub_judice: int
     encerrada: bool
     fonte_gerada_em: str | None
+    #: Horario da fonte MAIS ANTIGA entre as unidades lidas. Durante a
+    #: apuracao os 5.570 municipios nunca estao simultaneos: cada um
+    #: totaliza no seu tempo. Nao ha instante consistente pelo qual esperar,
+    #: entao o §8.2 manda registrar a DISPERSAO em vez de fingir que ela nao
+    #: existe. A diferenca entre esta e `fonte_gerada_em` e o quanto o
+    #: retrato esta borrado.
+    fonte_mais_antiga: str | None
+    #: Unidades que ainda nao produziram nenhum dado, e o eleitorado delas.
+    #: Sao o buraco do retrato; o modelo trata como pendente, mas quem le a
+    #: projecao precisa saber o tamanho do buraco.
+    unidades_sem_dado: int
+    eleitorado_sem_dado: int
     snapshot_set_id: str | None
     unidades: int
     nomes: dict[str, str]
+
+    @property
+    def dispersao_fonte_s(self) -> float | None:
+        """Segundos entre a fonte mais antiga e a mais recente."""
+        if not (self.fonte_gerada_em and self.fonte_mais_antiga):
+            return None
+        from datetime import datetime
+        a = datetime.fromisoformat(self.fonte_mais_antiga)
+        b = datetime.fromisoformat(self.fonte_gerada_em)
+        return (b - a).total_seconds()
 
 
 def carregar_observacoes(archive: RawArchive, cargo: str,
@@ -93,6 +115,9 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
     vvc = sum(o.result.votes.vvc for o in obs)
     sj = sum(o.result.votes.vansj for o in obs)
     geradas = [o.result.generated_at for o in obs if o.result.generated_at]
+    # Unidade sem dado: nenhuma secao apurada ainda. Nao e erro — e o comeco
+    # da noite — mas precisa aparecer no registro.
+    sem_dado = [o for o in obs if o.result.electorate.esa == 0]
     nomes = {c.sqcand: c.nome_urna for o in obs
              for c in o.result.cargo.candidatos}
     return Contexto(
@@ -105,6 +130,9 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
         # A disputa só está encerrada se TODAS as unidades estiverem.
         encerrada=all(o.result.is_final for o in obs),
         fonte_gerada_em=(max(geradas).isoformat() if geradas else None),
+        fonte_mais_antiga=(min(geradas).isoformat() if geradas else None),
+        unidades_sem_dado=len(sem_dado),
+        eleitorado_sem_dado=sum(o.result.electorate.te for o in sem_dado),
         snapshot_set_id=None, unidades=len(obs), nomes=nomes,
     )
 
@@ -114,13 +142,19 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
              n_sims: int | None = None, model_version: str = "m1-0.1",
              archive: RawArchive | None = None,
              diario: audit.Diario | None = None,
-             registrar: bool = True):
+             registrar: bool = True,
+             observacoes: list[M.UnitObservation] | None = None):
     """Roda a projeção de uma disputa e registra o resultado.
 
     Devolve `(forecast, definicao, contexto, registro)`.
+
+    `observacoes` permite reaproveitar uma carga incremental: durante a
+    apuração, reler o bruto inteiro a cada projeção custaria segundos que
+    crescem com o manifesto (ver `incremental.py`).
     """
     archive = archive or RawArchive(Path("data/raw"), env.name)
-    obs = carregar_observacoes(archive, cargo, uf)
+    obs = (observacoes if observacoes is not None
+           else carregar_observacoes(archive, cargo, uf))
     abrangencia = "br" if uf is None else "uf"
     unidade = uf or "br"
     ctx = montar_contexto(obs, cargo=cargo, abrangencia=abrangencia,
@@ -178,5 +212,8 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
             thresholds_homologados=thr.homologated,
             estado_publicacao=estado, nomes=ctx.nomes,
             concorrentes_observados=ctx.concorrentes_observados,
+            fonte_mais_antiga=ctx.fonte_mais_antiga,
+            unidades_sem_dado=ctx.unidades_sem_dado,
+            eleitorado_sem_dado=ctx.eleitorado_sem_dado,
         ))
     return fc, dfn, ctx, registro

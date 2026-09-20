@@ -302,12 +302,25 @@ def ensaio(env_name: str = ENV_OPT,
 
 @app.command("coletar")
 def coletar(env_name: str = ENV_OPT,
-            segundos: float = typer.Option(0, help="0 = sem limite")):
-    """Coleta contínua com detecção de mudança."""
+            segundos: float = typer.Option(0, help="0 = sem limite"),
+            projetar: bool = typer.Option(
+                None, help="registra projecoes periodicamente "
+                           "(padrao: config/collector.yaml)")):
+    """Coleta contínua, registrando projeções ao longo da apuração.
+
+    A cada `projecao.intervalo_s` o sistema projeta todas as disputas e grava
+    no diário de auditoria. São esses registros que dão pontos ao gráfico de
+    convergência: sem eles, o gráfico tem um ponto só e não prova nada.
+
+    A simulação roda em thread separada e nunca bloqueia a coleta; falha nela
+    é registrada e a apuração segue.
+    """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     env, cfg = load_environment(env_name), load_collector()
+    thr = load_thresholds()
     archive = RawArchive(DATA_DIR / "raw", env.name)
     counters = {"results": 0, "critical": 0}
+    quer_projetar = cfg.projecao_ativa if projetar is None else projetar
 
     def on_result(r, ref, target):
         counters["results"] += 1
@@ -334,13 +347,47 @@ def coletar(env_name: str = ENV_OPT,
             con.print(f"orcamento: piso {b['piso_rps']:.1f} req/s, "
                       f"folga {b['folga_rps']:.1f} req/s")
             col = Collector(cat, client, archive, cfg, on_result=on_result)
-            return await col.run(max_seconds=segundos or None)
+
+            if not quer_projetar:
+                con.print("[yellow]registro de projecoes desligado: o "
+                          "grafico de convergencia ficara sem pontos[/]")
+                return await col.run(max_seconds=segundos or None), None
+
+            from .engine import audit as _audit
+            from .engine.registro_continuo import RegistradorContinuo
+            reg = RegistradorContinuo(
+                env=env, thr=thr, archive=archive,
+                diario=_audit.Diario(DATA_DIR / "previsoes", env.name),
+                intervalo_s=cfg.projecao_intervalo_s,
+                n_sims=cfg.projecao_n_sims,
+            )
+            con.print(f"projecoes: a cada {cfg.projecao_intervalo_s:.0f}s, "
+                      f"{cfg.projecao_n_sims} simulacoes, em thread separada")
+
+            # Os dois laços correm juntos. O da coleta manda: quando ele
+            # termina, o de projeção é encerrado — não faz sentido continuar
+            # projetando sobre um dado que parou de chegar.
+            tarefa_coleta = asyncio.create_task(
+                col.run(max_seconds=segundos or None))
+            tarefa_proj = asyncio.create_task(reg.rodar())
+            try:
+                stats_coleta = await tarefa_coleta
+            finally:
+                reg.parar()
+                try:
+                    await asyncio.wait_for(tarefa_proj, timeout=30)
+                except (asyncio.TimeoutError, asyncio.CancelledError):
+                    tarefa_proj.cancel()
+            return stats_coleta, reg.stats.__dict__
         finally:
             await client.aclose()
 
     with IpLock(str(env.lock_path)):
-        stats = asyncio.run(run())
-    con.print(json.dumps({**stats, **counters}, ensure_ascii=False, indent=2))
+        stats, stats_proj = asyncio.run(run())
+    saida = {**stats, **counters}
+    if stats_proj:
+        saida["projecao"] = stats_proj
+    con.print(json.dumps(saida, ensure_ascii=False, indent=2))
 
 
 @app.command("auditar-csv")

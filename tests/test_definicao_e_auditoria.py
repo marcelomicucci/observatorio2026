@@ -337,3 +337,86 @@ def test_recorte_ibge_nao_e_sobrescrito_pelo_laco():
         for pref, n in c.items():
             assert pref == cod_uf[sigla]
     assert cod_uf.get(pedida) == "27"
+
+
+# ------------------------------------------------- carga incremental ----
+
+def test_carregador_incremental_confere_com_a_carga_completa(tmp_path):
+    """O incremental existe para ser mais rápido, não mais esperto.
+
+    Qualquer divergência em relação à carga completa é bug dele, e este
+    teste é a rede — sem ela, uma otimização silenciosa poderia mudar o
+    resultado projetado sem ninguém perceber.
+    """
+    from obs2026.config import DATA_DIR
+    from obs2026.engine.incremental import CarregadorIncremental
+    from obs2026.storage.raw import RawArchive
+
+    arc = RawArchive(DATA_DIR / "raw", "simulado2026")
+    if not arc.days():
+        pytest.skip("arquivo bruto vazio; rode `obs2026 ensaio` antes")
+    c = CarregadorIncremental(archive=arc, cargo="3")
+    c.atualizar()
+    conf = c.conferir()
+    assert conf["iguais"], conf
+
+
+def test_segunda_passagem_do_incremental_nao_relê_nada(tmp_path):
+    """Sem isso, projetar a cada 2 minutos releria o manifesto inteiro.
+
+    Usa um arquivo bruto próprio em `tmp_path`: apontar para o arquivo real
+    torna o teste dependente de o coletor não estar rodando, e um teste que
+    falha quando o sistema está em uso não é um teste, é um incômodo.
+    """
+    import json as _json
+    import shutil
+    from dataclasses import asdict as _asdict
+    from obs2026.config import DATA_DIR
+    from obs2026.engine.incremental import CarregadorIncremental
+    from obs2026.storage.raw import RawArchive
+
+    origem = RawArchive(DATA_DIR / "raw", "simulado2026")
+    if not origem.days():
+        pytest.skip("arquivo bruto vazio")
+
+    # Cópia congelada de algumas capturas de Governador.
+    destino = RawArchive(tmp_path, "copia")
+    dia = origem.days()[-1]
+    refs = [r for r in origem.manifest(dia)
+            if r.kind == "ea20" and r.path and r.cargo == "3" and r.mun][:40]
+    if not refs:
+        pytest.skip("sem capturas de governador no arquivo bruto")
+    (destino.root / "manifest").mkdir(parents=True, exist_ok=True)
+    with open(destino.root / "manifest" / f"{dia}.jsonl", "w",
+              encoding="utf-8") as fh:
+        for r in refs:
+            alvo = destino.root / r.path
+            alvo.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(origem.root / r.path, alvo)
+            # SnapshotRef usa __slots__, então não tem __dict__.
+            fh.write(_json.dumps(_asdict(r), ensure_ascii=False) + chr(10))
+
+    c = CarregadorIncremental(archive=destino, cargo="3")
+    primeira = c.atualizar()
+    segunda = c.atualizar()
+    assert primeira["linhas_novas"] == len(refs)
+    assert segunda["linhas_novas"] == 0          # nada relido
+    assert segunda["unidades_atualizadas"] == 0
+    assert segunda["unidades_totais"] == primeira["unidades_totais"] > 0
+
+
+def test_carregador_filtra_por_uf_sem_duplicar_memoria():
+    """Um carregador por CARGO, filtrado na saída — não 27 por cargo."""
+    from obs2026.config import DATA_DIR
+    from obs2026.engine.incremental import CarregadorIncremental
+    from obs2026.storage.raw import RawArchive
+
+    arc = RawArchive(DATA_DIR / "raw", "simulado2026")
+    if not arc.days():
+        pytest.skip("arquivo bruto vazio")
+    c = CarregadorIncremental(archive=arc, cargo="3")
+    c.atualizar()
+    todas = c.observacoes()
+    al = c.observacoes("al")
+    assert 0 < len(al) < len(todas)
+    assert all(o.uf == "al" for o in al)

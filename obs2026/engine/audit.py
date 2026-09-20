@@ -106,6 +106,14 @@ class Registro:
     #: observado, e comparar duas linhas com denominadores diferentes e pior
     #: do que nao comparar.
     concorrentes_observados: int = 0
+    #: Horario da fonte mais antiga entre as unidades lidas. A diferenca
+    #: para `fonte_gerada_em` mede o quanto o retrato estava borrado: durante
+    #: a apuracao nao ha instante em que todos os municipios estejam
+    #: simultaneos, e o §8.2 manda registrar essa dispersao.
+    fonte_mais_antiga: str | None = None
+    #: Unidades sem nenhuma secao apurada no momento do registro.
+    unidades_sem_dado: int = 0
+    eleitorado_sem_dado: int = 0
 
     @property
     def cobertura_pct(self) -> float:
@@ -116,6 +124,20 @@ class Registro:
     def cobertura_secoes_pct(self) -> float:
         return (100.0 * self.secoes_totalizadas / self.secoes_total
                 if self.secoes_total else 0.0)
+
+    @property
+    def dispersao_fonte_s(self) -> float | None:
+        """Segundos entre a fonte mais antiga e a mais recente do lote.
+
+        Zero significa retrato simultaneo; um valor grande significa que a
+        projecao misturou dado de momentos diferentes — o que e inevitavel
+        durante a apuracao, mas precisa ser visivel.
+        """
+        if not (self.fonte_gerada_em and self.fonte_mais_antiga):
+            return None
+        a = datetime.fromisoformat(self.fonte_mais_antiga)
+        b = datetime.fromisoformat(self.fonte_gerada_em)
+        return (b - a).total_seconds()
 
     @property
     def chave_serie(self) -> str:
@@ -177,7 +199,10 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
              modelo: str, model_version: str, thresholds_hash: str,
              thresholds_homologados: bool, estado_publicacao: str,
              nomes: dict[str, str] | None = None,
-             concorrentes_observados: int = 0) -> Registro:
+             concorrentes_observados: int = 0,
+             fonte_mais_antiga: str | None = None,
+             unidades_sem_dado: int = 0,
+             eleitorado_sem_dado: int = 0) -> Registro:
     """Monta o registro a partir de um `Forecast` e de uma `Definicao`."""
     nomes = nomes or {}
     q = forecast.quantis((0.10, 0.50, 0.90))
@@ -226,6 +251,9 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
             definicao.segundo_turno_definido),
         avisos=definicao.avisos,
         concorrentes_observados=concorrentes_observados,
+        fonte_mais_antiga=fonte_mais_antiga,
+        unidades_sem_dado=unidades_sem_dado,
+        eleitorado_sem_dado=eleitorado_sem_dado,
     )
 
 

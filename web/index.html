@@ -858,7 +858,11 @@ async function viewConvergencia() {
       s2.execucoes + ' projeções registradas · cobertura de '
       + pct(s2.cobertura_min, 1) + ' a ' + pct(s2.cobertura_max, 1)
       + ' · modelo ', el('code', {}, s2.model_version),
-      s2.encerrada ? ' · disputa encerrada' : ' · apuração em andamento'));
+      s2.encerrada ? ' · disputa encerrada' : ' · apuração em andamento',
+      s2.dispersao_fonte_max_s != null && s2.dispersao_fonte_max_s > 0
+        ? ` · dispersão máxima da fonte: `
+          + `${Math.round(s2.dispersao_fonte_max_s / 60)} min`
+        : ''));
 
     for (const cand of s2.candidatos) {
       out.push(el('div', {style: 'margin:14px 0'},
@@ -895,6 +899,9 @@ async function viewConvergencia() {
   }
   out.push(el('div', {cls: 'nota'}, el('b', {}, 'Nada é recalculado. '),
     d.aviso));
+  out.push(el('div', {cls: 'nota'},
+    el('b', {}, 'Por que não esperamos "terminar de carregar". '),
+    d.nota_dispersao));
   return el('div', {}, ...out);
 }
 

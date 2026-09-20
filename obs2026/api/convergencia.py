@@ -90,6 +90,13 @@ def register(app) -> None:
                         "pct_q900": c.pct_concorrentes_q900,
                         "estado_matematico": c.estado_matematico,
                         "estado_publicacao": r.estado_publicacao,
+                        # Quao "borrado" estava o retrato: segundos entre a
+                        # fonte mais antiga e a mais recente do lote. Durante
+                        # a apuracao os municipios nunca estao simultaneos, e
+                        # esconder isso seria fingir precisao (§8.2).
+                        "dispersao_fonte_s": r.dispersao_fonte_s,
+                        "unidades_sem_dado": r.unidades_sem_dado,
+                        "eleitorado_sem_dado": r.eleitorado_sem_dado,
                     })
                 nome = next((x.nome for x in ultimo.candidatos
                              if x.sqcand == sq), sq)
@@ -110,8 +117,11 @@ def register(app) -> None:
                     "pontos": pontos,
                 })
 
+            disp = [r.dispersao_fonte_s for r in regs
+                    if r.dispersao_fonte_s is not None]
             saida.append({
                 "serie": chave,
+                "dispersao_fonte_max_s": max(disp) if disp else None,
                 "cargo": ultimo.cargo,
                 "unidade": ultimo.unidade,
                 "modelo": ultimo.modelo,
@@ -139,4 +149,10 @@ def register(app) -> None:
                     "registrados no momento. Refazer o passado com o modelo "
                     "de agora mostraria o que gostariamos de ter sabido, nao "
                     "o que sabiamos (§5.2)."),
+                "nota_dispersao": (
+                    "Durante a apuracao nao existe instante em que os 5.570 "
+                    "municipios estejam simultaneos: cada um totaliza no seu "
+                    "tempo. Nao ha consistencia pela qual esperar, entao cada "
+                    "projecao registra a dispersao entre a fonte mais antiga "
+                    "e a mais recente que ela leu."),
             })

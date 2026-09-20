@@ -103,6 +103,10 @@ class CollectorConfig:
     max_inflight_results: int
     aging_boost_per_minute: float
     control_weight: float
+    #: Registro continuo de projecoes durante a apuracao.
+    projecao_ativa: bool = True
+    projecao_intervalo_s: float = 180.0
+    projecao_n_sims: int = 1500
 
     def budget_floor_rps(self, *, n_accompaniment: int, n_control: int,
                          n_municipal: int) -> dict:
@@ -231,6 +235,10 @@ def load_collector(config_dir: Path = CONFIG_DIR) -> CollectorConfig:
         max_inflight_results=int(ca["max_inflight_results"]),
         aging_boost_per_minute=float(pr["aging_boost_per_minute"]),
         control_weight=float(pr["control_weight"]),
+        projecao_ativa=bool((c.get("projecao") or {}).get("ativa", True)),
+        projecao_intervalo_s=float(
+            (c.get("projecao") or {}).get("intervalo_s", 180)),
+        projecao_n_sims=int((c.get("projecao") or {}).get("n_sims", 1500)),
     )
 
 

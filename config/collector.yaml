@@ -56,6 +56,28 @@ cadence:
   # Teto de itens EA20 despachados por ciclo, para a fila não engolir o budget.
   max_inflight_results: 400
 
+# Registro continuo de projecoes durante a apuracao. Cada rodada projeta
+# todas as disputas (1 presidencial + 27 governadores + 27 senadores) e grava
+# no diario de auditoria — e sao esses registros que dao pontos ao grafico de
+# convergencia. Sem eles o grafico tem um ponto so e nao prova nada.
+#
+# MEDIDO com os dados completos do simulado:
+#   1a rodada   12,3 s  (carga fria do arquivo bruto)
+#   seguintes    1,2 s  (carregador incremental: so o que mudou e relido)
+#
+# A 120 s de intervalo, isso e menos de 1% de um nucleo, e cada disputa ganha
+# um ponto a cada 2 minutos — cerca de 180 pontos numa noite de seis horas,
+# que e densidade de sobra para o grafico de convergencia.
+#
+# A simulacao roda em thread separada: numpy no laco de eventos travaria as
+# requisicoes ao TSE justamente no pico.
+projecao:
+  ativa: true
+  intervalo_s: 120
+  # Menos simulacoes que as 5.000 do cenario homologado: aqui o que importa
+  # e ter muitos pontos ao longo da noite, nao precisao de quarta casa.
+  n_sims: 1500
+
 priority:
   # Peso na fila: eleitorado da unidade x fator. Territórios grandes e atrasados
   # primeiro, mas com envelhecimento para nenhum ficar sem atendimento.
