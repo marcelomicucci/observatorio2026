@@ -101,6 +101,10 @@ class Observed:
     votos_por_candidato: dict[str, int]      # sqcand -> vap
     validos: int
     nominal_tse: int
+    #: `van + vansj`. Não entram na preferência (não são votos que a
+    #: totalização vai aceitar para um candidato apto), mas ENTRAM no
+    #: denominador da maioria absoluta: são "votos a concorrentes".
+    anulados: int
     brancos: int
     nulos: int
     total_votos: int
@@ -121,6 +125,14 @@ class Observed:
     def taxa_valida(self) -> float | None:
         """Votos válidos sobre o total de votos daquela unidade."""
         return (self.validos / self.total_votos) if self.total_votos else None
+
+    @property
+    def concorrentes(self) -> int:
+        """Votos a concorrentes: `vv + van + vansj` = `vvc`.
+
+        Denominador da maioria absoluta (leiame do TSE, CF art. 77 §2º).
+        """
+        return self.validos + self.anulados
 
     @property
     def escolhas_por_comparecente(self) -> float | None:
@@ -151,6 +163,7 @@ def observed_of(r: Ea20) -> Observed:
         votos_por_candidato=validos_por_cand,
         validos=r.votes.vv,
         nominal_tse=sum(c.votos for c in r.cargo.candidatos),
+        anulados=r.votes.van + r.votes.vansj,
         brancos=r.votes.vb,
         nulos=r.votes.tvn,
         total_votos=r.votes.tv,

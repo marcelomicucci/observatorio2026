@@ -162,11 +162,13 @@ const CARGOS = [
   {cd: '5', label: 'Senador',    abr: 'uf'},
 ];
 const BASES = [
-  {id: 'validos', label: 'sobre votos válidos (decide o 1º turno)'},
+  {id: 'validos_computados',
+   label: 'sobre votos a concorrentes (decide o 1º turno)'},
+  {id: 'validos', label: 'sobre votos válidos (exclui anulados)'},
   {id: 'nominal_tse', label: 'sobre votos nominais (denominador do TSE)'},
-  {id: 'validos_computados', label: 'sobre válidos computados'},
   {id: 'total_votos', label: 'sobre o total de votos'},
 ];
+const BASE_PADRAO = 'validos_computados';
 
 // Filtros persistentes na URL (§5.1).
 const st = new Proxy({}, {
@@ -220,7 +222,7 @@ function controls(ufs) {
   kids.push(el('div', {}, el('label', {for: 'base'}, 'Denominador'),
     el('select', {id: 'base', onchange: e => { st.base = e.target.value; }},
       ...BASES.map(b => el('option', {
-        value: b.id, selected: (st.base || 'validos') === b.id ? '' : null,
+        value: b.id, selected: (st.base || BASE_PADRAO) === b.id ? '' : null,
       }, b.label)))));
   c.replaceChildren(...kids);
 }
@@ -312,7 +314,7 @@ async function viewApuracao() {
   const cargo = st.cargo || '1';
   const cfg = CARGOS.find(c => c.cd === cargo);
   const tab = st.tab || 'nacional';
-  const base = st.base || 'validos';
+  const base = st.base || BASE_PADRAO;
   const abr = tab === 'municipios' ? 'mu' : (tab === 'estados' ? 'uf' : cfg.abr);
   const uf = st.uf ? `&uf=${st.uf}` : '';
   const d = await get(`/results?cargo=${cargo}&abrangencia=${abr}&base=${base}${uf}`);
@@ -329,9 +331,11 @@ async function viewApuracao() {
     out.push(cards(u, d));
     out.push(el('div', {cls: 'note'},
       el('b', {}, 'Denominador: '), d.denominador.rotulo, '. ',
-      base === 'validos'
-        ? 'É esta a base que decide maioria absoluta no primeiro turno.'
-        : 'Esta base NÃO decide maioria absoluta — troque para “votos válidos”.'
+      base === 'validos_computados'
+        ? 'É esta a base que decide maioria absoluta no primeiro turno: '
+          + 'votos válidos mais anulados e anulados sub judice.'
+        : 'Esta base NÃO decide maioria absoluta — troque para '
+          + '“votos a concorrentes”.'
     ));
     out.push(tabelaCandidatos(u, d, d.disputa.vagas,
       abr === d.disputa.abrangencia_decisoria));

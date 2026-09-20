@@ -52,6 +52,10 @@ class UnitInput:
     #: Senado: escolhas válidas por comparecente, em [0, vagas]. `None` para
     #: cargo de vaga única, onde o equivalente é `valid_rate_hat`.
     q_hat: float | None = None
+    #: `van + vansj` já contados nesta unidade. Ficam FORA da preferência
+    #: (não são voto que a totalização aceita para candidato apto) e DENTRO
+    #: do denominador da maioria absoluta ("votos a concorrentes").
+    observed_anulados: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +83,10 @@ class Forecast:
 
     candidates: list[str]
     votes: np.ndarray                 # votos finais simulados
-    valid_total: np.ndarray           # denominador da mesma simulação
+    valid_total: np.ndarray           # votos válidos da mesma simulação
+    #: Votos a concorrentes da mesma simulação: válidos + anulados + sub
+    #: judice. É o denominador da maioria absoluta, não `valid_total`.
+    concorrentes_total: np.ndarray
     observed: dict[str, int]
     seats: int
     n_sims: int
@@ -98,13 +105,24 @@ class Forecast:
                 out=np.full_like(v, np.nan, dtype=float),
                 where=self.valid_total > 0,
             )
+            conc = np.divide(
+                100.0 * v, self.concorrentes_total,
+                out=np.full_like(v, np.nan, dtype=float),
+                where=self.concorrentes_total > 0,
+            )
             out[k] = {
                 "votos": {f"q{int(q*1000):03d}": int(np.quantile(v, q))
                           for q in qs},
                 "pct_validos": {f"q{int(q*1000):03d}": float(np.quantile(share, q))
                                 for q in qs},
+                # Percentual sobre votos a concorrentes: é este que decide
+                # segundo turno, e por isso vai junto, nunca sozinho o outro.
+                "pct_concorrentes": {
+                    f"q{int(q*1000):03d}": float(np.quantile(conc, q))
+                    for q in qs},
                 "votos_mediana": int(np.median(v)),
                 "pct_validos_mediana": float(np.median(share)),
+                "pct_concorrentes_mediana": float(np.median(conc)),
             }
         return out
 
@@ -132,14 +150,18 @@ class Forecast:
         return {k: float(cont[i] / n) for i, k in enumerate(self.candidates)}
 
     def prob_maioria_absoluta(self) -> dict[str, float]:
-        """Probabilidade de passar de 50% dos VOTOS VÁLIDOS.
+        """Probabilidade de passar de 50% dos VOTOS A CONCORRENTES.
 
-        §3: ultrapassar 50% dos válidos é diferente de apenas liderar. E o
-        denominador é `vv`, não o percentual que o TSE exibe (ver
-        `denominators.py`).
+        §3: ultrapassar 50% é diferente de apenas liderar. O denominador são
+        os votos a concorrentes (`vv + van + vansj` = `vvc`), conforme o
+        leiame do TSE e a CF art. 77 §2º — NÃO `vv`, e não o percentual que o
+        TSE exibe na tela. Ver `denominators.py`.
+
+        A comparação é feita em inteiros (`votos*2 > den`) para não depender
+        de arredondamento de ponto flutuante numa decisão binária.
         """
         n = self.votes.shape[0]
-        den = np.where(self.valid_total > 0, self.valid_total, 1)
+        den = np.where(self.concorrentes_total > 0, self.concorrentes_total, 1)
         return {
             k: float(((self.votes[:, i] * 2) > den).sum() / n)
             for i, k in enumerate(self.candidates)
@@ -241,6 +263,7 @@ def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
 
     votos = np.zeros((B, K), dtype=np.int64)
     validos_totais = np.zeros(B, dtype=np.int64)
+    anulados_observados = 0
     observado = {c: 0 for c in candidates}
     pendente_ponto = 0
     unidades_sem_dado = 0
@@ -255,6 +278,7 @@ def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
                 observado[c] = observado.get(c, 0) + v
         votos += obs_linha
         validos_totais += u.observed_valid
+        anulados_observados += u.observed_anulados
 
         if u.pending_upper <= 0:
             continue
@@ -349,8 +373,14 @@ def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
         "ufs": len(ufs),
         "pendente_ponto": pendente_ponto,
     }
+    # Votos pendentes destinados a candidatos anulados NÃO são modelados: a
+    # preferência cobre só candidatos aptos (§4.7 manda tratar sensibilidade
+    # judicial em cenário separado). Por isso os anulados entram no
+    # denominador como a parcela JÁ observada, sem projeção própria.
+    mc["anulados_observados"] = anulados_observados
     fc = Forecast(
         candidates=list(candidates), votes=votos, valid_total=validos_totais,
+        concorrentes_total=validos_totais + anulados_observados,
         observed=observado, seats=seats, n_sims=B, seed=cfg.seed,
         pending_point=pendente_ponto, diagnostics=mc,
     )

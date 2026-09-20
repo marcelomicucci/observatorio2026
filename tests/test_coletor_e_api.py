@@ -225,7 +225,9 @@ def test_envelope_traz_os_metadados_obrigatorios(cliente):
                   "snapshot_set_id", "status", "quality_flags",
                   "model_version", "classification_version", "denominador"):
         assert campo in d, campo
-    assert d["denominador"]["base"] == "validos"
+    # Sem base explícita, a API responde na base que decide o 1º turno.
+    assert d["denominador"]["base"] == "validos_computados"
+    assert "maioria absoluta" in d["denominador"]["rotulo"]
 
 
 def test_ambiente_de_simulado_e_anunciado_na_resposta(cliente):

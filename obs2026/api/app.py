@@ -3,8 +3,10 @@
 Regras do contrato que o código impõe, não apenas documenta:
 
 - **Todo envelope declara o denominador.** Sem isso, `12,84%` é um número sem
-  significado: pode ser sobre válidos, sobre nominais do TSE ou sobre o total
-  de votos, e os três diferem (ver `engine/denominators.py`).
+  significado: pode ser sobre válidos, sobre votos a concorrentes, sobre
+  nominais do TSE ou sobre o total de votos, e os quatro diferem (ver
+  `engine/denominators.py`). O padrão é `validos_computados`, que é a base da
+  maioria absoluta.
 - **Ausência é `null` com motivo, nunca zero.** Município sem voto contado
   tem percentual indefinido, não 0%.
 - **Um lote por resposta.** Todos os cards de uma resposta referenciam o mesmo
@@ -240,7 +242,8 @@ def results(
     eleicao: str | None = None,
     abrangencia: str = Query("br", pattern="^(br|uf|mu)$"),
     uf: str | None = None,
-    base: DenBase = DenBase.VALIDOS,
+    # Padrão é a base que decide o primeiro turno (§3).
+    base: DenBase = DenBase.VALIDOS_COMPUTADOS,
     s: Session = Depends(get_session),
 ):
     """Resultado oficial observado. Nunca mistura projeção."""
@@ -547,7 +550,7 @@ def exports(cargo: str, eleicao: str | None = None, limite: int = 5000,
     if limite > 20000:
         raise HTTPException(400, "limite máximo de exportação é 20000 linhas")
     r = results(cargo=cargo, eleicao=eleicao, abrangencia="mu",
-                base=DenBase.VALIDOS, s=s)
+                base=DenBase.VALIDOS_COMPUTADOS, s=s)
     r["dados"] = r["dados"][:limite]
     r["export_limite"] = limite
     r["export_truncado"] = len(r["dados"]) >= limite

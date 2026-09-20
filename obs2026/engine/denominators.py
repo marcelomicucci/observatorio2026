@@ -14,10 +14,29 @@ Três números, o mesmo candidato, nenhum errado. O que seria errado é publicar
 um deles sem dizer qual é.
 
 **A regra que mais importa:** a maioria absoluta do primeiro turno se apura
-sobre **votos válidos** (`vv`), não sobre o percentual que o TSE exibe na
-tela. Um candidato pode aparecer com 49% no painel do TSE e ter passado dos
-50% dos válidos, ou o contrário. O motor usa `PCT_VALIDOS` para decidir
-segundo turno e `PCT_NOMINAL_TSE` para conferir com a fonte.
+sobre os **votos a concorrentes** — `vv + van + vansj`, que é exatamente
+`vvc`. Não é sobre `vv`, e não é sobre o percentual que o TSE exibe na tela.
+
+Fonte: o `leiame.pdf` do repositório de dados eleitorais do TSE define o
+sistema majoritário como "a maioria dos votos a concorrentes (votos válidos,
+votos anulados e votos anulados sub judice)" e diz que o segundo turno ocorre
+quando o candidato "não alcance maioria absoluta destes votos a concorrentes
+no primeiro turno (mínimo de 50% + 1)".
+
+Isso é coerente com a Constituição, art. 77 §2º: maioria absoluta de votos,
+"não computados os em branco e os nulos". Voto **anulado** de candidato não é
+voto **nulo** do eleitor — `van` e `vn` são campos distintos no EA20 — logo o
+anulado permanece no denominador.
+
+Por que isso não é detalhe: no arquivo nacional do simulado, `vv` é
+100.982.116 e `vvc` é 120.704.576. O mesmo candidato tem 9,90% sobre `vv` e
+8,28% sobre `vvc`. Usar `vv` inflaria todos os percentuais em cerca de 20% e
+poderia anunciar vitória em primeiro turno que não existe.
+
+Em 2022 a distinção ficou invisível, porque nenhum candidato a presidente
+teve votos anulados: `vvc` era igual a `vv`. Nos dados de teste de 2026 há
+candidato anulado e outro sub judice, e aí os dois divergem. Um produto
+calibrado só contra 2022 herdaria o erro sem perceber.
 """
 
 from __future__ import annotations
@@ -32,10 +51,12 @@ class Base(str, Enum):
     #: Σ vap — soma dos votos de TODOS os candidatos, inclusive anulados e
     #: sub judice. É o denominador de `pvap`. Verificado com erro zero.
     NOMINAL_TSE = "nominal_tse"
-    #: `vv` — apenas candidatos com destinação 'Válido'. Base legal da
-    #: maioria absoluta.
+    #: `vv` — apenas candidatos com destinação 'Válido'. Útil para comparar
+    #: candidatos aptos entre si; NÃO é a base da maioria absoluta.
     VALIDOS = "validos"
-    #: `vvc` — válidos + anulados + sub judice, do bloco `v`.
+    #: `vvc` — votos a concorrentes: válidos + anulados + anulados sub
+    #: judice. **É a base legal da maioria absoluta** (leiame do TSE;
+    #: CF art. 77 §2º).
     VALIDOS_COMPUTADOS = "validos_computados"
     #: `tv` — total de votos, incluindo brancos e nulos. No Senado vai a 2x o
     #: comparecimento.
@@ -46,14 +67,16 @@ class Base(str, Enum):
 
 LABELS = {
     Base.NOMINAL_TSE: "% sobre votos nominais (denominador do TSE)",
-    Base.VALIDOS: "% sobre votos válidos",
-    Base.VALIDOS_COMPUTADOS: "% sobre válidos computados",
+    Base.VALIDOS: "% sobre votos válidos (exclui anulados e sub judice)",
+    Base.VALIDOS_COMPUTADOS:
+        "% sobre votos a concorrentes (base da maioria absoluta)",
     Base.TOTAL_VOTOS: "% sobre o total de votos",
     Base.COMPARECIMENTO: "votos por 100 comparecentes",
 }
 
-#: Só esta base decide segundo turno.
-BASE_MAIORIA_ABSOLUTA = Base.VALIDOS
+#: Só esta base decide segundo turno. Ver o cabeçalho do módulo: são os
+#: "votos a concorrentes" do leiame do TSE, isto é `vvc`.
+BASE_MAIORIA_ABSOLUTA = Base.VALIDOS_COMPUTADOS
 
 
 @dataclass(frozen=True, slots=True)

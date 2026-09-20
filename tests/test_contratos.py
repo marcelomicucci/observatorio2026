@@ -339,3 +339,63 @@ def test_inteiro_recusa_lixo():
 def test_unescape_e_fold():
     assert as_text("OLHO D&APOS;AGUA") == "OLHO D'AGUA"
     assert fold("SÃO JOÃO D&APOS;ALIANÇA") == "SAO JOAO D'ALIANCA"
+
+
+# ------------------------------------------- base da maioria absoluta ----
+
+def test_base_da_maioria_absoluta_sao_os_votos_a_concorrentes():
+    """`vvc`, não `vv`.
+
+    O `leiame.pdf` do repositório de dados eleitorais do TSE define o sistema
+    majoritário como "a maioria dos votos a concorrentes (votos válidos,
+    votos anulados e votos anulados sub judice)", e diz que há segundo turno
+    quando ninguém alcança "maioria absoluta destes votos a concorrentes".
+
+    Coerente com a CF art. 77 §2º, que exclui do denominador apenas brancos e
+    nulos. Voto ANULADO de candidato não é voto NULO do eleitor: `van` e `vn`
+    são campos distintos no EA20.
+    """
+    assert D.BASE_MAIORIA_ABSOLUTA is D.Base.VALIDOS_COMPUTADOS
+    r = ea20.parse(load("ea20_br_pres.json"))
+    den = D.of(r)
+    # A identidade que define "votos a concorrentes".
+    assert den.validos_computados == r.votes.vv + r.votes.van + r.votes.vansj
+
+
+def test_usar_validos_como_base_inflaria_os_percentuais():
+    """Quantifica o erro que a correção evitou.
+
+    Não é diferença cosmética: sobre `vv` todos os percentuais sobem cerca de
+    20%, o que pode anunciar maioria absoluta que não existe.
+    """
+    r = ea20.parse(load("ea20_br_pres.json"))
+    den = D.of(r)
+    lider = max((c for c in r.cargo.candidatos if c.conta_como_valido),
+                key=lambda c: c.votos)
+    sobre_vv = den.pct(lider.votos, D.Base.VALIDOS)
+    sobre_vvc = den.pct(lider.votos, D.Base.VALIDOS_COMPUTADOS)
+    assert sobre_vv > sobre_vvc
+    assert sobre_vv / sobre_vvc == pytest.approx(1.195, abs=0.01)
+    # Nos payloads do simulado existe candidato anulado E sub judice, então
+    # as duas bases divergem de verdade.
+    assert r.votes.van > 0 and r.votes.vansj > 0
+    assert den.validos_computados > den.validos
+
+
+def test_maioria_absoluta_usa_o_denominador_corrigido():
+    """Um candidato com 55% dos válidos pode NÃO ter maioria absoluta."""
+    import numpy as np
+    from obs2026.engine import simulate as S
+    n = 200
+    votos = np.tile(np.array([[55, 45]], dtype=np.int64), (n, 1))
+    validos = np.full(n, 100, dtype=np.int64)
+    fc = S.Forecast(
+        candidates=["a", "b"], votes=votos, valid_total=validos,
+        # 100 válidos + 40 anulados = 140 votos a concorrentes.
+        concorrentes_total=validos + 40,
+        observed={"a": 55, "b": 45}, seats=1, n_sims=n, seed=0,
+        pending_point=0,
+    )
+    # 55/100 = 55% dos válidos, mas 55/140 = 39% dos concorrentes.
+    assert fc.prob_maioria_absoluta()["a"] == 0.0
+    assert fc.prob_lideranca()["a"] == 1.0      # lidera, sem vencer no 1º

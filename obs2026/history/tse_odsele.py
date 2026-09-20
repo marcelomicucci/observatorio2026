@@ -1,0 +1,341 @@
+"""Leitura dos resultados históricos do TSE (portal de dados abertos).
+
+Arquivos usados, do conjunto `resultados-AAAA`:
+
+    votacao_candidato_munzona_AAAA.zip   votos por candidato, município e zona
+    detalhe_votacao_munzona_AAAA.zip     aptos, comparecimento, abstenção,
+                                         brancos e nulos, por município e zona
+
+**Os dois são necessários.** O primeiro dá a preferência; o segundo dá o
+comparecimento e a taxa de votos válidos. O motor estima as três grandezas
+separadamente (§4.3), então faltar o `detalhe` deixa dois terços do modelo sem
+dado histórico.
+
+Cada zip traz um CSV por UF, separador `;`, codificação latin-1, com
+cabeçalho. O leitor **lê o cabeçalho real** e recusa o arquivo se faltar
+coluna exigida, em vez de assumir posição fixa: o TSE mudou o layout entre
+ciclos mais de uma vez, e um `IndexError` silencioso viraria voto errado.
+
+Nada aqui converte código para int. Município do TSE é string com zeros à
+esquerda, exatamente como em `tse/urls.py`.
+
+Três armadilhas documentadas no `leiame.pdf` que acompanha o zip, todas
+capazes de corromper a base em silêncio:
+
+1. **Sentinelas negativas.** `#NULO` vira **-1** e `#NE` vira **-3** nos
+   campos numéricos. São marcadores de ausência, não contagens. Somá-los
+   produz voto negativo e um total menor que o real. Aqui viram `None`, e a
+   linha é descartada com contagem visível — nunca convertida para zero, que
+   é afirmação diferente de "desconhecido".
+
+2. **`_BRASIL.csv` é a concatenação das UFs.** O zip de 2022 traz `_BR.csv`
+   (38 MB, só Presidente, `SG_UE='BR'`) e `_BRASIL.csv` (4,3 GB, Governador e
+   deputados de todas as UFs — o mesmo conteúdo dos arquivos por UF). Ler os
+   dois soma tudo duas vezes. Este módulo **recusa** `_BRASIL.csv`.
+
+3. **`VT` é pseudo-UF de voto em trânsito.** O leiame avisa que `SG_UF` pode
+   trazer `BR`, `VT` ou `ZZ` além das unidades da federação. `VT` não é
+   território: agregá-lo como UF inventaria uma 28ª unidade. A marca
+   equivalente por linha é `ST_VOTO_EM_TRANSITO`.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterator
+
+from ..tse.parsers.common import as_text, fold
+
+#: Codificação dos CSV do portal. O TSE publica em latin-1, não UTF-8.
+ENCODING = "latin-1"
+DELIM = ";"
+
+#: Colunas exigidas em `votacao_candidato_munzona`. A lista é o contrato: se
+#: uma sumir, a importação falha com o nome dela, não com erro obscuro.
+COLS_CANDIDATO = (
+    "ANO_ELEICAO", "NR_TURNO", "CD_ELEICAO", "SG_UF", "SG_UE", "CD_MUNICIPIO",
+    "NM_MUNICIPIO", "NR_ZONA", "CD_CARGO", "DS_CARGO", "SQ_CANDIDATO",
+    "NR_CANDIDATO", "NM_URNA_CANDIDATO", "NR_PARTIDO", "SG_PARTIDO",
+    "ST_VOTO_EM_TRANSITO", "QT_VOTOS_NOMINAIS", "NM_TIPO_DESTINACAO_VOTOS",
+    "DS_SIT_TOT_TURNO",
+)
+
+#: Colunas exigidas em `detalhe_votacao_munzona`.
+COLS_DETALHE = (
+    "ANO_ELEICAO", "NR_TURNO", "CD_ELEICAO", "SG_UF", "CD_MUNICIPIO",
+    "NR_ZONA", "CD_CARGO", "QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
+    "QT_VOTOS_NOMINAIS", "QT_VOTOS_BRANCOS", "QT_VOTOS_NULOS",
+)
+
+#: Cargos de interesse, com o mesmo código do EA11/EA20.
+CARGOS = {"1": "presidente", "3": "governador", "5": "senador"}
+
+#: Sentinelas de ausência nos campos numéricos (leiame do TSE).
+#: -1 = #NULO (em branco no banco), -3 = #NE (não registrado naquele ano).
+SENTINELAS_NUM = frozenset({-1, -3})
+SENTINELAS_TXT = frozenset({"#NULO", "#NE"})
+
+#: Membro que duplica os arquivos por UF. Nunca ler junto com eles.
+MEMBRO_DUPLICADO = "_BRASIL.CSV"
+
+#: Valores de `SG_UF` que não são território.
+UF_NAO_TERRITORIAL = frozenset({"VT"})
+
+
+class HistoryError(RuntimeError):
+    pass
+
+
+def num(valor, campo: str = "?") -> int | None:
+    """Inteiro do repositório histórico, com sentinelas tratadas.
+
+    Devolve `None` para `#NULO`/`#NE` e para -1/-3. Nunca devolve zero no
+    lugar de ausência: zero voto e voto desconhecido são afirmações
+    diferentes, e confundi-las é o jeito mais fácil de baixar um total sem
+    perceber.
+    """
+    if valor is None:
+        return None
+    s = str(valor).strip().strip('"')
+    if not s or s.upper() in SENTINELAS_TXT:
+        return None
+    try:
+        n = int(s)
+    except ValueError:
+        raise HistoryError(
+            f"{campo}: esperado inteiro, veio {valor!r}"
+        ) from None
+    return None if n in SENTINELAS_NUM else n
+
+
+@dataclass(frozen=True, slots=True)
+class VotoHistorico:
+    """Uma linha de votação por candidato, município e zona."""
+
+    ano: int
+    turno: str
+    cd_eleicao: str
+    uf: str
+    cd_municipio: str        # string: zeros à esquerda importam
+    nm_municipio: str
+    zona: str
+    cargo: str
+    sq_candidato: str
+    nr_candidato: str
+    nm_urna: str
+    nr_partido: str
+    sg_partido: str
+    votos: int
+    #: Voto em trânsito. `SG_UF='VT'` e esta marca dizem a mesma coisa: a
+    #: linha é real, mas não pertence ao território onde o eleitor reside.
+    em_transito: bool = False
+    #: Equivalente histórico do `dvt` do EA20.
+    destinacao: str = ""
+    #: `DS_SIT_TOT_TURNO`. Como no EA20, é status da disputa inteira,
+    #: replicado em toda linha de município e zona — nunca status local.
+    situacao: str = ""
+
+    @property
+    def unit(self) -> str:
+        """Chave da unidade. Inclui o município porque zona não forma árvore
+        territorial simples (§4.1)."""
+        return f"{self.uf}:{self.cd_municipio}:{self.zona}"
+
+    @property
+    def territorial(self) -> bool:
+        return self.uf.upper() not in UF_NAO_TERRITORIAL
+
+
+@dataclass(frozen=True, slots=True)
+class DetalheHistorico:
+    """Comparecimento e destinação de voto de uma unidade."""
+
+    ano: int
+    turno: str
+    cd_eleicao: str
+    uf: str
+    cd_municipio: str
+    zona: str
+    cargo: str
+    aptos: int
+    comparecimento: int
+    abstencoes: int
+    nominais: int
+    brancos: int
+    nulos: int
+
+    @property
+    def unit(self) -> str:
+        return f"{self.uf}:{self.cd_municipio}:{self.zona}"
+
+    @property
+    def turnout(self) -> float | None:
+        """Comparecimento sobre aptos.
+
+        Atenção à diferença em relação ao ao vivo: aqui o denominador é o
+        eleitorado da unidade inteira, porque a eleição acabou e todas as
+        seções foram apuradas. No ao vivo, o denominador é o eleitorado das
+        seções APURADAS (§4.3) — os dois só coincidem em 100%.
+        """
+        return (self.comparecimento / self.aptos) if self.aptos else None
+
+    @property
+    def taxa_valida(self) -> float | None:
+        total = self.nominais + self.brancos + self.nulos
+        return (self.nominais / total) if total else None
+
+
+def _abrir(caminho: Path) -> zipfile.ZipFile:
+    try:
+        return zipfile.ZipFile(caminho)
+    except zipfile.BadZipFile as exc:
+        raise HistoryError(
+            f"{caminho.name} nao e um zip valido. Se o download ainda esta "
+            "em andamento, o diretorio central do zip so aparece no fim do "
+            "arquivo — aguarde terminar."
+        ) from exc
+
+
+def membros(caminho: Path, uf: str | None = None) -> list[str]:
+    """CSV dentro do zip, opcionalmente filtrando por UF.
+
+    `_BRASIL.csv` é sempre excluído: ele repete os arquivos por UF, e somar
+    os dois dobraria todos os votos de Governador.
+    """
+    with _abrir(caminho) as z:
+        nomes = [n for n in z.namelist() if n.lower().endswith(".csv")]
+    nomes = [n for n in nomes if not n.upper().endswith(MEMBRO_DUPLICADO)]
+    if uf:
+        alvo = f"_{uf.upper()}.CSV"
+        nomes = [n for n in nomes if n.upper().endswith(alvo)]
+    return sorted(nomes)
+
+
+def _linhas(caminho: Path, membro: str,
+            exigidas: tuple[str, ...]) -> Iterator[dict]:
+    with _abrir(caminho) as z:
+        with z.open(membro) as fh:
+            texto = io.TextIOWrapper(fh, encoding=ENCODING, newline="")
+            rd = csv.DictReader(texto, delimiter=DELIM)
+            campos = {(c or "").strip().upper() for c in (rd.fieldnames or [])}
+            faltando = [c for c in exigidas if c not in campos]
+            if faltando:
+                raise HistoryError(
+                    f"{caminho.name}/{membro}: colunas ausentes {faltando}. "
+                    "Layout do TSE mudou; revise COLS_* antes de importar."
+                )
+            for linha in rd:
+                yield {(k or "").strip().upper(): v
+                       for k, v in linha.items() if k}
+
+
+def ler_votos(caminho: Path, uf: str, *,
+              cargos: tuple[str, ...] = ("1", "3", "5"),
+              turno: str = "1",
+              incluir_transito: bool = True) -> Iterator[VotoHistorico]:
+    """Votos por candidato de uma UF, filtrando cargo e turno.
+
+    `incluir_transito=False` remove as linhas de voto em trânsito. Esses
+    votos existem e contam no total da disputa; o que eles não fazem é
+    pertencer ao município onde o eleitor mora. Para estimar preferência
+    territorial, removê-los é o correto; para conferir totais, não.
+    """
+    for membro in membros(caminho, uf):
+        for r in _linhas(caminho, membro, COLS_CANDIDATO):
+            if r["CD_CARGO"] not in cargos or r["NR_TURNO"] != turno:
+                continue
+            transito = str(r.get("ST_VOTO_EM_TRANSITO", "N")).strip() == "S"
+            if transito and not incluir_transito:
+                continue
+            votos = num(r["QT_VOTOS_NOMINAIS"], "QT_VOTOS_NOMINAIS")
+            if votos is None:
+                continue                      # sentinela: ausência, não zero
+            ano = num(r["ANO_ELEICAO"], "ANO_ELEICAO")
+            if ano is None:
+                continue
+            yield VotoHistorico(
+                ano=ano, turno=r["NR_TURNO"], cd_eleicao=r["CD_ELEICAO"],
+                uf=r["SG_UF"].strip().lower(),
+                cd_municipio=r["CD_MUNICIPIO"].strip(),
+                nm_municipio=as_text(r["NM_MUNICIPIO"]),
+                zona=r["NR_ZONA"].strip(), cargo=r["CD_CARGO"],
+                sq_candidato=r["SQ_CANDIDATO"].strip(),
+                nr_candidato=r["NR_CANDIDATO"].strip(),
+                nm_urna=as_text(r["NM_URNA_CANDIDATO"]),
+                nr_partido=r["NR_PARTIDO"].strip(),
+                sg_partido=as_text(r["SG_PARTIDO"]),
+                votos=votos, em_transito=transito,
+                destinacao=as_text(r.get("NM_TIPO_DESTINACAO_VOTOS")),
+                situacao=as_text(r.get("DS_SIT_TOT_TURNO")),
+            )
+
+
+def ler_detalhe(caminho: Path, uf: str, *,
+                cargos: tuple[str, ...] = ("1", "3", "5"),
+                turno: str = "1") -> Iterator[DetalheHistorico]:
+    obrig = ("QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
+             "QT_VOTOS_NOMINAIS", "QT_VOTOS_BRANCOS", "QT_VOTOS_NULOS")
+    for membro in membros(caminho, uf):
+        for r in _linhas(caminho, membro, COLS_DETALHE):
+            if r["CD_CARGO"] not in cargos or r["NR_TURNO"] != turno:
+                continue
+            campos = {k: num(r[k], k) for k in obrig}
+            if any(v is None for v in campos.values()):
+                continue                      # sentinela em campo obrigatório
+            ano = num(r["ANO_ELEICAO"], "ANO_ELEICAO")
+            if ano is None:
+                continue
+            yield DetalheHistorico(
+                ano=ano, turno=r["NR_TURNO"], cd_eleicao=r["CD_ELEICAO"],
+                uf=r["SG_UF"].strip().lower(),
+                cd_municipio=r["CD_MUNICIPIO"].strip(),
+                zona=r["NR_ZONA"].strip(), cargo=r["CD_CARGO"],
+                aptos=campos["QT_APTOS"],
+                comparecimento=campos["QT_COMPARECIMENTO"],
+                abstencoes=campos["QT_ABSTENCOES"],
+                nominais=campos["QT_VOTOS_NOMINAIS"],
+                brancos=campos["QT_VOTOS_BRANCOS"],
+                nulos=campos["QT_VOTOS_NULOS"],
+            )
+
+
+def inspecionar(caminho: Path) -> dict:
+    """Descreve o arquivo sem carregá-lo inteiro.
+
+    Existe para ser o primeiro comando rodado sobre um zip novo: diz quantos
+    membros há, qual o cabeçalho real e se as colunas exigidas estão lá —
+    antes de gastar minutos numa importação que vai falhar no fim.
+    """
+    with _abrir(caminho) as z:
+        todos = [n for n in z.namelist() if n.lower().endswith(".csv")]
+        usaveis = [n for n in todos
+                   if not n.upper().endswith(MEMBRO_DUPLICADO)]
+        outros = [n for n in z.namelist() if not n.lower().endswith(".csv")]
+        total = sum(i.file_size for i in z.infolist())
+        if not usaveis:
+            raise HistoryError(f"{caminho.name}: nenhum CSV utilizavel no zip")
+        with z.open(sorted(usaveis)[0]) as fh:
+            texto = io.TextIOWrapper(fh, encoding=ENCODING, newline="")
+            rd = csv.reader(texto, delimiter=DELIM)
+            header = next(rd)
+            amostra = next(rd, [])
+    campos = [c.strip().upper() for c in header]
+    return {
+        "arquivo": caminho.name,
+        "bytes_zip": caminho.stat().st_size,
+        "bytes_descompactado": total,
+        "csvs": len(todos),
+        "csvs_usaveis": len(usaveis),
+        "ignorados": [n for n in todos if n not in usaveis],
+        "nao_csv": outros,
+        "primeiro": sorted(usaveis)[0],
+        "colunas": campos,
+        "n_colunas": len(campos),
+        "amostra": dict(zip(campos, amostra)),
+        "falta_para_candidato": [c for c in COLS_CANDIDATO if c not in campos],
+        "falta_para_detalhe": [c for c in COLS_DETALHE if c not in campos],
+    }
