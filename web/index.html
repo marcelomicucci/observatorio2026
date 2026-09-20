@@ -233,6 +233,31 @@ const st = new Proxy({}, {
 });
 const cargoAtual = () => CARGOS.find(c => c.cd === (st.cargo || '1'));
 
+/* Telão: esta janela conduz a projeção. BroadcastChannel liga as duas
+ * janelas do mesmo navegador sem passar pelo servidor, então trocar de cargo
+ * aqui muda a projeção na hora. Se esta janela fechar, o telão mantém o
+ * último recorte e segue atualizando sozinho. */
+let canalTelao = null;
+try { canalTelao = new BroadcastChannel('observatorio-telao'); }
+catch (e) { /* navegador sem suporte: o telão fica autônomo */ }
+
+function conduzirTelao() {
+  if (!canalTelao) return;
+  canalTelao.postMessage({tipo: 'recorte', recorte: {
+    cargo: st.cargo || '1',
+    uf: st.uf || null,
+    camada: st.camada || 'definicao',
+  }});
+}
+
+function abrirTelao() {
+  const q = new URLSearchParams({
+    cargo: st.cargo || '1', camada: st.camada || 'definicao',
+  });
+  if (st.uf) q.set('uf', st.uf);
+  window.open('/telao?' + q, 'telao-observatorio');
+}
+
 async function get(p) {
   const r = await fetch(API + p);
   if (!r.ok) throw new Error(`${r.status} em ${p}`);
@@ -275,7 +300,14 @@ function navegacao() {
     ...VISOES.map(v => el('button', {
       role: 'tab', 'aria-selected': String(v.id === (st.visao || 'resultado')),
       onclick: () => { st.visao = v.id; },
-    }, v.nome)));
+    }, v.nome)),
+    el('button', {
+      style: 'margin-left:auto',
+      title: 'Abre a tela de projeção numa janela separada. Arraste para o '
+           + 'projetor e deixe em tela cheia; esta janela passa a conduzi-la.',
+      onclick: abrirTelao,
+    }, 'Telão ↗'));
+  conduzirTelao();
 }
 
 function rodape(d) {
@@ -514,7 +546,7 @@ async function viewMapa() {
   (async () => {
     try {
       const r = await MAPA.desenhar(caixa, m.dados, {
-        malha: m.malha, camada: camadaId,
+        malha: m.malha, camada: camadaId, recorte: m.recorte_ibge,
         largura: 760, altura: abr === 'mu' ? 640 : 540,
         aoClicar: d => {
           if (abr === 'uf' && cargoAtual().abr === 'uf') {

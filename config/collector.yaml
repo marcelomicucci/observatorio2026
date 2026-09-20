@@ -16,6 +16,11 @@ rate:
   max_rps: 20.0          # teto global compartilhado por TODOS os processos do IP
   burst: 20
   jitter_ms: [0, 120]
+  # Requisicoes simultaneas. Sem concorrencia o teto acima e decorativo: com
+  # jitter medio de 60 ms mais latencia de rede, uma busca sequencial alcanca
+  # cerca de 3 req/s, nao 20 — medido no simulado. Quem limita a taxa e o
+  # token bucket; os trabalhadores so mantem o balde vazio.
+  max_workers: 24
   connect_timeout_s: 5.0
   read_timeout_s: 20.0
 

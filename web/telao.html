@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telão — Observatório Eleitoral 2026</title>
+<style>
+/* Tela de projeção. Rota separada, não um "modo" do painel: a densidade de
+   informação é outra. O que se lê a 40 cm não se lê a 4 m.
+ *
+ * Decisões que vêm dessa distância:
+ *   - tudo dimensionado em vw, para preencher qualquer projetor
+ *   - cinco números no máximo por tela; o resto é o mapa
+ *   - nada clicável: o controle está no notebook
+ *   - o aviso de ambiente ocupa faixa inteira, porque num telão um erro de
+ *     leitura vira manchete
+ *   - horário da fonte sempre visível (§5.1), mesmo aqui
+ */
+:root{
+  --bg:#0b0e13; --fg:#f2f5f9; --muted:#8e99a8; --line:#222834;
+  --panel:#141922; --acento:#5aa2f0; --ok:#42c98a; --alerta:#f5b544;
+  /* Projeção tem cor própria. No telão, a distância apaga legendas
+     pequenas; se apurado e projetado compartilhassem cor, alguém leria
+     estimativa como resultado. */
+  --proj:#b98ae8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+ font:400 16px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+ overflow:hidden}
+.tela{height:100vh;display:flex;flex-direction:column;padding:1.6vh 1.8vw}
+
+.faixa{background:#f5b544;color:#2a1a00;font-weight:800;text-align:center;
+ padding:.7vh 0;font-size:1.5vw;letter-spacing:.06em;border-radius:.5vw;
+ margin-bottom:1.2vh;text-transform:uppercase}
+.faixa.oficial{display:none}
+
+.cabeca{display:flex;align-items:baseline;gap:1.4vw;flex-wrap:wrap;
+ margin-bottom:1vh}
+.cabeca h1{font-size:2.6vw;margin:0;font-weight:750;letter-spacing:-.02em}
+.cabeca .onde{font-size:1.5vw;color:var(--muted)}
+.cabeca .vagas{font-size:1.2vw;color:var(--acento);border:1px solid var(--acento);
+ border-radius:2vw;padding:.2vh .8vw}
+
+.corpo{flex:1;display:grid;grid-template-columns:1.05fr .95fr;gap:1.6vw;
+ min-height:0}
+.mapa{background:var(--panel);border:1px solid var(--line);border-radius:1vw;
+ padding:.6vw;display:flex;align-items:center;justify-content:center;
+ min-height:0;overflow:hidden}
+.mapa svg{max-height:100%}
+.lado{display:flex;flex-direction:column;gap:1.1vh;min-height:0}
+
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:.8vw}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:.8vw;
+ padding:.9vh 1vw}
+.kpi .k{font-size:.85vw;text-transform:uppercase;letter-spacing:.09em;
+ color:var(--muted)}
+.kpi .v{font-size:2.5vw;font-weight:700;font-variant-numeric:tabular-nums;
+ letter-spacing:-.03em;line-height:1.05}
+.kpi .n{font-size:.85vw;color:var(--muted)}
+
+.lista{flex:1;display:flex;flex-direction:column;gap:.9vh;min-height:0;
+ overflow:hidden}
+.linha{background:var(--panel);border:1px solid var(--line);border-radius:.8vw;
+ padding:.7vh 1.1vw;display:flex;align-items:center;gap:1vw}
+.linha.topo{border-color:var(--acento)}
+.linha.definido{border-color:var(--ok)}
+.linha .foto{width:4.2vw;height:4.2vw;border-radius:50%;object-fit:cover;
+ flex:0 0 auto;background:#1d2430;border:1px solid var(--line)}
+.linha .num{width:4.2vw;height:4.2vw;border-radius:50%;flex:0 0 auto;
+ display:flex;align-items:center;justify-content:center;background:#1d2430;
+ border:1px solid var(--line);font-size:1.7vw;font-weight:800;
+ color:var(--muted);font-variant-numeric:tabular-nums}
+.linha .info{flex:1;min-width:0}
+.linha .nome{font-size:1.6vw;font-weight:700;letter-spacing:-.02em;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15}
+.linha .part{font-size:1vw;color:var(--muted)}
+.linha .barra{height:.7vh;background:#1d2430;border-radius:1vh;margin-top:.5vh;
+ overflow:hidden}
+.linha .barra i{display:block;height:100%;background:var(--acento)}
+.linha.definido .barra i{background:var(--ok)}
+.linha .pct{font-size:2.6vw;font-weight:800;font-variant-numeric:tabular-nums;
+ letter-spacing:-.03em;text-align:right;min-width:6vw}
+.linha .abs{font-size:.9vw;color:var(--muted);text-align:right}
+.linha .proj{font-size:1.05vw;color:var(--proj);text-align:right;
+ font-variant-numeric:tabular-nums;white-space:nowrap}
+.linha .barra i.p{background:var(--proj);opacity:.55}
+.linha .barra{position:relative}
+.linha .barra i.p{position:absolute;top:0;left:0}
+.tira{display:flex;align-items:center;gap:.8vw;background:#241a33;
+ border:1px solid #3d2b55;color:#e0cdf5;border-radius:.7vw;
+ padding:.6vh 1vw;font-size:1.05vw}
+.tira .pt{width:1.1vw;height:1.1vw;border-radius:.3vw;background:var(--proj);
+ flex:0 0 auto}
+.selo{font-size:.85vw;padding:.15vh .7vw;border-radius:2vw;
+ border:1px solid var(--ok);color:var(--ok);white-space:nowrap}
+
+.pe{display:flex;justify-content:space-between;align-items:center;
+ gap:1vw;margin-top:1vh;font-size:1vw;color:var(--muted);flex-wrap:wrap}
+.pe b{color:var(--fg);font-weight:600}
+.aviso{background:#3a2a08;border:1px solid #6b4d10;color:#f7d79a;
+ border-radius:.7vw;padding:.7vh 1vw;font-size:1.05vw;margin-top:.8vh}
+.vazio{grid-column:1/-1;display:flex;align-items:center;justify-content:center;
+ font-size:1.6vw;color:var(--muted);text-align:center;padding:4vh}
+.pisca{animation:p 2.4s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.55}}
+@media (max-aspect-ratio:1/1){
+  .corpo{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="tela">
+  <div class="faixa" id="faixa"></div>
+  <div class="cabeca">
+    <h1 id="titulo">Observatório Eleitoral 2026</h1>
+    <span class="onde" id="onde"></span>
+    <span class="vagas" id="vagas" hidden></span>
+  </div>
+  <div class="corpo" id="corpo">
+    <div class="vazio">carregando…</div>
+  </div>
+  <div class="pe">
+    <span id="fonte"></span>
+    <span id="atualizacao"></span>
+  </div>
+</div>
+
+<script src="/mapa.js"></script>
+<script>
+const API = '/api/v1';
+const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
+const pct = (v, d = 1) => v == null ? '—'
+  : v.toFixed(d).replace('.', ',') + '%';
+const brt = s => s ? new Date(s).toLocaleTimeString('pt-BR',
+  {timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit',
+   second: '2-digit'}) : '—';
+const el = (t, a = {}, ...k) => {
+  const n = document.createElement(t);
+  for (const [x, v] of Object.entries(a)) {
+    if (v == null) continue;
+    if (x === 'cls') n.className = v; else n.setAttribute(x, v);
+  }
+  for (const c of k.flat()) if (c != null)
+    n.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return n;
+};
+const poe = (a, ...k) => a.replaceChildren(...k.flat().filter(x => x != null));
+
+const CARGOS = {
+  '1': {nome: 'Presidente', abr: 'br', vagas: 1},
+  '3': {nome: 'Governador', abr: 'uf', vagas: 1},
+  '5': {nome: 'Senador', abr: 'uf', vagas: 2},
+};
+
+/* O telão é conduzido pelo notebook. BroadcastChannel liga as duas janelas
+ * do mesmo navegador sem passar pelo servidor: trocar de cargo no controle
+ * muda o telão na hora.
+ *
+ * Se a janela de controle fechar, o telão NÃO para: mantém o último recorte
+ * (guardado em localStorage) e segue atualizando os dados sozinho. Numa noite
+ * de apuração, tela preta por fechar a janela errada é inaceitável. */
+let recorte = {cargo: '1', uf: null, camada: 'definicao'};
+try {
+  const g = localStorage.getItem('telao-recorte');
+  if (g) recorte = {...recorte, ...JSON.parse(g)};
+} catch (e) { /* armazenamento indisponível: segue com o padrão */ }
+
+const p = new URLSearchParams(location.search);
+if (p.get('cargo')) recorte.cargo = p.get('cargo');
+if (p.get('uf')) recorte.uf = p.get('uf');
+if (p.get('camada')) recorte.camada = p.get('camada');
+
+let canal = null;
+try {
+  canal = new BroadcastChannel('observatorio-telao');
+  canal.onmessage = ev => {
+    if (!ev.data || ev.data.tipo !== 'recorte') return;
+    recorte = {...recorte, ...ev.data.recorte};
+    try {
+      localStorage.setItem('telao-recorte', JSON.stringify(recorte));
+    } catch (e) { /* segue sem persistir */ }
+    carregar();
+  };
+} catch (e) { /* navegador sem BroadcastChannel: telão fica autônomo */ }
+
+async function get(u) {
+  const r = await fetch(API + u);
+  if (!r.ok) throw new Error(`${r.status} em ${u}`);
+  return r.json();
+}
+
+function kpi(k, v, n) {
+  return el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, k),
+            el('div', {cls: 'v'}, v), el('div', {cls: 'n'}, n));
+}
+
+function linha(c, i, maxPct, estados, projecoes) {
+  const o = c.oficial, e = c.enriquecimento;
+  const pj = projecoes && projecoes[o.sqcand];
+  const st = estados[o.sqcand];
+  const definido = st && (st.estado === 'matematicamente_eleito'
+                       || st.estado === 'matematicamente_no_segundo_turno');
+  const retrato = e && e.foto_url
+    ? el('img', {cls: 'foto', src: e.foto_url, alt: ''})
+    : el('div', {cls: 'num'}, o.numero);
+  const larg = maxPct > 0 && o.pct != null ? 100 * o.pct / maxPct : 0;
+  return el('div', {
+      cls: 'linha' + (i === 0 ? ' topo' : '') + (definido ? ' definido' : ''),
+    },
+    retrato,
+    el('div', {cls: 'info'},
+      el('div', {cls: 'nome'}, (e && e.nome) || o.nome_urna),
+      el('div', {cls: 'part'}, o.partido,
+        o.eleito_segundo_tse === true
+          ? [' ', el('span', {cls: 'selo'}, 'eleito')]
+          : definido ? [' ', el('span', {cls: 'selo'},
+              st.estado === 'matematicamente_eleito'
+                ? 'matematicamente definido' : '2º turno garantido')]
+          : null),
+      el('div', {cls: 'barra'},
+        // Barra da projeção primeiro, por baixo: a do apurado cresce sobre
+        // ela conforme o voto entra.
+        pj ? el('i', {cls: 'p', style: `width:${Math.max(0, Math.min(100,
+          maxPct > 0 ? 100 * pj.projecao.pct_mediana / maxPct : 0))}%`}) : null,
+        el('i', {style: `width:${Math.max(0, Math.min(100, larg))}%`}))),
+    el('div', {},
+      el('div', {cls: 'pct'}, o.pct == null ? 'n/d' : pct(o.pct, 2)),
+      el('div', {cls: 'abs'}, fmt(o.votos)),
+      pj ? el('div', {cls: 'proj'},
+        'proj. ' + pct(pj.projecao.pct_mediana, 1)
+        + ' (' + pj.projecao.pct_q100.toFixed(1).replace('.', ',')
+        + '–' + pj.projecao.pct_q900.toFixed(1).replace('.', ',') + ')')
+        : null));
+}
+
+async function carregar() {
+  const cargo = CARGOS[recorte.cargo] || CARGOS['1'];
+  const uf = cargo.abr === 'uf' ? recorte.uf : null;
+  const corpo = document.getElementById('corpo');
+
+  document.getElementById('titulo').textContent = cargo.nome;
+  document.getElementById('onde').textContent =
+    cargo.abr === 'br' ? 'Brasil · inclui o exterior'
+    : (uf ? uf.toUpperCase() : 'escolha uma UF no controle');
+  const tv = document.getElementById('vagas');
+  tv.hidden = cargo.vagas < 2;
+  tv.textContent = `${cargo.vagas} vagas`;
+
+  if (cargo.abr === 'uf' && !uf) {
+    poe(corpo, el('div', {cls: 'vazio'},
+      `${cargo.nome} é decidido em cada estado. Escolha a UF na tela de `
+      + 'controle.'));
+    return;
+  }
+
+  try {
+    const qs = `cargo=${recorte.cargo}` + (uf ? `&uf=${uf}` : '');
+    const [res, cands, def, mapa, proj] = await Promise.all([
+      get(`/results?abrangencia=${cargo.abr}&${qs}`),
+      get(`/candidates?${qs}`),
+      get(`/decided?${qs}`).catch(() => null),
+      get(`/map-layers?cargo=${recorte.cargo}&abrangencia=`
+          + (cargo.abr === 'br' ? 'uf' : 'mu') + (uf ? `&uf=${uf}` : ''))
+        .catch(() => null),
+      // Projeção é acessória no telão: se falhar, o apurado continua.
+      get(`/projection?${qs}&sims=1200&registrar=false`).catch(() => null),
+    ]);
+
+    const faixa = document.getElementById('faixa');
+    if (res.ambiente.aviso) {
+      faixa.textContent = res.ambiente.aviso;
+      faixa.className = 'faixa pisca';
+    } else {
+      faixa.className = 'faixa oficial';
+    }
+
+    if (!res.dados.length) {
+      poe(corpo, el('div', {cls: 'vazio'},
+        res.status_motivo || 'sem dados para este recorte'));
+      return;
+    }
+
+    const u = res.dados[0];
+    const dfn = def && def.dados && def.dados[0];
+    const estados = {};
+    if (dfn) for (const c of dfn.candidatos) estados[c.sqcand] = c;
+
+    const lista = (((cands.dados || [])[0] || {}).candidatos || [])
+      .slice().sort((a, b) => b.oficial.votos - a.oficial.votos);
+    const projecoes = {};
+    if (proj && proj.dados) for (const x of proj.dados) projecoes[x.sqcand] = x;
+    // A escala das barras considera apurado E projetado: senão a barra da
+    // projeção estoura quando ela supera o líder atual.
+    const maxPct = Math.max(
+      ...lista.map(c => c.oficial.pct || 0),
+      ...Object.values(projecoes).map(x => x.projecao.pct_mediana || 0), 0);
+    // Num telão cabem poucas linhas legíveis, e linha cortada pela metade
+    // parece defeito. Com a linha de projeção cada cartão fica mais alto,
+    // então o corte é conservador: no Senado mostra até o 5º, que é o
+    // primeiro fora das duas vagas — a informação que decide a leitura.
+    const quantas = cargo.vagas > 1 ? 5 : 4;
+
+    const e = u.eleitorado;
+    const cob = e.total ? 100 * e.apurado / e.total : null;
+    const lado = el('div', {cls: 'lado'},
+      el('div', {cls: 'kpis'},
+        kpi('Apurado', pct(cob, 2), `${fmt(e.apurado)} eleitores`),
+        kpi('Comparecimento', pct(e.comparecimento_pct, 1),
+            'do eleitorado apurado'),
+        kpi(u.pendente.max > 0 ? 'Faltam entrar' : 'Situação',
+            u.pendente.max > 0 ? fmt(u.pendente.max)
+            : (dfn && dfn.disputa_matematicamente_definida ? 'definida'
+               : dfn && dfn.segundo_turno_matematicamente_definido
+                 ? '2º turno' : 'em aberto'),
+            u.pendente.max > 0 ? 'eleitores no máximo'
+            : (u.andamento === 'f' ? 'apuração encerrada' : 'em andamento'))),
+      el('div', {cls: 'lista'},
+        ...lista.slice(0, quantas).map((c, i) =>
+          linha(c, i, maxPct, estados, projecoes))),
+      proj && proj.dados
+        ? el('div', {cls: 'tira'}, el('span', {cls: 'pt'}),
+            proj.publicavel
+              ? `Projeção ${proj.modelo.toUpperCase()} · mediana e intervalo `
+                + `de 80% · ${fmt(proj.n_sims)} simulações`
+              : 'Cenário exploratório, não previsão publicada: o gate '
+                + 'estatístico ainda não passou, e nenhuma probabilidade de '
+                + 'vitória é divulgada.')
+        : null,
+      dfn && dfn.sub_judice_em_jogo
+        ? el('div', {cls: 'aviso'},
+            'Definição matemática suspensa: há votos sub judice em jogo.')
+        : null);
+
+    const caixaMapa = el('div', {cls: 'mapa'});
+    poe(corpo, caixaMapa, lado);
+
+    if (mapa && mapa.dados && mapa.dados.length) {
+      MAPA.desenhar(caixaMapa, mapa.dados, {
+        malha: mapa.malha, camada: recorte.camada || 'definicao',
+        recorte: mapa.recorte_ibge, largura: 900, altura: 900,
+      }).catch(() => poe(caixaMapa,
+        el('div', {cls: 'vazio'}, 'mapa indisponível')));
+    } else {
+      poe(caixaMapa, el('div', {cls: 'vazio'}, 'sem mapa para este recorte'));
+    }
+
+    // Horário da fonte e da captura, sempre — inclusive no telão (§5.1).
+    document.getElementById('fonte').replaceChildren(
+      document.createTextNode('Fonte TSE: '),
+      el('b', {}, brt(res.source_generated_at)),
+      document.createTextNode('  ·  capturado ' + brt(res.captured_at)),
+      document.createTextNode('  ·  ' + res.denominador.rotulo));
+  } catch (err) {
+    poe(corpo, el('div', {cls: 'vazio'}, 'erro: ' + err.message));
+  }
+  document.getElementById('atualizacao').textContent =
+    'atualizado às ' + new Date().toLocaleTimeString('pt-BR',
+      {timeZone: 'America/Sao_Paulo'});
+}
+
+carregar();
+// Atualização própria: o telão não depende de ninguém mexer no controle.
+setInterval(carregar, 30000);
+</script>
+</body>
+</html>

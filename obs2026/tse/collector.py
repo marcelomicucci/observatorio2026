@@ -282,32 +282,79 @@ class Collector:
 
     # -- consumo da fila --------------------------------------------------
 
+    async def _consumir(self, t: Target) -> None:
+        """Captura e processa um alvo. Erro de um não derruba os outros."""
+        fetch, payload, ref = await self._capture(t)
+        if t.kind == "ea20":
+            if t.abr == "mu":
+                self.stats.result_fetches += 1
+            else:
+                self.stats.control_fetches += 1
+        if payload is None:
+            return
+        try:
+            result = ea20_parser.parse(payload)
+        except ParseError as exc:
+            self.stats.parse_errors += 1
+            log.error("EA20 fora de contrato em %s: %s", t.url, exc)
+            return
+        if self.on_result:
+            self.on_result(result, ref, t)
+
     async def drain(self, budget: int) -> int:
-        """Consome até `budget` itens da fila."""
-        done = 0
-        while done < budget:
+        """Consome até `budget` itens da fila, em paralelo.
+
+        **Por que paralelo.** A primeira versão buscava em sequência, e isso
+        tornava o teto de 20 req/s decorativo: com jitter médio de 60 ms mais
+        a latência da rede, o máximo alcançável era cerca de 3 req/s. Medido
+        no simulado: 602 capturas em vários minutos, quando a conta de
+        orçamento previa 14 minutos para as 16.897 da varredura completa. Na
+        prática seriam horas.
+
+        Quem limita a taxa é o token bucket, não a ausência de concorrência.
+        Trabalhadores simultâneos apenas mantêm o balde vazio; o teto
+        continua sendo exatamente o configurado, e o limite do TSE segue
+        respeitado.
+
+        `BlockedError` de qualquer trabalhador interrompe o lote inteiro: o
+        bloqueio é por IP, então insistir com os outros só agravaria.
+        """
+        alvos: list[Target] = []
+        while len(alvos) < budget:
             item = self.queue.pop()
             if item is None:
                 break
-            t = item.target
-            fetch, payload, ref = await self._capture(t)
-            if t.kind == "ea20":
-                if t.abr == "mu":
-                    self.stats.result_fetches += 1
-                else:
-                    self.stats.control_fetches += 1
-            done += 1
-            if payload is None:
-                continue
-            try:
-                result = ea20_parser.parse(payload)
-            except ParseError as exc:
-                self.stats.parse_errors += 1
-                log.error("EA20 fora de contrato em %s: %s", t.url, exc)
-                continue
-            if self.on_result:
-                self.on_result(result, ref, t)
-        return done
+            alvos.append(item.target)
+        if not alvos:
+            return 0
+
+        fila: asyncio.Queue[Target] = asyncio.Queue()
+        for t in alvos:
+            fila.put_nowait(t)
+        bloqueio: list[BlockedError] = []
+
+        async def trabalhador() -> None:
+            while True:
+                try:
+                    t = fila.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                if bloqueio:
+                    return          # já houve bloqueio: não insistir
+                try:
+                    await self._consumir(t)
+                except BlockedError as exc:
+                    bloqueio.append(exc)
+                    return
+                except Exception as exc:        # noqa: BLE001
+                    self.stats.parse_errors += 1
+                    log.error("falha ao processar %s: %r", t.url, exc)
+
+        n = max(1, min(self.cfg.max_workers, len(alvos)))
+        await asyncio.gather(*(trabalhador() for _ in range(n)))
+        if bloqueio:
+            raise bloqueio[0]
+        return len(alvos) - fila.qsize()
 
     # -- laço principal ---------------------------------------------------
 

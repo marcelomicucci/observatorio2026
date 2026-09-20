@@ -192,6 +192,20 @@ const MAPA = (() => {
     const porCodigo = new Map(dados.filter(d => d.cd_ibge)
                                    .map(d => [d.cd_ibge, d]));
 
+    /* Recorte: quando o pedido foi explicitamente por uma UF, desenhar o
+     * Brasil inteiro faz Alagoas virar um respingo. Nesse caso só as feições
+     * do recorte entram, e a projeção é calculada a partir delas.
+     *
+     * Sem recorte explícito, o mapa continua nacional de propósito: ver o
+     * que ainda NÃO tem dado (hachura) é informação, não sobra. */
+    let feicoes = gj.features;
+    if (opts.recorte) {
+      const pref = String(opts.recorte);
+      const filtradas = gj.features.filter(f =>
+        String(f.properties.cd).startsWith(pref));
+      if (filtradas.length) feicoes = filtradas;
+    }
+
     const ctx = {};
     if (camada.tipo === 'categorica') {
       ctx.cores = corCategorica(
@@ -212,7 +226,7 @@ const MAPA = (() => {
     }
 
     const W = opts.largura || 720, H = opts.altura || 620;
-    const proj = projetor(gj.features, W, H);
+    const proj = projetor(feicoes, W, H);
     const svg = svgEl('svg', {
       viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
       'aria-label': 'Mapa: ' + camada.rotulo,
@@ -235,7 +249,7 @@ const MAPA = (() => {
 
     const g = svgEl('g');
     let semDado = 0;
-    for (const f of gj.features) {
+    for (const f of feicoes) {
       const dado = porCodigo.get(f.properties.cd);
       if (!dado) semDado++;
       const p = svgEl('path', {
@@ -260,7 +274,8 @@ const MAPA = (() => {
     svg.append(g);
 
     alvo.replaceChildren(svg);
-    return {camada, ctx, semDado, total: gj.features.length};
+    return {camada, ctx, semDado, total: feicoes.length,
+            recortado: feicoes.length !== gj.features.length};
   }
 
   // -- barra ponderada por eleitorado --------------------------------------

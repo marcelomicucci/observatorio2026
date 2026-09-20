@@ -42,6 +42,15 @@ def register(app) -> None:
                             media_type="application/geo+json",
                             headers={"Cache-Control": "public, max-age=86400"})
 
+    @app.get("/telao", include_in_schema=False)
+    def telao():
+        """Tela de projeção.
+
+        Rota separada do painel, não um modo dele: a densidade de informação
+        é outra. O que se lê a 40 cm não se lê a 4 m.
+        """
+        return FileResponse(_WEB / "telao.html", media_type="text/html")
+
     @app.get("/mapa.js", include_in_schema=False)
     def mapa_js():
         return FileResponse(_WEB / "mapa.js",
@@ -97,14 +106,18 @@ def register(app) -> None:
                 Geography.tipo == "mu",
                 Geography.cd_ibge.is_not(None))).scalars().all():
             prefixos.setdefault(g.uf, Counter())[g.cd_ibge[:2]] += 1
-        cod_uf = {uf: c.most_common(1)[0][0] for uf, c in prefixos.items()}
-        for uf, c in prefixos.items():
+        # `sigla` e nao `uf`: reusar o nome do parametro aqui o sobrescreve,
+        # e `recorte_ibge` passa a devolver a ultima UF do laco em vez da
+        # pedida — o mapa desenhava o Brasil inteiro para mostrar Alagoas.
+        cod_uf = {sigla: c.most_common(1)[0][0]
+                  for sigla, c in prefixos.items()}
+        for sigla, c in prefixos.items():
             for pref, n in c.items():
-                if pref != cod_uf[uf]:
+                if pref != cod_uf[sigla]:
                     anomalias.append(
-                        f"{uf.upper()}: {n} municipio(s) com prefixo IBGE "
+                        f"{sigla.upper()}: {n} municipio(s) com prefixo IBGE "
                         f"{pref}, divergente do prefixo da UF "
-                        f"({cod_uf[uf]})")
+                        f"({cod_uf[sigla]})")
 
         linhas = []
         for t in totais:
@@ -177,6 +190,9 @@ def register(app) -> None:
             extra={
                 "malha": ("municipios.json" if tipo == "mu" else "uf.json"),
                 "abrangencia": tipo,
+                # Prefixo IBGE do recorte, para o mapa ajustar o enquadramento
+                # em vez de desenhar o pais inteiro para mostrar uma UF.
+                "recorte_ibge": (cod_uf.get(uf.lower()) if uf else None),
                 "lideres": [
                     {"sqcand": sq,
                      "nome": next(x["lider_nome"] for x in linhas

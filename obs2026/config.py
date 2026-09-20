@@ -84,6 +84,9 @@ class CollectorConfig:
     max_rps: float
     burst: int
     jitter_ms: tuple[int, int]
+    #: Requisicoes simultaneas. Nao altera o teto de taxa — so permite
+    #: alcanca-lo. Ver o comentario em config/collector.yaml.
+    max_workers: int
     connect_timeout_s: float
     read_timeout_s: float
     max_attempts: int
@@ -211,6 +214,7 @@ def load_collector(config_dir: Path = CONFIG_DIR) -> CollectorConfig:
     return CollectorConfig(
         max_rps=float(r["max_rps"]), burst=int(r["burst"]),
         jitter_ms=tuple(r["jitter_ms"]),
+        max_workers=int(r.get("max_workers", 16)),
         connect_timeout_s=float(r["connect_timeout_s"]),
         read_timeout_s=float(r["read_timeout_s"]),
         max_attempts=int(rt["max_attempts"]),
