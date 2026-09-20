@@ -10,6 +10,7 @@ Comandos de operação:
     obs2026 prever          projeta uma disputa e REGISTRA o que foi dito
     obs2026 previsoes       lista o historico de projecoes
     obs2026 auditar-previsoes  confronta as projecoes com o resultado final
+    obs2026 preparar        baixa perfis, fotos e malha para rodar sem rede
 """
 
 from __future__ import annotations
@@ -467,10 +468,12 @@ def carregar(env_name: str = ENV_OPT,
     con.print(f"banco: {env.db_path}")
 
 from .cli_prever import (registrar as _registrar_previsao,  # noqa: E402
-                         registrar_ensaio as _registrar_ensaio)
+                         registrar_ensaio as _registrar_ensaio,
+                         registrar_preparo as _registrar_preparo)
 
 _registrar_previsao(app, ENV_OPT)
 _registrar_ensaio(app, ENV_OPT)
+_registrar_preparo(app, ENV_OPT)
 
 
 if __name__ == "__main__":

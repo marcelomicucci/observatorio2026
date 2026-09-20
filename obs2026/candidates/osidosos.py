@@ -53,6 +53,10 @@ import httpx
 
 BASE = "https://eleicoes.osidosos.com.br/backend/public/index.php/api"
 SITE = "https://eleicoes.osidosos.com.br"
+#: Os arquivos enviados ficam sob o mesmo prefixo da API, nao na raiz do
+#: site. Montar a URL a partir da raiz devolve 422 "Invalid source image" —
+#: verificado, nao suposto.
+UPLOADS = f"{SITE}/backend/public"
 FONTE = "eleicoes.osidosos.com.br"
 LICENCA = "MIT — dados do TSE/DivulgaCandContas"
 
@@ -160,7 +164,7 @@ def _perfil(item: dict, cargo: str, agora: str) -> Perfil:
     sq = sq or _txt(item.get("sq_candidato"))
     foto = _txt(item.get("foto_local"))
     if foto and foto.startswith("/"):
-        foto = SITE + foto
+        foto = UPLOADS + foto
     return Perfil(
         sqcand=sq,
         numero=str(item.get("numero") or "").strip(),

@@ -215,6 +215,71 @@ def registrar(app: typer.Typer, env_opt) -> None:
             con.print(f"\nrelatorio gravado em {json_out}")
 
 
+def registrar_preparo(app: typer.Typer, env_opt) -> None:
+
+    @app.command("preparar")
+    def preparar(env_name: str = env_opt):
+        """Baixa e guarda em disco tudo que o painel busca fora do TSE.
+
+        Roda ANTES de subir ao telão. Depois disso, a única dependência de
+        rede é o próprio TSE: perfis, fotos e malha territorial ficam locais.
+        Numa noite de apuração a internet oscila, e foto sumindo no meio da
+        projeção é constrangimento evitável.
+        """
+        from .candidates import osidosos as OS
+        cache = OS.Cache(DATA_DIR / "cache" / "enriquecimento")
+        raiz_fotos = DATA_DIR / "cache" / "fotos"
+        raiz_fotos.mkdir(parents=True, exist_ok=True)
+
+        import httpx
+        total = baixadas = ja = falhas = 0
+        with httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0),
+                          follow_redirects=True,
+                          headers=OS.CABECALHOS) as cli:
+            for cargo, nome in (("1", "presidente"), ("3", "governador"),
+                                ("5", "senador")):
+                perfis, meta = OS.buscar(cargo, cache=cache)
+                con.print(f"{nome}: {len(perfis)} perfis"
+                          + (f"  [yellow]{meta.get('aviso') or meta.get('erro')}[/]"
+                             if meta.get("aviso") or meta.get("erro") else ""))
+                for perfil in perfis:
+                    if not (perfil.slug and perfil.foto_url):
+                        continue
+                    total += 1
+                    destino = None
+                    for ext in (".jpg", ".png", ".webp", ".gif"):
+                        if (raiz_fotos / f"{perfil.slug}{ext}").exists():
+                            destino = raiz_fotos / f"{perfil.slug}{ext}"
+                            break
+                    if destino is not None:
+                        ja += 1
+                        continue
+                    try:
+                        r = cli.get(perfil.foto_url)
+                        r.raise_for_status()
+                        tipo = (r.headers.get("content-type") or "").split(";")[0]
+                        from .api.fotos import TIPOS, TETO_BYTES
+                        ext = TIPOS.get(tipo.strip().lower())
+                        if ext is None or len(r.content) > TETO_BYTES:
+                            falhas += 1
+                            continue
+                        (raiz_fotos / f"{perfil.slug}{ext}").write_bytes(
+                            r.content)
+                        baixadas += 1
+                    except Exception:            # noqa: BLE001
+                        falhas += 1
+
+        malhas = [p for p in (DATA_DIR.parent / "web" / "geo").glob("*.json")]
+        con.print()
+        con.print(f"fotos: {baixadas} baixadas, {ja} ja em disco, "
+                  f"{falhas} sem foto utilizavel, de {total} perfis")
+        con.print(f"malha territorial: {len(malhas)} arquivo(s) local(is)")
+        if falhas:
+            con.print("[yellow]Candidatos sem foto aparecem com o numero de "
+                      "urna — a apuracao nao depende disso.[/]")
+        con.print("[green]Pronto. Fora do TSE, nada mais precisa de rede.[/]")
+
+
 def registrar_ensaio(app: typer.Typer, env_opt) -> None:
 
     @app.command("ensaiar-auditoria")

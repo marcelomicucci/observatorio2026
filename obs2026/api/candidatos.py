@@ -103,7 +103,12 @@ def register(app) -> None:
                     },
                     "enriquecimento": (None if p is None else {
                         "nome": p.nome,
-                        "foto_url": p.foto_url,
+                        # A foto e servida POR NOS, com cache em disco. O
+                        # navegador nunca busca imagem no servidor de
+                        # terceiro (§8), e o telao nao fica refem da rede.
+                        "foto_url": (f"/api/v1/foto/{p.slug}"
+                                     if p.slug else None),
+                        "foto_origem": p.foto_url,
                         "vice_nome": p.vice_nome,
                         "vice_partido": p.vice_partido,
                         "profissao": p.profissao,
