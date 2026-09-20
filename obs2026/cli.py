@@ -251,7 +251,11 @@ def ensaio(env_name: str = ENV_OPT,
                             cat.urls.ea20_mun(c.election, c.cargo.cd,
                                               m.uf, m.cd),
                             1.0, reason="amostra")
-                await col.drain(10_000)
+                # Sem teto arbitrario: a amostra pedida tem de ser coletada
+                # inteira. Um teto fixo de 10.000 truncava a varredura
+                # completa (16.897 arquivos) sem avisar.
+                while len(col.queue):
+                    await col.drain(cfg.max_inflight_results)
             if segundos > 0:
                 await col.run(max_seconds=segundos)
             return cat, col.stats.as_dict(client, col.queue)

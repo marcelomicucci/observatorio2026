@@ -206,6 +206,7 @@ const VISOES = [
   {id: 'mapa', nome: 'Mapa'},
   {id: 'projecao', nome: 'Projeção'},
   {id: 'auditoria', nome: 'Auditoria'},
+  {id: 'telao', nome: 'Telão'},
 ];
 const UFS = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg',
              'pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se',
@@ -258,6 +259,95 @@ function abrirTelao() {
   window.open('/telao?' + q, 'telao-observatorio');
 }
 
+function comandarTelao(acao, indice) {
+  if (!canalTelao) return;
+  canalTelao.postMessage({tipo: 'comando', acao, indice});
+}
+
+/* Painel de controle do carrossel. Mostra o roteiro de config/telao.yaml,
+ * permite pular para uma tela e pausar. Editar de forma permanente se faz no
+ * arquivo: assim o roteiro da noite fica versionado e reproduzível, em vez
+ * de existir só na memória de um navegador. */
+async function viewTelao() {
+  const r = await get('/telao/roteiro');
+  rodape(r);
+  const validas = r.dados.filter(t => !t.erro);
+  const out = [];
+
+  out.push(el('div', {cls: 'resumo'},
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Telas no roteiro'),
+      el('div', {cls: 'v'}, String(r.telas_validas)),
+      el('div', {cls: 'n'}, r.telas_com_erro
+        ? `${r.telas_com_erro} com erro, serão puladas` : 'todas resolvidas')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Volta completa'),
+      el('div', {cls: 'v'}, `${Math.floor(r.duracao_total_s / 60)}min `
+        + `${r.duracao_total_s % 60}s`),
+      el('div', {cls: 'n'}, 'somando os tempos de cada tela')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Arquivo'),
+      el('div', {cls: 'v', style: 'font-size:14px'}, r.arquivo),
+      el('div', {cls: 'n'}, 'edite lá para mudar de forma permanente'))));
+
+  out.push(el('div', {cls: 'visoes'},
+    el('button', {onclick: abrirTelao}, 'Abrir telão ↗'),
+    el('button', {onclick: () => comandarTelao('anterior')}, '◂ anterior'),
+    el('button', {onclick: () => comandarTelao('pausar')}, '⏸ pausar'),
+    el('button', {onclick: () => comandarTelao('seguir')}, '▸ seguir'),
+    el('button', {onclick: () => comandarTelao('proxima')}, 'próxima ▸'),
+    el('button', {
+      onclick: () => {
+        if (canalTelao) canalTelao.postMessage(
+          {tipo: 'roteiro', roteiro: r.dados});
+      },
+      title: 'Reenvia o roteiro ao telão sem recarregar a janela dele',
+    }, 'recarregar roteiro')));
+
+  out.push(el('table', {},
+    el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Tela'),
+      el('th', {}, 'Cargo'), el('th', {}, 'Onde'), el('th', {}, 'Camada'),
+      el('th', {cls: 'num'}, 'Tempo'), el('th', {}, ''))),
+    el('tbody', {}, ...r.dados.map((t, i) => el('tr', {},
+      el('td', {}, String(i + 1)),
+      el('td', {}, t.titulo,
+        t.recorte_nao_decisorio
+          ? [' ', el('span', {cls: 'tag warn',
+              title: t.aviso_recorte}, 'recorte não decisório')]
+          : null),
+      el('td', {}, t.cargo_nome),
+      el('td', {}, t.municipio_nome
+        ? `${t.municipio_nome}/${(t.uf || '').toUpperCase()}`
+        : (t.uf ? t.uf.toUpperCase() : 'Brasil')),
+      el('td', {}, t.camada),
+      el('td', {cls: 'num'}, `${t.segundos}s`),
+      el('td', {}, t.erro
+        ? el('span', {cls: 'tag err', title: t.erro}, 'erro')
+        : el('button', {
+            style: 'font-size:11px;padding:2px 9px;border-radius:999px;'
+                 + 'border:1px solid var(--line);background:var(--panel);'
+                 + 'color:var(--muted);cursor:pointer',
+            onclick: () => comandarTelao('ir', validas.indexOf(t)),
+          }, 'ir para')))))));
+
+  const ruins = r.dados.filter(t => t.erro);
+  if (ruins.length) {
+    out.push(el('div', {cls: 'nota aten'},
+      el('b', {}, 'Telas que não resolveram. '),
+      'O telão pula estas: projetar o município errado é pior do que pular a '
+      + 'tela. ',
+      ...ruins.map(t => el('div', {}, `· ${t.titulo}: ${t.erro}`))));
+  }
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Como operar. '),
+    'Abra o telão, arraste a janela para o projetor e deixe em tela cheia. '
+    + 'No próprio telão: espaço pausa, setas navegam, R recarrega os dados. '
+    + 'Mudar de cargo ou UF nas outras abas desta janela interrompe o '
+    + 'carrossel e fixa o telão naquele recorte — clique em "recarregar '
+    + 'roteiro" para voltar ao automático.'));
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Recorte não decisório. '),
+    'Telas municipais de presidente ou governador são recorte do voto, não a '
+    + 'unidade que elege. O telão marca essas telas com aviso próprio, e '
+    + 'isso não é configurável.'));
+  return el('div', {}, ...out);
+}
+
 async function get(p) {
   const r = await fetch(API + p);
   if (!r.ok) throw new Error(`${r.status} em ${p}`);
@@ -300,13 +390,7 @@ function navegacao() {
     ...VISOES.map(v => el('button', {
       role: 'tab', 'aria-selected': String(v.id === (st.visao || 'resultado')),
       onclick: () => { st.visao = v.id; },
-    }, v.nome)),
-    el('button', {
-      style: 'margin-left:auto',
-      title: 'Abre a tela de projeção numa janela separada. Arraste para o '
-           + 'projetor e deixe em tela cheia; esta janela passa a conduzi-la.',
-      onclick: abrirTelao,
-    }, 'Telão ↗'));
+    }, v.nome)));
   conduzirTelao();
 }
 
@@ -695,7 +779,8 @@ async function render() {
         el('div', {cls: 'aviso'}, cat.ambiente.aviso));
     }
     const fn = {resultado: viewResultado, mapa: viewMapa,
-                projecao: viewProjecao, auditoria: viewAuditoria
+                projecao: viewProjecao, auditoria: viewAuditoria,
+                telao: viewTelao
                }[st.visao || 'resultado'];
     poe(main, await fn());
   } catch (e) {

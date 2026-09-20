@@ -30,17 +30,24 @@ def register(app) -> None:
     @app.get("/api/v1/decided")
     def definicao_matematica(cargo: str, eleicao: str | None = None,
                              uf: str | None = None,
+                             municipio: str | None = None,
                              s: Session = Depends(M.get_session)):
         """O que já está matematicamente definido, sem depender de modelo.
 
         Rótulo distinto de "projetado" e de "eleito segundo TSE" (§4.7).
+
+        Com `municipio`, a conta é feita sobre o recorte municipal — e o
+        resultado NÃO é "eleito pelo município": é a aritmética local, que
+        serve para ler o território, não para atribuir mandato (§3).
         """
         ct = M._contest_or_404(s, cargo, eleicao)
-        abr = ct.abrangencia_decisoria
+        abr = "mu" if municipio else ct.abrangencia_decisoria
         gq = select(Geography.id).where(
             Geography.environment == M._ENV_NAME, Geography.tipo == abr)
-        if uf and abr == "uf":
+        if uf and abr in ("uf", "mu"):
             gq = gq.where(Geography.uf == uf.lower())
+        if municipio:
+            gq = gq.where(M._filtro_municipio(municipio))
         geo_ids = [r[0] for r in s.execute(gq).all()]
         totais = M._latest_snapshot_ids(s, ct.id, geo_ids)
         if not totais:
@@ -77,9 +84,20 @@ def register(app) -> None:
                 # Presidente e governador têm segundo turno; senador não.
                 tem_segundo_turno=(ct.vagas == 1),
             )
+            # Num recorte municipal a aritmética local é válida, mas o
+            # resultado dela NÃO atribui mandato: quem decide é o Brasil
+            # (presidente) ou a UF (governador, senador). O §3 é explícito.
+            recorte_nao_decisorio = (abr != ct.abrangencia_decisoria)
             g = geos[t.geography_id]
             saida.append({
                 "geografia": {"tipo": g.tipo, "uf": g.uf, "nome": g.nome},
+                "recorte_nao_decisorio": recorte_nao_decisorio,
+                "aviso_recorte": (
+                    f"Recorte de {g.nome}. A disputa e decidida "
+                    + ("no total do Brasil" if ct.abrangencia_decisoria == "br"
+                       else f"no total de {g.uf.upper()}")
+                    + "; liderar aqui nao e ser eleito por aqui."
+                    if recorte_nao_decisorio else None),
                 "vagas": ct.vagas,
                 "tem_segundo_turno": ct.vagas == 1,
                 "resto_maximo_total": d.resto_maximo_total,

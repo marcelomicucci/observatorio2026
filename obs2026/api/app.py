@@ -193,6 +193,19 @@ def _pct_coerente(votos: int, den: int, base: DenBase,
     return 100.0 * votos / den
 
 
+def _filtro_municipio(codigo: str):
+    """Aceita codigo TSE (5 digitos) ou IBGE (7 digitos).
+
+    Sao duas numeracoes diferentes para o mesmo lugar, e quem monta um
+    roteiro de telao vai ter uma ou outra na mao. Nenhuma busca por nome:
+    nome de municipio nao e chave (PAU D'ARCO existe em PA e em TO).
+    """
+    c = str(codigo).strip()
+    if len(c) == 7 and c.isdigit():
+        return Geography.cd_ibge == c
+    return Geography.cd_tse == c.zfill(5)
+
+
 def _contest_or_404(s: Session, cargo: str, eleicao: str | None) -> Contest:
     q = (select(Contest).join(Election, Election.id == Contest.election_id)
          .where(Election.environment == _ENV_NAME, Contest.cargo_cd == cargo))
@@ -242,6 +255,10 @@ def results(
     eleicao: str | None = None,
     abrangencia: str = Query("br", pattern="^(br|uf|mu)$"),
     uf: str | None = None,
+    #: Codigo TSE do municipio (5 digitos, com zeros a esquerda) ou codigo
+    #: IBGE (7 digitos). Recorte municipal e RECORTE DO VOTO, nunca a
+    #: unidade que elege (§3).
+    municipio: str | None = None,
     # Padrão é a base que decide o primeiro turno (§3).
     base: DenBase = DenBase.VALIDOS_COMPUTADOS,
     s: Session = Depends(get_session),
@@ -253,6 +270,8 @@ def results(
                                     Geography.tipo == abrangencia)
     if uf:
         gq = gq.where(Geography.uf == uf.lower())
+    if municipio:
+        gq = gq.where(_filtro_municipio(municipio))
     geo_ids = [r[0] for r in s.execute(gq).all()]
     if not geo_ids:
         return envelope([], snapshots=[], estado="aguardando",
@@ -580,8 +599,10 @@ from . import decided_audit as _decided_audit  # noqa: E402
 from . import geo as _geo  # noqa: E402
 from . import candidatos as _candidatos  # noqa: E402
 from . import projecao as _projecao  # noqa: E402
+from . import telao as _telao  # noqa: E402
 
 _decided_audit.register(app)
 _geo.register(app)
 _candidatos.register(app)
 _projecao.register(app)
+_telao.register(app)

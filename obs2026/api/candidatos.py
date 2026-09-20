@@ -33,14 +33,21 @@ def register(app) -> None:
     @app.get("/api/v1/candidates")
     def candidatos(cargo: str, eleicao: str | None = None,
                    uf: str | None = None, enriquecer: bool = True,
+                   municipio: str | None = None,
                    s: Session = Depends(M.get_session)):
         ct = M._contest_or_404(s, cargo, eleicao)
         abr = ct.abrangencia_decisoria
 
+        # Recorte municipal: o mapa e o telao pedem "Presidente em Belem",
+        # que e recorte do voto, nao a unidade que decide (§3).
+        if municipio:
+            abr = "mu"
         gq = select(Geography).where(Geography.environment == M._ENV_NAME,
                                      Geography.tipo == abr)
-        if uf and abr == "uf":
+        if uf and abr in ("uf", "mu"):
             gq = gq.where(Geography.uf == uf.lower())
+        if municipio:
+            gq = gq.where(M._filtro_municipio(municipio))
         geos = {g.id: g for g in s.execute(gq).scalars().all()}
         totais = M._latest_snapshot_ids(s, ct.id, list(geos))
         if not totais:
