@@ -159,6 +159,11 @@ class Definicao:
         return self.vagas == 1 and len(self.no_segundo_turno) >= 2
 
 
+def _br(n: int) -> str:
+    """Milhar com ponto. Estas mensagens vao para a tela do leitor."""
+    return f"{n:,}".replace(",", ".")
+
+
 def _deficits(votos: dict[str, int], alvo: str,
               teto_individual: int) -> list[int]:
     """Quanto falta a cada rival para ultrapassar `alvo`.
@@ -215,15 +220,15 @@ def avaliar(votos: dict[str, int], *, vagas: int,
     if sub_judice > 0 and not encerrada:
         sub_judice_em_jogo = True
         avisos.append(
-            f"{sub_judice} votos anulados sub judice podem ser revalidados "
-            "ou cassados por decisao judicial; a definicao matematica fica "
-            "suspensa ate isso se resolver (§4.7)"
+            f"{_br(sub_judice)} votos anulados sub judice podem ser revalidados "
+            "ou cassados por decisão judicial. Enquanto isso não se resolve, "
+            "a definição matemática fica suspensa (§4.7)."
         )
     elif sub_judice > 0 and encerrada:
         sub_judice_em_jogo = True
         avisos.append(
-            f"{sub_judice} votos anulados sub judice seguem pendentes de "
-            "decisao mesmo com a apuracao encerrada"
+            f"{_br(sub_judice)} votos anulados sub judice seguem pendentes de "
+            "decisão judicial, mesmo com a apuração encerrada."
         )
 
     if not votos:
@@ -275,24 +280,24 @@ def avaliar(votos: dict[str, int], *, vagas: int,
                     if (vagas == 1 and tem_segundo_turno)
                     else f"as {lugares} vaga(s)")
             estado, motivo = Estado.ELIMINADO, (
-                f"mesmo recebendo todos os {teto_ind} votos ainda possiveis, "
-                f"segue atras de {acima_mesmo_no_maximo} rival(is) para "
-                f"{alvo}")
+                f"mesmo recebendo todos os {_br(teto_ind)} votos ainda "
+                f"possíveis, segue atrás de {acima_mesmo_no_maximo} "
+                f"rival(is) para {alvo}")
         elif vagas == 1 and maioria_garantida:
             estado, motivo = Estado.ELEITO, (
                 f"tem mais de 50% dos votos a concorrentes mesmo que todos "
-                f"os {teto_total} restantes vao para outros")
+                f"os {_br(teto_total)} restantes vão para outros")
         elif vagas > 1 and vaga_garantida:
-            quanto = ("mais votos do que existem"
+            quanto = ("mais votos do que ainda existem"
                       if custo_para_perder >= IMPOSSIVEL
-                      else f"{custo_para_perder} votos")
+                      else f"{_br(custo_para_perder)} votos")
             estado, motivo = Estado.ELEITO, (
                 f"para perder a vaga, {vagas} rivais precisariam de {quanto}, "
-                f"e so restam {teto_total}")
+                f"e só restam {_br(teto_total)}")
         elif vagas == 1 and tem_segundo_turno and garantido_entre_lugares:
             # Garante estar entre os dois, sem garantir maioria absoluta.
             estado, motivo = Estado.SEGUNDO_TURNO, (
-                "nao pode cair para fora dos dois primeiros, mas ainda nao "
+                "não pode cair para fora dos dois primeiros, mas ainda não "
                 "tem maioria absoluta garantida")
         else:
             estado, motivo = Estado.EM_ABERTO, ""
@@ -300,7 +305,7 @@ def avaliar(votos: dict[str, int], *, vagas: int,
         # Sub judice suspende qualquer afirmação de definição.
         if sub_judice_em_jogo and estado is not Estado.EM_ABERTO:
             estado, motivo = Estado.EM_ABERTO, (
-                "definicao suspensa: ha votos sub judice em jogo")
+                "definição suspensa: há votos sub judice em jogo")
 
         custo = (None if custo_para_perder >= IMPOSSIVEL
                  else custo_para_perder)
@@ -331,7 +336,7 @@ def avaliar(votos: dict[str, int], *, vagas: int,
                          s.rivais_que_podem_passar,
                          s.custo_para_perder_a_vaga,
                          s.precisa_para_alcancar,
-                         "so restam dois candidatos nao eliminados")
+                         "só restam dois candidatos não eliminados")
                 if s in vivos else s
                 for s in situacoes
             ]

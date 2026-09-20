@@ -5,116 +5,169 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Observatório Eleitoral 2026</title>
 <style>
+/* A versão anterior tinha duas fileiras de pílulas de aparência idêntica
+   (3 abas x 6 modos) e ninguém decifrava a matriz. A navegação agora segue a
+   ordem em que a pergunta é feita de verdade:
+
+       1. qual CARGO   presidente, governador, senador
+       2. ONDE         Brasil, ou a UF que decide a disputa
+       3. qual VISÃO   resultado, mapa, projeção, auditoria
+
+   Cada nível tem peso visual próprio, então não se confundem entre si. */
 :root{
-  --esquerda:#C62828; --centro-esquerda:#E06C63; --centro:#F2C94C;
-  --centro-direita:#5B8BC9; --direita:#1565C0;
-  --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --line:#dfe4ea;
-  --panel:#f7f9fb; --obs:#14181f; --proj:#6b3fa0;
+  --bg:#fff; --fg:#14181f; --muted:#5b6472; --line:#e2e6ec; --linha2:#f0f3f7;
+  --panel:#f7f9fb; --acento:#1a5fb4;
   --alerta:#b45309; --erro:#b91c1c; --ok:#15803d;
+  --radius:10px;
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#11141a; --fg:#e8ecf2; --muted:#9aa4b2; --line:#272d38;
-    --panel:#171b23; --obs:#e8ecf2; --proj:#c4a4ef;
-    --alerta:#fbbf24; --erro:#f87171; --ok:#4ade80;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#11141a; --fg:#e8ecf2; --muted:#9aa4b2; --line:#272d38;
-  --panel:#171b23; --obs:#e8ecf2; --proj:#c4a4ef;
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0f1218; --fg:#e8ecf2; --muted:#98a2b0; --line:#252b35; --linha2:#1a1f27;
+  --panel:#161b22; --acento:#6aa8f0;
+  --alerta:#fbbf24; --erro:#f87171; --ok:#4ade80;
+}}
+:root[data-theme=dark]{
+  --bg:#0f1218; --fg:#e8ecf2; --muted:#98a2b0; --line:#252b35; --linha2:#1a1f27;
+  --panel:#161b22; --acento:#6aa8f0;
   --alerta:#fbbf24; --erro:#f87171; --ok:#4ade80;
 }
 *{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);
-  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-.wrap{max-width:1180px;margin:0 auto;padding:0 16px 64px}
-header{border-bottom:1px solid var(--line);margin-bottom:20px}
-h1{font-size:20px;margin:18px 0 4px;letter-spacing:-.01em}
-.sub{color:var(--muted);font-size:13px;margin-bottom:14px}
-.banner{background:#fff4e5;color:#7c2d12;border:1px solid #fdba74;
-  border-radius:8px;padding:10px 14px;margin:12px 0;font-size:13px;font-weight:600}
-:root[data-theme="dark"] .banner,
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .banner{
-  background:#2a1a0a;color:#fcd9a8;border-color:#7c4a11}}
-nav{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
-nav button{background:none;border:0;border-bottom:2px solid transparent;
-  padding:9px 14px;font:inherit;color:var(--muted);cursor:pointer}
-nav button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--fg);
-  font-weight:600}
-.modes{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
-.modes button{background:var(--panel);border:1px solid var(--line);
-  border-radius:999px;padding:5px 13px;font:inherit;font-size:13px;
-  color:var(--muted);cursor:pointer}
-.modes button[aria-pressed="true"]{background:var(--fg);color:var(--bg);
-  border-color:var(--fg)}
-.ctl{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:12px 0 18px}
-label{display:block;font-size:11px;text-transform:uppercase;
-  letter-spacing:.06em;color:var(--muted);margin-bottom:3px}
-select,input[type=search]{background:var(--bg);color:var(--fg);
-  border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
-.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(172px,1fr));
-  margin-bottom:18px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
-  padding:11px 13px}
-.card .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--muted)}
-.card .v{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;
-  margin-top:2px}
-.card .n{font-size:11px;color:var(--muted);margin-top:2px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
-  color:var(--muted);font-weight:600}
-td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
-tbody tr:hover{background:var(--panel)}
-.bar{height:7px;border-radius:4px;background:var(--line);overflow:hidden;
-  min-width:70px}
-.bar i{display:block;height:100%;background:var(--obs)}
-.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
-  border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+ font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px 72px}
+a{color:var(--acento)}
+
+.topo{border-bottom:1px solid var(--line)}
+.marca{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+ padding:16px 0 4px}
+.marca h1{font-size:18px;margin:0;letter-spacing:-.01em}
+.marca .sub{color:var(--muted);font-size:12px}
+.aviso{background:#fff4e5;color:#7c2d12;border:1px solid #fdba74;
+ border-radius:8px;padding:9px 13px;margin:8px 0 12px;font-size:12.5px;
+ font-weight:600}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .aviso{
+ background:#2a1a0a;color:#fcd9a8;border-color:#7c4a11}}
+
+/* nível 1 — cargo: a escolha primária, e por isso a maior */
+.cargos{display:flex;flex-wrap:wrap}
+.cargos button{background:none;border:0;border-bottom:3px solid transparent;
+ padding:10px 2px;margin-right:22px;font:inherit;font-size:16px;
+ color:var(--muted);cursor:pointer;letter-spacing:-.01em}
+.cargos button[aria-selected=true]{color:var(--fg);font-weight:650;
+ border-bottom-color:var(--acento)}
+
+/* nível 2 — onde: trilha leve, não compete com o cargo */
+.escopo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+ padding:11px 0;font-size:13px;color:var(--muted)}
+.escopo .seta{opacity:.45}
+.escopo select{background:var(--bg);color:var(--fg);border:1px solid var(--line);
+ border-radius:6px;padding:4px 7px;font:inherit;font-size:13px}
+.escopo .fixo{font-weight:600;color:var(--fg)}
+
+/* nível 3 — visão: pílulas pequenas */
+.visoes{display:flex;gap:5px;flex-wrap:wrap;margin:2px 0 18px}
+.visoes button{background:var(--panel);border:1px solid var(--line);
+ border-radius:999px;padding:5px 13px;font:inherit;font-size:13px;
+ color:var(--muted);cursor:pointer}
+.visoes button[aria-selected=true]{background:var(--fg);color:var(--bg);
+ border-color:var(--fg);font-weight:600}
+
+.resumo{display:grid;gap:9px;margin-bottom:18px;
+ grid-template-columns:repeat(auto-fit,minmax(152px,1fr))}
+.kpi{background:var(--panel);border:1px solid var(--line);
+ border-radius:var(--radius);padding:10px 12px}
+.kpi .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+ color:var(--muted)}
+.kpi .v{font-size:21px;font-weight:660;font-variant-numeric:tabular-nums;
+ margin-top:1px;letter-spacing:-.02em}
+.kpi .n{font-size:11px;color:var(--muted);margin-top:1px}
+
+.cards{display:grid;gap:10px;
+ grid-template-columns:repeat(auto-fill,minmax(315px,1fr))}
+.cand{display:flex;gap:11px;background:var(--panel);border:1px solid var(--line);
+ border-radius:var(--radius);padding:11px;align-items:flex-start}
+.cand.lider{border-color:var(--acento)}
+.cand .foto{width:52px;height:52px;border-radius:50%;object-fit:cover;
+ background:var(--linha2);flex:0 0 52px;border:1px solid var(--line)}
+.cand .numero{width:52px;height:52px;border-radius:50%;flex:0 0 52px;
+ display:flex;align-items:center;justify-content:center;background:var(--linha2);
+ border:1px solid var(--line);font-weight:700;font-size:17px;color:var(--muted);
+ font-variant-numeric:tabular-nums}
+.cand .corpo{min-width:0;flex:1}
+.cand .nome{font-weight:640;font-size:14.5px;line-height:1.25;
+ overflow-wrap:anywhere}
+.cand .meta{font-size:11.5px;color:var(--muted);margin-top:1px}
+.cand .votos{display:flex;align-items:baseline;gap:8px;margin-top:5px;
+ font-variant-numeric:tabular-nums}
+.cand .pct{font-size:19px;font-weight:660;letter-spacing:-.02em}
+.cand .abs{font-size:12px;color:var(--muted)}
+.cand .barra{height:5px;border-radius:3px;background:var(--linha2);
+ margin-top:6px;overflow:hidden}
+.cand .barra i{display:block;height:100%;background:var(--acento)}
+.cand .selos{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+
+.tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;
+ border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
 .tag.warn{color:var(--alerta);border-color:var(--alerta)}
 .tag.err{color:var(--erro);border-color:var(--erro)}
-.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.info{color:var(--acento);border-color:var(--acento)}
 .null{color:var(--muted);font-style:italic}
-.note{background:var(--panel);border-left:3px solid var(--line);
-  padding:10px 14px;margin:14px 0;font-size:13px;color:var(--muted);
-  border-radius:0 6px 6px 0}
-.note b{color:var(--fg)}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin:10px 0}
+.nota{background:var(--panel);border-left:3px solid var(--line);
+ padding:9px 13px;margin:13px 0;font-size:12.5px;color:var(--muted);
+ border-radius:0 7px 7px 0}
+.nota b{color:var(--fg)}
+.nota.aten{border-left-color:var(--alerta)}
+h2{font-size:15px;margin:22px 0 9px;letter-spacing:-.01em}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--muted);font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr:hover{background:var(--linha2)}
+details{margin:12px 0}
+summary{cursor:pointer;font-size:12.5px;color:var(--muted);padding:5px 0}
+.legend{display:flex;gap:13px;flex-wrap:wrap;font-size:11.5px;margin:9px 0}
 .legend span{display:flex;align-items:center;gap:5px}
-.sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(0,0,0,.18);
-  display:inline-block}
-.meta{font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;
-  padding:10px 0;border-top:1px solid var(--line);margin-top:18px}
-.meta code{font-size:11px}
-footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);
-  font-size:12px;color:var(--muted)}
-.state{padding:26px;text-align:center;color:var(--muted)}
-@media (max-width:640px){
-  .wrap{padding:0 12px 48px}
-  table{font-size:13px} th,td{padding:6px 5px}
-  .hide-sm{display:none}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block;
+ border:1px solid rgba(128,128,128,.35)}
+label{display:block;font-size:10.5px;text-transform:uppercase;
+ letter-spacing:.06em;color:var(--muted);margin-bottom:3px}
+select{background:var(--bg);color:var(--fg);border:1px solid var(--line);
+ border-radius:6px;padding:5px 8px;font:inherit;font-size:13px}
+.rodape{font-size:11.5px;color:var(--muted);display:flex;gap:14px;
+ flex-wrap:wrap;padding:11px 0;border-top:1px solid var(--line);margin-top:22px}
+.rodape code{font-size:10.5px}
+.estado{padding:34px;text-align:center;color:var(--muted)}
+footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);
+ font-size:11.5px;color:var(--muted)}
+@media (max-width:560px){
+ .wrap{padding:0 12px 52px}
+ .cargos button{font-size:15px;margin-right:14px}
+ .cards{grid-template-columns:1fr}
+ table{font-size:12.5px} th,td{padding:5px 4px}
+ .hide-sm{display:none}
 }
 </style>
 </head>
 <body>
 <div class="wrap">
-<header>
-  <h1>Observatório Eleitoral 2026</h1>
-  <div class="sub" id="sub">carregando…</div>
-  <div id="banner"></div>
-  <nav role="tablist" id="tabs"></nav>
+<header class="topo">
+  <div class="marca">
+    <h1>Observatório Eleitoral 2026</h1>
+    <span class="sub" id="sub"></span>
+  </div>
+  <div id="aviso"></div>
+  <nav class="cargos" role="tablist" id="cargos"></nav>
 </header>
-
-<div class="modes" id="modes"></div>
-<div class="ctl" id="ctl"></div>
-<main id="main"><div class="state">carregando…</div></main>
-
-<div class="meta" id="meta"></div>
+<div class="escopo" id="escopo"></div>
+<nav class="visoes" role="tablist" id="visoes"></nav>
+<main id="main"><div class="estado">carregando…</div></main>
+<div class="rodape" id="meta"></div>
 <footer>
-  Apuração oficial e projeção são apresentadas separadamente e nunca somadas
-  no mesmo número. Liderança municipal não significa eleição pelo município:
-  presidente é decidido no Brasil, governador e senador em cada UF.
+  Apuração oficial, projeção e definição matemática são três coisas distintas
+  e nunca se somam no mesmo número. Liderar um território não é ser eleito por
+  ele: presidente é decidido no Brasil, governador e senador em cada UF.
 </footer>
 </div>
 
@@ -122,13 +175,16 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);
 <script>
 const API = '/api/v1';
 const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
-const pct = (v, d = 2) => v == null ? null : v.toFixed(d).replace('.', ',') + '%';
+const pct = (v, d = 2) => v == null ? null
+  : v.toFixed(d).replace('.', ',') + '%';
+const brt = s => s ? new Date(s).toLocaleString('pt-BR',
+  {timeZone: 'America/Sao_Paulo'}) : '—';
+
 const el = (t, a = {}, ...kids) => {
   const n = document.createElement(t);
   for (const [k, v] of Object.entries(a)) {
     if (v == null) continue;
     if (k === 'cls') n.className = v;
-    else if (k === 'html') n.innerHTML = v;
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v);
   }
@@ -136,273 +192,391 @@ const el = (t, a = {}, ...kids) => {
     n.append(c.nodeType ? c : document.createTextNode(String(c)));
   return n;
 };
+// replaceChildren insere a string "null" se receber null; el() os descarta.
+const poe = (alvo, ...kids) => alvo.replaceChildren(
+  ...kids.flat().filter(x => x != null));
 
-// Percentual ausente é null COM MOTIVO — nunca zero, nunca em branco mudo.
-const pctCell = c => {
-  const p = pct(c.pct);
-  if (p) return el('td', {cls: 'num'}, p);
-  return el('td', {cls: 'num'},
-    el('span', {cls: 'null', title: c.pct_indisponivel_motivo || 'indisponível'},
-       'n/d'));
-};
-
-const TABS = [
-  {id: 'nacional', label: 'Nacional'},
-  {id: 'estados',  label: 'Estados'},
-  {id: 'municipios', label: 'Municípios'},
-];
-const MODES = [
-  {id: 'apuracao',  label: 'Apuração'},
-  {id: 'definicao', label: 'Definição matemática'},
-  {id: 'projecao',  label: 'Projeção'},
-  {id: 'mapa',      label: 'Mapa político'},
-  {id: 'historico', label: 'Histórico'},
-  {id: 'auditoria', label: 'Auditoria'},
-];
-
-// Os três rótulos que o §4.7 manda manter distintos. Cor e texto mudam
-// juntos: nada aqui se lê só pela cor.
-const ESTADO_DEF = {
-  matematicamente_eleito:           {cls: 'ok',  txt: 'matematicamente definido'},
-  matematicamente_no_segundo_turno: {cls: 'ok',  txt: '2º turno definido'},
-  matematicamente_eliminado:        {cls: 'err', txt: 'eliminado'},
-  em_aberto:                        {cls: '',    txt: 'em aberto'},
-};
 const CARGOS = [
-  {cd: '1', label: 'Presidente', abr: 'br'},
-  {cd: '3', label: 'Governador', abr: 'uf'},
-  {cd: '5', label: 'Senador',    abr: 'uf'},
+  {cd: '1', nome: 'Presidente', abr: 'br', vagas: 1},
+  {cd: '3', nome: 'Governador', abr: 'uf', vagas: 1},
+  {cd: '5', nome: 'Senador', abr: 'uf', vagas: 2},
 ];
-const BASES = [
-  {id: 'validos_computados',
-   label: 'sobre votos a concorrentes (decide o 1º turno)'},
-  {id: 'validos', label: 'sobre votos válidos (exclui anulados)'},
-  {id: 'nominal_tse', label: 'sobre votos nominais (denominador do TSE)'},
-  {id: 'total_votos', label: 'sobre o total de votos'},
+const VISOES = [
+  {id: 'resultado', nome: 'Resultado'},
+  {id: 'mapa', nome: 'Mapa'},
+  {id: 'projecao', nome: 'Projeção'},
+  {id: 'auditoria', nome: 'Auditoria'},
 ];
-const BASE_PADRAO = 'validos_computados';
+const UFS = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg',
+             'pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se',
+             'to'];
 
-// Filtros persistentes na URL (§5.1).
+// §4.7: "projetado", "matematicamente definido" e "eleito segundo TSE" são
+// rótulos distintos e nunca se fundem. Este mapa cobre só o do meio.
+const DEF = {
+  matematicamente_eleito: {cls: 'ok', txt: 'definido matematicamente'},
+  matematicamente_no_segundo_turno: {cls: 'info', txt: '2º turno garantido'},
+  matematicamente_eliminado: {cls: '', txt: 'sem chance aritmética'},
+  em_aberto: null,
+};
+
+// Estado na URL (§5.1): recarregar ou compartilhar preserva o recorte.
 const st = new Proxy({}, {
   get: (_, k) => new URLSearchParams(location.search).get(k),
   set: (_, k, v) => {
     const u = new URLSearchParams(location.search);
-    v == null || v === '' ? u.delete(k) : u.set(k, v);
+    (v == null || v === '') ? u.delete(k) : u.set(k, v);
     history.replaceState(null, '', location.pathname + '?' + u);
     render();
     return true;
   },
 });
+const cargoAtual = () => CARGOS.find(c => c.cd === (st.cargo || '1'));
 
-async function get(path) {
-  const r = await fetch(API + path);
-  if (!r.ok) throw new Error(`${r.status} em ${path}`);
+async function get(p) {
+  const r = await fetch(API + p);
+  if (!r.ok) throw new Error(`${r.status} em ${p}`);
   return r.json();
 }
 
-function chrome() {
-  const tab = st.tab || 'nacional', mode = st.mode || 'apuracao';
-  const tabs = document.getElementById('tabs');
-  tabs.replaceChildren(...TABS.map(t => el('button', {
-    role: 'tab', 'aria-selected': String(t.id === tab),
-    onclick: () => { st.tab = t.id; },
-  }, t.label)));
-  const modes = document.getElementById('modes');
-  modes.replaceChildren(...MODES.map(m => el('button', {
-    'aria-pressed': String(m.id === mode),
-    onclick: () => { st.mode = m.id; },
-  }, m.label)));
-}
+/* --------------------------------------------------------------- chrome */
 
-function controls(ufs) {
-  const c = document.getElementById('ctl');
-  const kids = [];
-  kids.push(el('div', {}, el('label', {for: 'cargo'}, 'Cargo'),
-    el('select', {id: 'cargo', onchange: e => { st.cargo = e.target.value; }},
-      ...CARGOS.map(x => el('option', {
-        value: x.cd, selected: (st.cargo || '1') === x.cd ? '' : null,
-      }, x.label)))));
+function navegacao() {
+  const cargo = cargoAtual();
+  poe(document.getElementById('cargos'),
+    ...CARGOS.map(c => el('button', {
+      role: 'tab', 'aria-selected': String(c.cd === cargo.cd),
+      onclick: () => { st.cargo = c.cd; },
+    }, c.nome)));
 
-  if ((st.tab || 'nacional') !== 'nacional') {
-    kids.push(el('div', {}, el('label', {for: 'uf'}, 'UF'),
-      el('select', {id: 'uf', onchange: e => { st.uf = e.target.value; }},
-        el('option', {value: ''}, 'todas'),
-        ...ufs.map(u => el('option', {
-          value: u, selected: st.uf === u ? '' : null,
-        }, u.toUpperCase())))));
+  const kids = [el('span', {cls: 'fixo'}, 'Brasil')];
+  if (cargo.abr === 'uf') {
+    kids.push(el('span', {cls: 'seta'}, '›'),
+      el('select', {
+        'aria-label': 'Unidade da Federação',
+        onchange: e => { st.uf = e.target.value; },
+      },
+      el('option', {value: ''}, 'escolha a UF…'),
+      ...UFS.map(u => el('option', {
+        value: u, selected: st.uf === u ? '' : null,
+      }, u.toUpperCase()))));
+    if (st.uf) {
+      kids.push(el('span', {cls: 'seta'}, '›'),
+        el('span', {}, `${cargo.nome.toLowerCase()} em `,
+           el('b', {}, st.uf.toUpperCase()),
+           cargo.vagas > 1 ? ` · ${cargo.vagas} vagas` : ''));
+    }
+  } else {
+    kids.push(el('span', {}, '· disputa nacional, inclui o exterior'));
   }
-  kids.push(el('div', {}, el('label', {for: 'base'}, 'Denominador'),
-    el('select', {id: 'base', onchange: e => { st.base = e.target.value; }},
-      ...BASES.map(b => el('option', {
-        value: b.id, selected: (st.base || BASE_PADRAO) === b.id ? '' : null,
-      }, b.label)))));
-  c.replaceChildren(...kids);
+  poe(document.getElementById('escopo'), ...kids);
+
+  poe(document.getElementById('visoes'),
+    ...VISOES.map(v => el('button', {
+      role: 'tab', 'aria-selected': String(v.id === (st.visao || 'resultado')),
+      onclick: () => { st.visao = v.id; },
+    }, v.nome)));
 }
 
-function metaBar(d) {
-  const m = document.getElementById('meta');
-  const brt = s => s ? new Date(s).toLocaleString('pt-BR',
-    {timeZone: 'America/Sao_Paulo'}) : '—';
-  m.replaceChildren(
+function rodape(d) {
+  poe(document.getElementById('meta'),
     el('span', {}, 'Gerado na fonte: ', el('b', {}, brt(d.source_generated_at))),
     el('span', {}, 'Capturado: ', el('b', {}, brt(d.captured_at))),
     el('span', {}, 'Lote: ', el('code', {}, d.snapshot_set_id || '—'),
-       ` (${d.snapshot_count} arquivos)`),
+       ` (${d.snapshot_count})`),
     el('span', {}, 'Modelo: ', el('code', {}, d.model_version)),
-    el('span', {}, 'Classificação: ', el('code', {}, d.classification_version)),
-    d.quality_flags?.length
+    d.quality_flags && d.quality_flags.length
       ? el('span', {cls: 'tag warn'}, `${d.quality_flags.length} sinalizações`)
-      : el('span', {cls: 'tag ok'}, 'sem divergência crítica'),
-  );
+      : el('span', {cls: 'tag ok'}, 'sem divergência crítica'));
 }
 
-function cards(u, d) {
+/* ------------------------------------------------------------ resultado */
+
+function kpis(u, def) {
   const e = u.eleitorado, v = u.votos, s = u.secoes;
   const cob = e.total ? 100 * e.apurado / e.total : null;
-  return el('div', {cls: 'cards'},
-    el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Seções totalizadas'),
-      el('div', {cls: 'v'}, fmt(s.totalizadas)),
-      el('div', {cls: 'n'}, `de ${fmt(s.total)} · ` +
-        (s.total ? pct(100 * s.totalizadas / s.total) : '—'))),
-    el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Eleitorado apurado'),
-      el('div', {cls: 'v'}, cob == null ? '—' : pct(cob, 2)),
-      el('div', {cls: 'n'}, `${fmt(e.apurado)} de ${fmt(e.total)}`)),
-    el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Comparecimento'),
-      el('div', {cls: 'v'}, pct(e.comparecimento_pct) || '—'),
-      el('div', {cls: 'n'}, 'sobre o eleitorado das seções apuradas')),
-    el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Votos válidos'),
-      el('div', {cls: 'v'}, fmt(v.validos)),
-      el('div', {cls: 'n'}, `brancos ${fmt(v.brancos)} · nulos ${fmt(v.nulos)}`)),
-    el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Eleitorado pendente'),
-      el('div', {cls: 'v'}, fmt(u.pendente.min === u.pendente.max
-        ? u.pendente.min : null) === '—'
-        ? `${fmt(u.pendente.min)}–${fmt(u.pendente.max)}`
-        : fmt(u.pendente.min)),
-      el('div', {cls: 'n'}, u.pendente.ambiguo
+  const cards = [
+    ['Eleitorado apurado', pct(cob) || '—',
+     `${fmt(e.apurado)} de ${fmt(e.total)}`],
+    ['Seções totalizadas', fmt(s.totalizadas),
+     `de ${fmt(s.total)} · ${s.total ? pct(100*s.totalizadas/s.total,1) : '—'}`],
+    ['Comparecimento', pct(e.comparecimento_pct) || '—',
+     'sobre o eleitorado já apurado'],
+    ['Votos a concorrentes', fmt(v.validos_computados),
+     `brancos ${fmt(v.brancos)} · nulos ${fmt(v.nulos)}`],
+  ];
+  if (u.pendente.max > 0) {
+    cards.push(['Ainda podem entrar',
+      u.pendente.ambiguo ? `${fmt(u.pendente.min)}–${fmt(u.pendente.max)}`
+                         : fmt(u.pendente.max),
+      u.pendente.ambiguo
         ? 'intervalo: o contrato não separa não-totalizado de não-instalado'
-        : 'sem ambiguidade no contrato')),
-  );
+        : 'eleitores']);
+  } else if (def) {
+    cards.push(['Situação',
+      def.disputa_matematicamente_definida ? 'disputa definida'
+      : def.segundo_turno_matematicamente_definido ? '2º turno definido'
+      : def.sub_judice_em_jogo ? 'suspensa (sub judice)' : 'em aberto',
+      def.encerrada ? 'apuração encerrada' : 'apuração em andamento']);
+  }
+  return el('div', {cls: 'resumo'}, ...cards.map(([k, v2, n]) =>
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, k),
+       el('div', {cls: 'v'}, v2), el('div', {cls: 'n'}, n))));
 }
 
-function tabelaCandidatos(u, d, vagas, decisoria) {
-  const rows = u.candidatos.map((c, i) => {
-    const lider = i === 0;
-    return el('tr', {},
-      el('td', {cls: 'num'}, i + 1),
-      el('td', {}, el('b', {}, c.numero)),
-      el('td', {}, c.nome_urna,
-        c.destinacao_voto !== 'Válido'
-          ? [' ', el('span', {cls: 'tag warn',
-              title: 'Destinação oficial do voto'}, c.destinacao_voto)]
-          : null),
-      el('td', {cls: 'hide-sm'}, c.partido),
-      el('td', {cls: 'num'}, fmt(c.votos)),
-      pctCell(c),
-      el('td', {}, el('div', {cls: 'bar'},
-        el('i', {style: `width:${Math.max(0, Math.min(100, c.pct || 0))}%`}))),
-      // A situação vem literal do TSE. "2º turno" NÃO é "eleito": no
-      // payload, o campo `e` marca 's' também para quem se classifica.
-      el('td', {}, c.situacao_oficial
-        ? el('span', {
-            cls: 'tag' + (c.eleito_segundo_tse === true ? ' ok' : ''),
-            title: c.situacao_definida_nesta_abrangencia
-              ? 'Situação oficial do TSE nesta disputa'
-              : 'Situação definida na abrangência que decide a disputa, '
-                + 'não neste território',
-          }, c.eleito_segundo_tse === true
-             ? 'eleito segundo TSE' : c.situacao_oficial)
-        : null),
-    );
-  });
-  return el('table', {},
-    el('thead', {}, el('tr', {},
-      el('th', {cls: 'num'}, '#'), el('th', {}, 'Nº'), el('th', {}, 'Candidato'),
-      el('th', {cls: 'hide-sm'}, 'Partido'), el('th', {cls: 'num'}, 'Votos'),
-      el('th', {cls: 'num'}, '%'), el('th', {}, ''), el('th', {}, 'Situação'))),
-    el('tbody', {}, ...rows));
+function cartao(c, i, maxPct, estados) {
+  const o = c.oficial, p = c.enriquecimento;
+  const est = estados[o.sqcand];
+  const d = est ? DEF[est.estado] : null;
+  const retrato = p && p.foto_url
+    ? el('img', {cls: 'foto', src: p.foto_url, alt: '', loading: 'lazy'})
+    : el('div', {cls: 'numero', 'aria-hidden': 'true'}, o.numero);
+
+  const selos = [];
+  if (o.eleito_segundo_tse === true)
+    selos.push(el('span', {cls: 'tag ok'}, 'eleito segundo TSE'));
+  else if (o.situacao)
+    selos.push(el('span', {cls: 'tag'}, o.situacao));
+  if (d) selos.push(el('span', {cls: 'tag ' + d.cls,
+    title: est.motivo || ''}, d.txt));
+  if (o.destinacao_voto !== 'Válido')
+    selos.push(el('span', {cls: 'tag warn',
+      title: 'Destinação oficial do voto'}, o.destinacao_voto));
+  if (p && !p.juncao_confiavel)
+    selos.push(el('span', {cls: 'tag',
+      title: 'Correspondência por número e partido, ainda não confirmada por '
+           + 'código oficial'}, 'perfil a confirmar'));
+
+  const larg = maxPct > 0 && o.pct != null ? 100 * o.pct / maxPct : 0;
+  return el('div', {cls: 'cand' + (i === 0 ? ' lider' : '')},
+    retrato,
+    el('div', {cls: 'corpo'},
+      el('div', {cls: 'nome'}, (p && p.nome) || o.nome_urna),
+      el('div', {cls: 'meta'},
+        o.partido,
+        p && p.vice_nome ? ` · vice ${p.vice_nome}` : '',
+        p && p.profissao ? ` · ${p.profissao}` : ''),
+      el('div', {cls: 'votos'},
+        el('span', {cls: 'pct'}, o.pct == null
+          ? el('span', {cls: 'null',
+                        title: o.pct_indisponivel_motivo || ''}, 'n/d')
+          : pct(o.pct)),
+        el('span', {cls: 'abs'}, fmt(o.votos) + ' votos')),
+      el('div', {cls: 'barra'},
+        el('i', {style: `width:${Math.max(0, Math.min(100, larg))}%`})),
+      selos.length ? el('div', {cls: 'selos'}, ...selos) : null,
+      p && p.perfil_url
+        ? el('div', {cls: 'meta', style: 'margin-top:5px'},
+            el('a', {href: p.perfil_url, target: '_blank', rel: 'noopener'},
+               'perfil, bens e contas ↗'))
+        : null));
 }
 
-async function viewApuracao() {
-  const cargo = st.cargo || '1';
-  const cfg = CARGOS.find(c => c.cd === cargo);
-  const tab = st.tab || 'nacional';
-  const base = st.base || BASE_PADRAO;
-  const abr = tab === 'municipios' ? 'mu' : (tab === 'estados' ? 'uf' : cfg.abr);
-  const uf = st.uf ? `&uf=${st.uf}` : '';
-  const d = await get(`/results?cargo=${cargo}&abrangencia=${abr}&base=${base}${uf}`);
-  metaBar(d);
-
-  if (!d.dados.length) {
-    return el('div', {cls: 'state'},
-      d.status_motivo || 'sem dados para este recorte');
+async function viewResultado() {
+  const cargo = cargoAtual();
+  if (cargo.abr === 'uf' && !st.uf) {
+    return el('div', {cls: 'estado'},
+      `Escolha uma UF acima. ${cargo.nome} é decidido em cada estado, `
+      + 'não no total nacional.');
+  }
+  const qs = `cargo=${cargo.cd}` + (st.uf ? `&uf=${st.uf}` : '');
+  const [res, cands, def] = await Promise.all([
+    get(`/results?abrangencia=${cargo.abr}&${qs}`),
+    get(`/candidates?${qs}`),
+    get(`/decided?${qs}`).catch(() => null),
+  ]);
+  rodape(res);
+  if (!res.dados.length) {
+    return el('div', {cls: 'estado'}, res.status_motivo || 'sem dados');
   }
 
-  const out = [];
-  if (abr === cfg.abr || abr === 'br') {
-    const u = d.dados[0];
-    out.push(cards(u, d));
-    out.push(el('div', {cls: 'note'},
-      el('b', {}, 'Denominador: '), d.denominador.rotulo, '. ',
-      base === 'validos_computados'
-        ? 'É esta a base que decide maioria absoluta no primeiro turno: '
-          + 'votos válidos mais anulados e anulados sub judice.'
-        : 'Esta base NÃO decide maioria absoluta — troque para '
-          + '“votos a concorrentes”.'
-    ));
-    out.push(tabelaCandidatos(u, d, d.disputa.vagas,
-      abr === d.disputa.abrangencia_decisoria));
-    if (d.disputa.vagas > 1) {
-      out.push(el('div', {cls: 'note'},
-        el('b', {}, 'Senado, duas vagas. '),
-        'Cada eleitor faz até duas escolhas, então percentuais sobre ' +
-        'eleitores podem somar até 200%. Os percentuais desta tabela são ' +
-        'sobre escolhas válidas e somam 100%. A votação de um candidato ' +
-        'nunca é dividida por dois.'));
-    }
-  } else {
-    const q = (st.q || '').toLowerCase();
-    const linhas = d.dados.filter(x => !q ||
-      x.geografia.nome.toLowerCase().includes(q));
-    out.push(el('div', {cls: 'note'},
-      `${fmt(linhas.length)} unidades. `,
-      el('b', {}, 'Liderança territorial não é eleição: '),
-      cargo === '1'
-        ? 'presidente é decidido no total do Brasil, incluindo o exterior.'
-        : 'governador e senador são decididos no total da UF.'));
-    out.push(el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Unidade'), el('th', {cls: 'hide-sm'}, 'UF'),
-        el('th', {}, 'Líder'), el('th', {cls: 'num'}, 'Votos válidos'),
-        el('th', {cls: 'num'}, 'Eleitorado'),
-        el('th', {cls: 'num'}, 'Apurado'), el('th', {}, 'Andamento'))),
-      el('tbody', {}, ...linhas.slice(0, 400).map(x => {
-        const lider = x.candidatos.find(c => c.destinacao_voto === 'Válido');
-        const cob = x.eleitorado.total
-          ? 100 * x.eleitorado.apurado / x.eleitorado.total : null;
-        return el('tr', {},
-          el('td', {}, x.geografia.nome,
-            x.geografia.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null,
-            x.geografia.exterior ? [' ', el('span', {cls: 'tag'}, 'exterior')] : null),
-          el('td', {cls: 'hide-sm'}, x.geografia.uf.toUpperCase()),
-          el('td', {}, lider ? `${lider.numero} ${lider.nome_urna}` : '—'),
-          el('td', {cls: 'num'}, fmt(x.votos.validos)),
-          el('td', {cls: 'num'}, fmt(x.eleitorado.total)),
-          el('td', {cls: 'num'}, pct(cob, 1) || '—'),
-          el('td', {}, el('span', {
-            cls: 'tag ' + (x.andamento === 'f' ? 'ok' : x.andamento === 'p' ? 'warn' : '')
-          }, {f: 'finalizado', p: 'parcial', n: 'não recebido'}[x.andamento] || x.andamento)));
-      }))));
-    if (linhas.length > 400) out.push(el('div', {cls: 'note'},
-      `Mostrando 400 de ${fmt(linhas.length)}. Use a exportação para a base completa.`));
+  const u = res.dados[0];
+  const bloco = cands.dados[0];
+  const dfn = def && def.dados && def.dados[0];
+  const estados = {};
+  if (dfn) for (const c of dfn.candidatos) estados[c.sqcand] = c;
+
+  const lista = ((bloco && bloco.candidatos) || [])
+    .slice().sort((a, b) => b.oficial.votos - a.oficial.votos);
+  const maxPct = Math.max(...lista.map(c => c.oficial.pct || 0), 0);
+
+  const out = [kpis(u, dfn)];
+
+  if (dfn && dfn.sub_judice_em_jogo) {
+    out.push(el('div', {cls: 'nota aten'},
+      el('b', {}, 'Definição matemática suspensa. '),
+      dfn.avisos[0] || 'há votos sub judice em jogo.'));
   }
+  if (dfn && dfn.disputa_matematicamente_definida) {
+    out.push(el('div', {cls: 'nota'},
+      el('b', {}, 'Disputa matematicamente definida. '),
+      'Nenhuma distribuição possível dos votos que faltam muda o resultado. '
+      + 'Isto não é proclamação — essa é do TSE.'));
+  } else if (dfn && dfn.segundo_turno_matematicamente_definido) {
+    out.push(el('div', {cls: 'nota'},
+      el('b', {}, 'Segundo turno matematicamente definido. '),
+      'Os dois nomes já não podem mudar, mas ninguém tem maioria absoluta '
+      + 'garantida.'));
+  }
+
+  out.push(el('div', {cls: 'cards'},
+    ...lista.map((c, i) => cartao(c, i, maxPct, estados))));
+
+  const en = cands.enriquecimento || {};
+  out.push(el('div', {cls: 'nota'},
+    el('b', {}, 'De onde vem cada coisa. '),
+    'Votos, destinação e situação vêm do TSE. Foto, vice e perfil vêm de ',
+    el('a', {href: 'https://eleicoes.osidosos.com.br', target: '_blank',
+             rel: 'noopener'}, 'eleicoes.osidosos.com.br'),
+    ' (dados abertos, MIT). ',
+    en.casados
+      ? `${en.casados} de ${en.total_candidatos} candidatos com perfil, `
+        + `${en.casados_por_codigo_oficial} deles por código oficial.`
+      : (en.aviso || en.erro
+         || 'Nenhum perfil correspondeu: no ambiente de simulado os '
+          + 'candidatos são fictícios.')));
+
+  out.push(detalhesTecnicos(res, u));
   return el('div', {}, ...out);
 }
 
+function detalhesTecnicos(res, u) {
+  const v = u.votos;
+  const linhas = [
+    ['Votos a concorrentes (vvc)', v.validos_computados,
+     'válidos + anulados + sub judice — base da maioria absoluta'],
+    ['Votos válidos (vv)', v.validos, 'só destinação "Válido"'],
+    ['Votos nominais (Σ vap)', v.nominal_tse,
+     'soma dos votos de candidatos — é o denominador que o TSE exibe'],
+    ['Anulados', v.anulados, ''],
+    ['Anulados sub judice', v.anulados_sub_judice, ''],
+    ['Brancos', v.brancos, ''],
+    ['Nulos', v.nulos, ''],
+    ['Total de votos (tv)', v.total, 'no Senado chega a 2x o comparecimento'],
+  ];
+  return el('details', {},
+    el('summary', {}, 'Denominadores e definições técnicas'),
+    el('div', {cls: 'nota'},
+      el('b', {}, 'Os percentuais desta tela usam '), res.denominador.rotulo,
+      '. O TSE exibe percentual sobre votos nominais, que é outro número, e '
+      + 'não é o que decide o primeiro turno.'),
+    el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}, 'Medida'),
+        el('th', {cls: 'num'}, 'Votos'),
+        el('th', {cls: 'hide-sm'}, 'O que é'))),
+      el('tbody', {}, ...linhas.map(([k, n, nota]) => el('tr', {},
+        el('td', {}, k), el('td', {cls: 'num'}, fmt(n)),
+        el('td', {cls: 'hide-sm'}, el('span', {cls: 'null'}, nota)))))));
+}
+
+/* ----------------------------------------------------------------- mapa */
+
+async function viewMapa() {
+  const cargo = cargoAtual();
+  const abr = st.detalhe === 'mu' ? 'mu' : 'uf';
+  const uf = (abr === 'mu' && st.uf) ? `&uf=${st.uf}` : '';
+  const m = await get(
+    `/map-layers?cargo=${cargo.cd}&abrangencia=${abr}${uf}`);
+  rodape(m);
+  if (!m.dados.length) {
+    return el('div', {cls: 'estado'}, m.status_motivo || 'sem dados');
+  }
+
+  const camadaId = st.camada || 'definicao';
+  const camada = MAPA.CAMADAS[camadaId];
+  const wrap = el('div', {});
+
+  wrap.append(el('div', {cls: 'visoes'},
+    ...Object.entries(MAPA.CAMADAS).map(([id, c]) => el('button', {
+      'aria-selected': String(id === camadaId),
+      onclick: () => { st.camada = id; },
+    }, c.rotulo)),
+    el('button', {
+      'aria-selected': 'false', disabled: '',
+      title: 'Classificação ideológica pendente de curadoria com autoria',
+      style: 'opacity:.45;cursor:not-allowed',
+    }, 'Bloco ideológico'),
+    el('button', {
+      'aria-selected': String(abr === 'mu'),
+      onclick: () => { st.detalhe = abr === 'mu' ? '' : 'mu'; },
+    }, abr === 'mu' ? '◂ voltar a estados' : 'ver municípios')));
+
+  wrap.append(el('div', {cls: 'nota'}, el('b', {}, camada.rotulo + '. '),
+                 camada.nota));
+
+  const caixa = el('div', {style: 'background:var(--panel);border:1px solid '
+    + 'var(--line);border-radius:var(--radius);padding:5px'});
+  caixa.append(el('div', {cls: 'estado'}, 'desenhando o mapa…'));
+  const barra = el('div', {style: 'margin-top:13px'});
+  const pe = el('div', {});
+  wrap.append(caixa, barra, pe);
+
+  (async () => {
+    try {
+      const r = await MAPA.desenhar(caixa, m.dados, {
+        malha: m.malha, camada: camadaId,
+        largura: 760, altura: abr === 'mu' ? 640 : 540,
+        aoClicar: d => {
+          if (abr === 'uf' && cargoAtual().abr === 'uf') {
+            st.uf = d.uf; st.visao = 'resultado';
+          } else if (abr === 'uf') { st.uf = d.uf; st.detalhe = 'mu'; }
+        },
+      });
+      poe(pe,
+        MAPA.legenda(r.camada, r.ctx, m.dados),
+        el('div', {cls: 'nota'}, el('b', {}, 'Área não é eleitorado. '),
+           m.aviso_cartografico),
+        el('div', {cls: 'nota'},
+           `${fmt(m.dados.length)} territórios com dado`
+           + (r.semDado ? ` · ${fmt(r.semDado)} sem dado (hachura)` : '')),
+        m.nota_territorial
+          ? el('div', {cls: 'nota'}, el('b', {}, 'Atenção. '),
+               m.nota_territorial) : null,
+        m.quality_flags && m.quality_flags.length
+          ? el('div', {cls: 'nota aten'},
+               el('b', {}, 'Divergência territorial. '),
+               m.quality_flags.join(' · ')) : null,
+        tabelaMapa(m, r.camada, r.ctx));
+      poe(barra,
+        el('label', {}, 'Mesma informação, ponderada por eleitores'),
+        MAPA.barraPonderada(m.dados, r.camada, r.ctx));
+    } catch (e) {
+      poe(caixa, el('div', {cls: 'estado'},
+        el('span', {cls: 'tag err'}, 'erro no mapa'), ' ' + e.message));
+    }
+  })();
+  return wrap;
+}
+
+function tabelaMapa(m, camada, ctx) {
+  const linhas = [...m.dados].sort((a, b) => b.eleitorado - a.eleitorado);
+  return el('details', {open: m.abrangencia === 'uf' ? '' : null},
+    el('summary', {}, `Tabela equivalente (${fmt(linhas.length)} territórios)`),
+    el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}, 'Território'),
+        el('th', {}, 'UF'), el('th', {cls: 'num'}, 'Eleitorado'),
+        el('th', {}, camada.rotulo), el('th', {}, 'Líder'),
+        el('th', {cls: 'num'}, 'Margem'), el('th', {cls: 'num'}, 'Apurado'))),
+      el('tbody', {}, ...linhas.slice(0, 600).map(d => el('tr', {},
+        el('td', {}, d.nome,
+           d.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null),
+        el('td', {}, d.uf.toUpperCase()),
+        el('td', {cls: 'num'}, fmt(d.eleitorado)),
+        el('td', {}, MAPA.descreve(d, camada, ctx)),
+        el('td', {}, d.lider_nome || '—'),
+        el('td', {cls: 'num'}, d.margem_pp == null
+          ? el('span', {cls: 'null'}, 'n/d') : pct(d.margem_pp, 1) + ' pp'),
+        el('td', {cls: 'num'}, d.cobertura_pct == null
+          ? el('span', {cls: 'null'}, 'n/d') : pct(d.cobertura_pct, 1)))))));
+}
+
+/* ------------------------------------------------------------- projeção */
+
 async function viewProjecao() {
-  const cargo = st.cargo || '1';
-  const d = await get(`/forecasts?cargo=${cargo}`);
-  metaBar(d);
-  const estados = {
+  const cargo = cargoAtual();
+  const d = await get(`/forecasts?cargo=${cargo.cd}`);
+  rodape(d);
+  const nomes = {
     aguardando: 'Aguardando dados',
     cenario_exploratorio: 'Cenário exploratório',
     projecao_disponivel: 'Projeção disponível',
@@ -410,324 +584,91 @@ async function viewProjecao() {
     resultado_oficial: 'Resultado oficial',
   };
   return el('div', {},
-    el('div', {cls: 'cards'},
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Estado do produto'),
-        el('div', {cls: 'v', style: 'font-size:17px'},
-          estados[d.status] || d.status),
-        el('div', {cls: 'n'}, 'nenhuma probabilidade publicada'))),
-    el('div', {cls: 'note'}, el('b', {}, 'Por que não há projeção: '),
-      d.status_motivo),
-    el('div', {cls: 'note'},
-      el('b', {}, 'O que muda quando liberar. '),
-      'A projeção estimará separadamente comparecimento, taxa de votos ' +
-      'válidos e preferência nos locais pendentes, e depois agregará ' +
-      'contagens — nunca extrapolando o percentual nacional já apurado. ' +
-      'Intervalo preditivo não é margem de erro de pesquisa.'));
-}
-
-async function viewMapa() {
-  const cargo = st.cargo || '1';
-  const tab = st.tab || 'nacional';
-  // Municípios quando a aba pede; UF nas demais — que é a unidade que de
-  // fato decide governador e senador.
-  const abr = tab === 'municipios' ? 'mu' : 'uf';
-  const uf = (abr === 'mu' && st.uf) ? `&uf=${st.uf}` : '';
-  const [m, cl] = await Promise.all([
-    get(`/map-layers?cargo=${cargo}&abrangencia=${abr}${uf}`),
-    get('/classifications'),
-  ]);
-  metaBar(m);
-  if (!m.dados.length) {
-    return el('div', {cls: 'state'}, m.status_motivo || 'sem dados');
-  }
-
-  const camadaId = st.camada || 'lider';
-  const camada = MAPA.CAMADAS[camadaId];
-  const wrap = el('div', {});
-
-  // seletor de camada
-  wrap.append(el('div', {cls: 'modes'},
-    ...Object.entries(MAPA.CAMADAS).map(([id, c]) => el('button', {
-      'aria-pressed': String(id === camadaId),
-      onclick: () => { st.camada = id; },
-    }, c.rotulo)),
-    el('button', {
-      'aria-pressed': 'false', disabled: '',
-      title: cl.dados.motivo || 'curadoria pendente',
-      style: 'opacity:.5;cursor:not-allowed',
-    }, 'Bloco ideológico (desabilitado)')));
-
-  wrap.append(el('div', {cls: 'note'}, el('b', {}, camada.rotulo + '. '),
-                 camada.nota));
-
-  const caixa = el('div', {style: 'background:var(--panel);border:1px solid '
-                                + 'var(--line);border-radius:10px;padding:6px'});
-  wrap.append(caixa);
-  caixa.append(el('div', {cls: 'state'}, 'desenhando o mapa…'));
-
-  const barra = el('div', {style: 'margin-top:14px'});
-  wrap.append(barra);
-
-  const rodape = el('div', {});
-  wrap.append(rodape);
-
-  // Desenha depois de devolver o nó, para o painel não travar enquanto
-  // 5.570 polígonos viram caminhos SVG.
-  (async () => {
-    try {
-      const r = await MAPA.desenhar(caixa, m.dados, {
-        malha: m.malha, camada: camadaId,
-        largura: 760, altura: abr === 'mu' ? 660 : 560,
-        aoClicar: d => {
-          if (abr === 'uf') { st.uf = d.uf; st.tab = 'estados'; }
-        },
-      });
-      rodape.replaceChildren(
-        MAPA.legenda(r.camada, r.ctx, m.dados),
-        el('div', {cls: 'note'}, el('b', {}, 'Área não é eleitorado. '),
-          m.aviso_cartografico),
-        el('div', {cls: 'note'},
-          `${fmt(m.dados.length)} territórios com dado`
-          + (r.semDado ? ` · ${fmt(r.semDado)} sem dado (hachura)` : '')),
-        tabelaMapa(m, camada, r.ctx));
-      // replaceChildren insere a string "null" se receber null — ao
-      // contrário do helper el(), que os descarta. Por isso o condicional
-      // fica fora da chamada.
-      if (m.nota_territorial) {
-        rodape.insertBefore(
-          el('div', {cls: 'note'}, el('b', {}, 'Atenção. '),
-             m.nota_territorial),
-          rodape.lastChild);
-      }
-      if (m.quality_flags && m.quality_flags.length) {
-        rodape.insertBefore(
-          el('div', {cls: 'note', style: 'border-left-color:var(--alerta)'},
-             el('b', {}, 'Divergência territorial. '),
-             m.quality_flags.join(' · ')),
-          rodape.lastChild);
-      }
-      barra.replaceChildren(
-        el('label', {}, 'Mesma informação, ponderada por eleitores'),
-        MAPA.barraPonderada(m.dados, r.camada, r.ctx));
-    } catch (e) {
-      caixa.replaceChildren(el('div', {cls: 'state'},
-        el('span', {cls: 'tag err'}, 'erro no mapa'), ' ', String(e.message)));
-    }
-  })();
-
-  return wrap;
-}
-
-function tabelaMapa(m, camada, ctx) {
-  // Alternativa tabular completa ao mapa (§11.3): tudo que o mapa mostra
-  // tem de ser legível sem ele.
-  const linhas = [...m.dados].sort((a, b) => b.eleitorado - a.eleitorado);
-  const cabeca = ['Território', 'UF', 'Eleitorado', camada.rotulo,
-                  'Líder', 'Margem', 'Apurado'];
-  return el('details', {open: m.abrangencia === 'uf' ? '' : null},
-    el('summary', {style: 'cursor:pointer;margin:12px 0;font-size:13px'},
-      `Tabela equivalente (${fmt(linhas.length)} territórios)`),
-    el('table', {},
-      el('thead', {}, el('tr', {}, ...cabeca.map((h, i) =>
-        el('th', {cls: i >= 2 && i !== 3 && i !== 4 ? 'num' : null}, h)))),
-      el('tbody', {}, ...linhas.slice(0, 600).map(d => el('tr', {},
-        el('td', {}, d.nome,
-          d.capital ? [' ', el('span', {cls: 'tag'}, 'capital')] : null),
-        el('td', {}, d.uf.toUpperCase()),
-        el('td', {cls: 'num'}, fmt(d.eleitorado)),
-        el('td', {}, MAPA.descreve(d, camada, ctx)),
-        el('td', {}, d.lider_nome || '—'),
-        el('td', {cls: 'num'}, d.margem_pp == null
-          ? el('span', {cls: 'null'}, 'n/d')
-          : pct(d.margem_pp, 1) + ' pp'),
-        el('td', {cls: 'num'}, d.cobertura_pct == null
-          ? el('span', {cls: 'null'}, 'n/d') : pct(d.cobertura_pct, 1)))))));
-}
-
-async function viewHistorico() {
-  const cargo = st.cargo || '1';
-  const cfg = CARGOS.find(c => c.cd === cargo);
-  const uf = st.uf ? `&uf=${st.uf}` : '';
-  const d = await get(`/timeline?cargo=${cargo}&abrangencia=${cfg.abr}${uf}`);
-  metaBar(d);
-  const s = d.dados;
-  if (!s.length) return el('div', {cls: 'state'}, 'sem série capturada ainda');
-
-  const i = Math.min(s.length - 1,
-    parseInt(st.t ?? String(s.length - 1), 10) || s.length - 1);
-  const p = s[i];
-  const brt = x => x ? new Date(x).toLocaleString('pt-BR',
-    {timeZone: 'America/Sao_Paulo'}) : '—';
-
-  return el('div', {},
-    el('div', {cls: 'note'},
-      el('b', {}, 'Replay. '),
-      'Mostra apenas o que o sistema sabia no instante selecionado. ' +
-      'Reanálise com modelo novo é outra série, nunca esta.'),
-    el('div', {}, el('label', {for: 'tsl'},
-      `Instante ${i + 1} de ${s.length} — ${brt(p.captured_at)}`),
-      el('input', {
-        id: 'tsl', type: 'range', min: '0', max: String(s.length - 1),
-        value: String(i), style: 'width:100%',
-        oninput: e => { st.t = e.target.value; },
-      })),
-    el('div', {cls: 'cards'},
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Seções totalizadas'),
-        el('div', {cls: 'v'}, fmt(p.secoes_totalizadas)),
-        el('div', {cls: 'n'}, `de ${fmt(p.secoes_total)}`)),
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Votos válidos'),
-        el('div', {cls: 'v'}, fmt(p.validos))),
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Comparecimento'),
-        el('div', {cls: 'v'}, fmt(p.comparecimento))),
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Latência da fonte'),
-        el('div', {cls: 'v'}, p.latencia_fonte_s == null ? '—' :
-          Math.round(p.latencia_fonte_s) + ' s'),
-        el('div', {cls: 'n'}, 'geração no TSE → nossa captura'))),
-    el('div', {cls: 'note'},
-      'Gerado no TSE: ', el('b', {}, brt(p.source_generated_at)),
-      ' · Capturado por nós: ', el('b', {}, brt(p.captured_at)),
-      '. Os dois horários são distintos e medidos separadamente.'));
-}
-
-
-async function viewDefinicao() {
-  const cargo = st.cargo || '1';
-  const uf = st.uf ? '&uf=' + st.uf : '';
-  const d = await get('/decided?cargo=' + cargo + uf);
-  metaBar(d);
-  if (!d.dados.length) {
-    return el('div', {cls: 'state'}, d.status_motivo || 'sem dados');
-  }
-  const out = [el('div', {cls: 'note'},
-    el('b', {}, 'Isto não é projeção nem proclamação. '), d.nota)];
-
-  for (const u of d.dados) {
-    const titulo = u.geografia.nome
-      + (u.vagas > 1 ? ' — ' + u.vagas + ' vagas' : '')
-      + (u.tem_segundo_turno ? ' (com 2º turno)' : '');
-    out.push(el('div', {cls: 'cards'},
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Disputa'),
-        el('div', {cls: 'v', style: 'font-size:16px'}, titulo)),
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Ainda podem entrar'),
-        el('div', {cls: 'v'}, fmt(u.resto_maximo_total)),
-        el('div', {cls: 'n'}, u.vagas > 1
-          ? 'no máximo ' + fmt(u.resto_maximo_por_candidato) + ' por candidato'
-          : 'limite superior do eleitorado pendente')),
-      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Situação'),
+    el('div', {cls: 'resumo'},
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Estado do produto'),
         el('div', {cls: 'v', style: 'font-size:16px'},
-          u.disputa_matematicamente_definida ? 'disputa definida'
-          : u.segundo_turno_matematicamente_definido ? '2º turno definido'
-          : 'em aberto'),
-        el('div', {cls: 'n'}, u.encerrada ? 'apuração encerrada'
-                                          : 'apuração em andamento'))));
-
-    if (u.sub_judice_em_jogo) {
-      out.push(el('div', {cls: 'note',
-                          style: 'border-left-color:var(--alerta)'},
-        el('b', {}, 'Definição suspensa. '),
-        (u.avisos[0] || 'há votos sub judice em jogo'),
-        ' Enquanto a Justiça não decidir, a aritmética pode mudar depois do '
-        + 'fato, e afirmar definição seria afirmar certeza inexistente.'));
-    }
-
-    out.push(el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Nº'), el('th', {}, 'Candidato'),
-        el('th', {cls: 'num'}, 'Votos'), el('th', {}, 'Estado'),
-        el('th', {cls: 'num'}, 'Falta para alcançar'),
-        el('th', {cls: 'hide-sm'}, 'Por quê'))),
-      el('tbody', {}, ...u.candidatos.map(c => {
-        const e = ESTADO_DEF[c.estado] || ESTADO_DEF.em_aberto;
-        return el('tr', {},
-          el('td', {}, el('b', {}, c.numero || '—')),
-          el('td', {}, c.nome_urna),
-          el('td', {cls: 'num'}, fmt(c.votos)),
-          el('td', {}, el('span', {cls: 'tag ' + e.cls}, e.txt)),
-          el('td', {cls: 'num'}, c.precisa_para_alcancar == null
-            ? el('span', {cls: 'null'}, 'já está dentro')
-            : fmt(c.precisa_para_alcancar)),
-          el('td', {cls: 'hide-sm'},
-             el('span', {cls: 'null'}, c.motivo || '—')));
-      }))));
-  }
-  return el('div', {}, ...out);
+           nomes[d.status] || d.status),
+        el('div', {cls: 'n'}, 'nenhuma probabilidade publicada'))),
+    el('div', {cls: 'nota aten'}, el('b', {}, 'Por que não há projeção: '),
+       d.status_motivo),
+    el('div', {cls: 'nota'}, el('b', {}, 'O que muda quando liberar. '),
+      'A projeção estima separadamente comparecimento, taxa de votos válidos '
+      + 'e preferência nos locais pendentes, e só então agrega contagens — '
+      + 'nunca extrapolando o percentual nacional já apurado. Intervalo '
+      + 'preditivo não é margem de erro de pesquisa.'),
+    el('div', {cls: 'nota'}, el('b', {}, 'Enquanto isso. '),
+      'A aba Resultado já mostra o que está ',
+      el('b', {}, 'matematicamente definido'),
+      ' — certeza aritmética, não estimativa, e que não depende de nenhuma '
+      + 'homologação.'));
 }
+
+/* ------------------------------------------------------------ auditoria */
 
 async function viewAuditoria() {
   const d = await get('/forecast-audit');
-  metaBar(d);
+  rodape(d);
   if (!d.dados.length) {
-    return el('div', {cls: 'state'},
-      'nenhuma projeção registrada ainda — rode "obs2026 prever".');
+    return el('div', {cls: 'estado'},
+      'Nenhuma projeção registrada ainda. Rode "obs2026 prever".');
   }
-  const out = [el('div', {cls: 'note'},
+  const out = [el('div', {cls: 'nota'},
     el('b', {}, 'O que dissemos, e quando. '), d.nota)];
-
-  for (const serie of d.dados) {
-    out.push(el('h3', {style: 'font-size:14px;margin:18px 0 6px'},
-                serie.serie));
-    out.push(el('div', {cls: 'note'},
-      serie.execucoes + ' execuções · de '
-      + serie.primeira.slice(0, 19).replace('T', ' ') + ' a '
-      + serie.ultima.slice(0, 19).replace('T', ' ')));
+  for (const s of d.dados) {
+    out.push(el('h2', {}, s.serie));
+    out.push(el('div', {cls: 'nota'},
+      `${s.execucoes} execuções · de ${brt(s.primeira)} a ${brt(s.ultima)}`));
     out.push(el('table', {},
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Momento'), el('th', {cls: 'num'}, 'Cobertura'),
-        el('th', {}, 'Estado'), el('th', {}, 'Líder projetado'),
-        el('th', {cls: 'num'}, '% (intervalo 80%)'),
+      el('thead', {}, el('tr', {}, el('th', {}, 'Momento'),
+        el('th', {cls: 'num'}, 'Cobertura'), el('th', {}, 'Estado'),
+        el('th', {}, 'Líder projetado'), el('th', {cls: 'num'}, '% (80%)'),
         el('th', {cls: 'hide-sm'}, 'Modelo'),
-        el('th', {cls: 'hide-sm num'}, 'Semente'),
-        el('th', {}, 'Definida'))),
-      el('tbody', {}, ...serie.registros.map(r => {
-        const top = r.candidatos[0];
+        el('th', {cls: 'hide-sm num'}, 'Semente'), el('th', {}, 'Definida'))),
+      el('tbody', {}, ...s.registros.map(r => {
+        const t = r.candidatos[0];
         return el('tr', {},
           el('td', {}, r.momento.slice(0, 19).replace('T', ' ')),
           el('td', {cls: 'num'}, pct(r.cobertura_eleitorado_pct)),
           el('td', {}, el('span', {cls: 'tag'}, r.estado_publicacao)),
-          el('td', {}, top ? top.nome : '—'),
-          el('td', {cls: 'num'}, top
-            ? pct(top.pct_q500) + ' (' + top.pct_q100.toFixed(1) + '–'
-              + top.pct_q900.toFixed(1) + ')'
-            : '—'),
+          el('td', {}, t ? t.nome : '—'),
+          el('td', {cls: 'num'}, t
+            ? `${pct(t.pct_q500)} (${t.pct_q100.toFixed(1)}–`
+              + `${t.pct_q900.toFixed(1)})` : '—'),
           el('td', {cls: 'hide-sm'}, el('code', {}, r.model_version)),
           el('td', {cls: 'hide-sm num'}, el('code', {}, String(r.semente))),
           el('td', {}, r.disputa_definida
             ? el('span', {cls: 'tag ok'}, 'sim') : ''));
       }))));
   }
-  out.push(el('div', {cls: 'note'},
-    el('b', {}, 'Como ler. '),
-    'Cada linha guarda o que o modelo dizia com aquela cobertura. Erro '
-    + 'grande com 2% apurado não é falha; intervalo que não cobre o '
-    + 'resultado com 60% apurado é. A avaliação consolidada, com intervalo '
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '),
+    'Erro grande com 2% apurado não é falha; intervalo que não cobre o '
+    + 'resultado com 60% apurado é. A consolidação por faixa, com intervalo '
     + 'de confiança das próprias métricas, sai em "obs2026 '
     + 'auditar-previsoes".'));
   return el('div', {}, ...out);
 }
 
+/* --------------------------------------------------------------- render */
+
 async function render() {
-  chrome();
+  navegacao();
   const main = document.getElementById('main');
-  main.replaceChildren(el('div', {cls: 'state'}, 'carregando…'));
+  poe(main, el('div', {cls: 'estado'}, 'carregando…'));
   try {
     const cat = await get('/elections');
     document.getElementById('sub').textContent =
-      cat.dados.map(e => `${e.nome} · turno ${e.turno}`).join('  |  ');
+      cat.dados.map(e => e.nome.split(' - ')[0]).join(' · ');
     if (cat.ambiente.aviso) {
-      document.getElementById('banner').replaceChildren(
-        el('div', {cls: 'banner'}, cat.ambiente.aviso));
+      poe(document.getElementById('aviso'),
+        el('div', {cls: 'aviso'}, cat.ambiente.aviso));
     }
-    controls(['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg',
-              'pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se',
-              'to','zz']);
-    const mode = st.mode || 'apuracao';
-    const fn = {apuracao: viewApuracao, projecao: viewProjecao,
-                mapa: viewMapa, historico: viewHistorico,
-                definicao: viewDefinicao, auditoria: viewAuditoria}[mode];
-    main.replaceChildren(await fn());
+    const fn = {resultado: viewResultado, mapa: viewMapa,
+                projecao: viewProjecao, auditoria: viewAuditoria
+               }[st.visao || 'resultado'];
+    poe(main, await fn());
   } catch (e) {
-    main.replaceChildren(el('div', {cls: 'state'},
-      el('span', {cls: 'tag err'}, 'erro'), ' ', String(e.message)));
+    poe(main, el('div', {cls: 'estado'},
+      el('span', {cls: 'tag err'}, 'erro'), ' ' + e.message));
   }
 }
 render();
