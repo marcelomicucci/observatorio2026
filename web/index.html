@@ -151,11 +151,22 @@ const TABS = [
   {id: 'municipios', label: 'Municípios'},
 ];
 const MODES = [
-  {id: 'apuracao', label: 'Apuração'},
-  {id: 'projecao', label: 'Projeção'},
-  {id: 'mapa',     label: 'Mapa político'},
-  {id: 'historico',label: 'Histórico'},
+  {id: 'apuracao',  label: 'Apuração'},
+  {id: 'definicao', label: 'Definição matemática'},
+  {id: 'projecao',  label: 'Projeção'},
+  {id: 'mapa',      label: 'Mapa político'},
+  {id: 'historico', label: 'Histórico'},
+  {id: 'auditoria', label: 'Auditoria'},
 ];
+
+// Os três rótulos que o §4.7 manda manter distintos. Cor e texto mudam
+// juntos: nada aqui se lê só pela cor.
+const ESTADO_DEF = {
+  matematicamente_eleito:           {cls: 'ok',  txt: 'matematicamente definido'},
+  matematicamente_no_segundo_turno: {cls: 'ok',  txt: '2º turno definido'},
+  matematicamente_eliminado:        {cls: 'err', txt: 'eliminado'},
+  em_aberto:                        {cls: '',    txt: 'em aberto'},
+};
 const CARGOS = [
   {cd: '1', label: 'Presidente', abr: 'br'},
   {cd: '3', label: 'Governador', abr: 'uf'},
@@ -503,6 +514,122 @@ async function viewHistorico() {
       '. Os dois horários são distintos e medidos separadamente.'));
 }
 
+
+async function viewDefinicao() {
+  const cargo = st.cargo || '1';
+  const uf = st.uf ? '&uf=' + st.uf : '';
+  const d = await get('/decided?cargo=' + cargo + uf);
+  metaBar(d);
+  if (!d.dados.length) {
+    return el('div', {cls: 'state'}, d.status_motivo || 'sem dados');
+  }
+  const out = [el('div', {cls: 'note'},
+    el('b', {}, 'Isto não é projeção nem proclamação. '), d.nota)];
+
+  for (const u of d.dados) {
+    const titulo = u.geografia.nome
+      + (u.vagas > 1 ? ' — ' + u.vagas + ' vagas' : '')
+      + (u.tem_segundo_turno ? ' (com 2º turno)' : '');
+    out.push(el('div', {cls: 'cards'},
+      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Disputa'),
+        el('div', {cls: 'v', style: 'font-size:16px'}, titulo)),
+      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Ainda podem entrar'),
+        el('div', {cls: 'v'}, fmt(u.resto_maximo_total)),
+        el('div', {cls: 'n'}, u.vagas > 1
+          ? 'no máximo ' + fmt(u.resto_maximo_por_candidato) + ' por candidato'
+          : 'limite superior do eleitorado pendente')),
+      el('div', {cls: 'card'}, el('div', {cls: 'k'}, 'Situação'),
+        el('div', {cls: 'v', style: 'font-size:16px'},
+          u.disputa_matematicamente_definida ? 'disputa definida'
+          : u.segundo_turno_matematicamente_definido ? '2º turno definido'
+          : 'em aberto'),
+        el('div', {cls: 'n'}, u.encerrada ? 'apuração encerrada'
+                                          : 'apuração em andamento'))));
+
+    if (u.sub_judice_em_jogo) {
+      out.push(el('div', {cls: 'note',
+                          style: 'border-left-color:var(--alerta)'},
+        el('b', {}, 'Definição suspensa. '),
+        (u.avisos[0] || 'há votos sub judice em jogo'),
+        ' Enquanto a Justiça não decidir, a aritmética pode mudar depois do '
+        + 'fato, e afirmar definição seria afirmar certeza inexistente.'));
+    }
+
+    out.push(el('table', {},
+      el('thead', {}, el('tr', {},
+        el('th', {}, 'Nº'), el('th', {}, 'Candidato'),
+        el('th', {cls: 'num'}, 'Votos'), el('th', {}, 'Estado'),
+        el('th', {cls: 'num'}, 'Falta para alcançar'),
+        el('th', {cls: 'hide-sm'}, 'Por quê'))),
+      el('tbody', {}, ...u.candidatos.map(c => {
+        const e = ESTADO_DEF[c.estado] || ESTADO_DEF.em_aberto;
+        return el('tr', {},
+          el('td', {}, el('b', {}, c.numero || '—')),
+          el('td', {}, c.nome_urna),
+          el('td', {cls: 'num'}, fmt(c.votos)),
+          el('td', {}, el('span', {cls: 'tag ' + e.cls}, e.txt)),
+          el('td', {cls: 'num'}, c.precisa_para_alcancar == null
+            ? el('span', {cls: 'null'}, 'já está dentro')
+            : fmt(c.precisa_para_alcancar)),
+          el('td', {cls: 'hide-sm'},
+             el('span', {cls: 'null'}, c.motivo || '—')));
+      }))));
+  }
+  return el('div', {}, ...out);
+}
+
+async function viewAuditoria() {
+  const d = await get('/forecast-audit');
+  metaBar(d);
+  if (!d.dados.length) {
+    return el('div', {cls: 'state'},
+      'nenhuma projeção registrada ainda — rode "obs2026 prever".');
+  }
+  const out = [el('div', {cls: 'note'},
+    el('b', {}, 'O que dissemos, e quando. '), d.nota)];
+
+  for (const serie of d.dados) {
+    out.push(el('h3', {style: 'font-size:14px;margin:18px 0 6px'},
+                serie.serie));
+    out.push(el('div', {cls: 'note'},
+      serie.execucoes + ' execuções · de '
+      + serie.primeira.slice(0, 19).replace('T', ' ') + ' a '
+      + serie.ultima.slice(0, 19).replace('T', ' ')));
+    out.push(el('table', {},
+      el('thead', {}, el('tr', {},
+        el('th', {}, 'Momento'), el('th', {cls: 'num'}, 'Cobertura'),
+        el('th', {}, 'Estado'), el('th', {}, 'Líder projetado'),
+        el('th', {cls: 'num'}, '% (intervalo 80%)'),
+        el('th', {cls: 'hide-sm'}, 'Modelo'),
+        el('th', {cls: 'hide-sm num'}, 'Semente'),
+        el('th', {}, 'Definida'))),
+      el('tbody', {}, ...serie.registros.map(r => {
+        const top = r.candidatos[0];
+        return el('tr', {},
+          el('td', {}, r.momento.slice(0, 19).replace('T', ' ')),
+          el('td', {cls: 'num'}, pct(r.cobertura_eleitorado_pct)),
+          el('td', {}, el('span', {cls: 'tag'}, r.estado_publicacao)),
+          el('td', {}, top ? top.nome : '—'),
+          el('td', {cls: 'num'}, top
+            ? pct(top.pct_q500) + ' (' + top.pct_q100.toFixed(1) + '–'
+              + top.pct_q900.toFixed(1) + ')'
+            : '—'),
+          el('td', {cls: 'hide-sm'}, el('code', {}, r.model_version)),
+          el('td', {cls: 'hide-sm num'}, el('code', {}, String(r.semente))),
+          el('td', {}, r.disputa_definida
+            ? el('span', {cls: 'tag ok'}, 'sim') : ''));
+      }))));
+  }
+  out.push(el('div', {cls: 'note'},
+    el('b', {}, 'Como ler. '),
+    'Cada linha guarda o que o modelo dizia com aquela cobertura. Erro '
+    + 'grande com 2% apurado não é falha; intervalo que não cobre o '
+    + 'resultado com 60% apurado é. A avaliação consolidada, com intervalo '
+    + 'de confiança das próprias métricas, sai em "obs2026 '
+    + 'auditar-previsoes".'));
+  return el('div', {}, ...out);
+}
+
 async function render() {
   chrome();
   const main = document.getElementById('main');
@@ -520,7 +647,8 @@ async function render() {
               'to','zz']);
     const mode = st.mode || 'apuracao';
     const fn = {apuracao: viewApuracao, projecao: viewProjecao,
-                mapa: viewMapa, historico: viewHistorico}[mode];
+                mapa: viewMapa, historico: viewHistorico,
+                definicao: viewDefinicao, auditoria: viewAuditoria}[mode];
     main.replaceChildren(await fn());
   } catch (e) {
     main.replaceChildren(el('div', {cls: 'state'},

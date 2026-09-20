@@ -7,6 +7,9 @@ Comandos de operação:
     obs2026 ensaio          ensaio completo contra o ambiente, com invariantes
     obs2026 coletar         coleta contínua (é o que roda no simulado)
     obs2026 auditar-csv     audita a base de eleitorado recebida
+    obs2026 prever          projeta uma disputa e REGISTRA o que foi dito
+    obs2026 previsoes       lista o historico de projecoes
+    obs2026 auditar-previsoes  confronta as projecoes com o resultado final
 """
 
 from __future__ import annotations
@@ -411,6 +414,13 @@ def carregar(env_name: str = ENV_OPT,
     else:
         con.print("[green]sem sinalizacoes[/]")
     con.print(f"banco: {env.db_path}")
+
+from .cli_prever import (registrar as _registrar_previsao,  # noqa: E402
+                         registrar_ensaio as _registrar_ensaio)
+
+_registrar_previsao(app, ENV_OPT)
+_registrar_ensaio(app, ENV_OPT)
+
 
 if __name__ == "__main__":
     app()

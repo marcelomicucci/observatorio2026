@@ -87,9 +87,10 @@ O mesmo candidato, sob bases diferentes:
 | sobre `tv` | 7,56% |
 | sobre `vv` | **indefinido** — ele não compõe `vv` |
 
-A maioria absoluta se apura sobre **votos válidos**. A API exige a base
-declarada em toda resposta e devolve `null` com motivo quando numerador e
-denominador não pertencem ao mesmo universo.
+A maioria absoluta se apura sobre os **votos a concorrentes** (`vvc`) — ver a
+seção de confirmação pelos históricos, no fim deste documento. A API exige a
+base declarada em toda resposta e devolve `null` com motivo quando numerador
+e denominador não pertencem ao mesmo universo.
 
 ### O arquivo usa cinco denominadores ao mesmo tempo
 
@@ -232,3 +233,65 @@ SE 75, AM 62, RO 52, AC 22, AP 16, RR 15), mais Brasília. O EA14 confirma:
 **A soma da coluna de zonas (6.292) não é contagem de zonas.** O EA12 permite
 contar as distintas: **2.639**. Uma zona pode abranger mais de um município,
 exatamente como o §2.1 advertia.
+
+---
+
+## Confirmação pelos históricos de 2022
+
+O arquivo `detalhe_votacao_munzona_2022.zip` do portal de dados abertos é o
+equivalente histórico do bloco `e`/`v` do EA20, com os nomes por extenso. Ele
+traz uma coluna chamada **`QT_VOTOS_CONCORRENTES`**.
+
+"Votos a concorrentes" é, portanto, nome próprio do TSE — não interpretação
+nossa do leiame. E as identidades são exatamente as mesmas derivadas do
+simulado de 2026:
+
+```
+QT_VOTOS_CONCORRENTES = QT_TOTAL_VOTOS_VALIDOS
+                      + QT_TOTAL_VOTOS_ANULADOS
+                      + QT_TOTAL_VOTOS_ANUL_SUBJUD        (= vvc)
+
+QT_VOTOS              = QT_VOTOS_CONCORRENTES
+                      + QT_VOTOS_BRANCOS
+                      + QT_TOTAL_VOTOS_NULOS              (= tv)
+```
+
+Verificadas com **zero violações** em Acre/2022. Há ainda
+`QT_ELEITORES_SECOES_NAO_INSTALADAS`, o equivalente de `esni`.
+
+A correção do denominador da maioria absoluta, portanto, não se apoia só na
+leitura do leiame: a própria estrutura dos dados históricos nomeia o conceito.
+
+### Armadilhas do repositório histórico
+
+**Sentinelas negativas.** `#NULO` vira **-1** e `#NE` vira **-3** nos campos
+numéricos. São marcadores de ausência. Somá-los produz voto negativo e um
+total menor que o real — e nada no formato avisa. No leitor eles viram `None`
+e a linha é descartada; nunca viram zero, porque "zero voto" e "voto
+desconhecido" são afirmações diferentes.
+
+**`_BRASIL.csv` duplica os arquivos por UF.** O zip de votação de 2022 traz
+`_BR.csv` (38 MB, só Presidente) e `_BRASIL.csv` (4,3 GB, Governador e
+deputados de todas as UFs — o mesmo conteúdo dos 27 arquivos estaduais). Ler
+os dois dobra todos os votos de Governador. O leitor recusa `_BRASIL.csv`.
+
+**`VT` é pseudo-UF de voto em trânsito.** O leiame avisa que `SG_UF` pode
+trazer `BR`, `VT` ou `ZZ`. Agregar `VT` como se fosse território inventaria
+uma 28ª unidade.
+
+**Em 2022 o Senado teve UMA vaga por UF, não duas.** Em Acre/2022, `tv/c` deu
+exatamente 1,0000. É por isso que **2018 é o histórico que importa** para
+calibrar o modelo do Senado de 2026: foi a última eleição com duas vagas, e é
+a única em que `q` (escolhas válidas por comparecente) pode ser estimado na
+faixa certa.
+
+### O CDN do TSE bloqueia cliente não-navegador
+
+`cdn.tse.jus.br` e `dadosabertos.tse.jus.br` respondem **403 até na raiz**
+para `curl`, com página de erro da Akamai (`errors.edgesuite.net`). Trocar o
+user-agent não resolve. `resultados-sim.tse.jus.br` — o host que o coletor
+usa — responde 200 normalmente.
+
+Consequência prática: o download dos históricos precisa passar por navegador
+real. Não há automação legítima possível a partir de um cliente HTTP simples,
+e não se tenta contornar.

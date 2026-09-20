@@ -21,7 +21,7 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-67 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
+89 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
 mudou.
 
 ```bash
@@ -42,6 +42,19 @@ Painel em `http://localhost:8026`, API em `/api/docs`.
 python -m obs2026.cli auditar-csv docs/fonte/eleitorado_eleicao_capilaridade.csv.zip
 ```
 
+```bash
+python -m obs2026.cli prever governador --uf al
+```
+
+Projeta **e registra** o que foi dito, com a cobertura daquele instante. Não
+há caminho no código que produza projeção sem registro.
+
+```bash
+python -m obs2026.cli previsoes            # histórico do que dissemos
+python -m obs2026.cli auditar-previsoes    # confronta com o resultado final
+python -m obs2026.cli ensaiar-auditoria senador --uf al
+```
+
 ---
 
 ## Estado
@@ -55,6 +68,9 @@ python -m obs2026.cli auditar-csv docs/fonte/eleitorado_eleicao_capilaridade.csv
 | **API** | 8 rotas, envelope completo do §9 |
 | **Painel** | 3 abas × 4 modos, servindo dados reais |
 | **Motor** | M0, M1, Senado, Monte Carlo e backtest funcionando — **não homologado** |
+| **Definição matemática** | funcionando: limite determinístico, sem modelo |
+| **Auditoria de projeções** | funcionando: diário append-only + avaliação |
+| **Históricos** | 2022 lido e conferido; **2018 pendente** |
 | **Mapa ideológico** | máquina pronta, **curadoria pendente por desenho** |
 | **Projeção publicada** | **não**, e o sistema diz por quê |
 
@@ -81,6 +97,8 @@ está vazio. Preencher por conta própria seria inventar autoria.
 - **[RUNBOOK-SIMULADO.md](docs/RUNBOOK-SIMULADO.md)** — operação nos dias
   22, 23 e 24/09.
 - **[METODOLOGIA.md](docs/METODOLOGIA.md)** — projeção, Senado, backtest.
+- **[DEFINICAO-E-AUDITORIA.md](docs/DEFINICAO-E-AUDITORIA.md)** — o que já não
+  depende de modelo, e como conferimos o que dissemos antes.
 - **[ARQUITETURA.md](docs/ARQUITETURA.md)** — componentes, orçamento de
   requisições, implantação.
 
@@ -101,6 +119,10 @@ mesmo universo.
 tem percentual indefinido, não 0%. Partido sem classificação é desconhecido,
 não centro.
 
+**4. Projetado, matematicamente definido e eleito segundo TSE são três
+coisas.** A projeção pode errar e tem intervalo; a definição matemática é
+aritmética que não erra; a proclamação é do TSE. Nunca se fundem numa tela só.
+
 ---
 
 ## Estrutura
@@ -110,7 +132,9 @@ config/          sources, cadência, limiares assinados, classificação
 obs2026/
   tse/           urls, client, catalog, collector, parsers/
   storage/       raw (bruto imutável), models, db, ingest
-  engine/        pending, denominators, simulate, models, backtest
+  engine/        pending, denominators, simulate, models, backtest,
+                 decided (definição matemática), audit, runner
+  history/       leitura dos resultados históricos do TSE
   quality/       invariantes contábeis
   politics/      classificação ideológica versionada
   api/           FastAPI
@@ -128,8 +152,11 @@ data/raw/        arquivo bruto (fora do git)
 1. **Capturar as janelas de 22–24/09**, especialmente a fase de transição de
    0% a 100%. É a única chance antes de outubro de exercitar `A_pendente` com
    apuração em andamento — os arquivos da 1ª janela já estão todos finais.
-2. **Baixar os históricos do TSE de 2018 e 2022** e harmonizar território e
-   partidos. Sem isso não há calibração possível.
+2. **Baixar os históricos de 2018.** Os dois arquivos de 2022 já estão lidos
+   e conferidos (zero violações de invariante). Faltam
+   `votacao_candidato_munzona_2018` e `detalhe_votacao_munzona_2018` — e 2018
+   é o que importa para o Senado, por ser a última eleição com **duas vagas
+   por UF**, como 2026. Em 2022 foi uma só.
 3. **Medir e fixar `max_rps`** a partir do simulado. A folga atual de
    3,6 req/s não basta para a noite de apuração.
 4. **Corrigir a dependência dos σ com a cobertura.** Aos 5% contados, os

@@ -205,3 +205,39 @@ normalmente disponível.
 
 Sem isso, o produto entrega apuração e cenários — que já é o que o §12 manda
 não deixar depender da conclusão das etapas estatísticas.
+
+---
+
+## Correção: a base da maioria absoluta
+
+Uma versão anterior deste documento dizia que a maioria absoluta do primeiro
+turno se apura sobre **votos válidos** (`vv`). Está errado.
+
+O `leiame.pdf` do repositório de dados eleitorais do TSE define o sistema
+majoritário como "a maioria dos **votos a concorrentes** (votos válidos,
+votos anulados e votos anulados sub judice)", e diz que há segundo turno
+quando ninguém alcança "maioria absoluta destes votos a concorrentes".
+
+Isso é `vv + van + vansj` = **`vvc`**, e é coerente com a Constituição, art.
+77 §2º, que exclui do denominador apenas brancos e nulos — voto *anulado* de
+candidato não é voto *nulo* do eleitor.
+
+O impacto é material: no arquivo nacional do simulado, os percentuais sobre
+`vv` ficam **19,5% mais altos** do que sobre `vvc`, o que poderia anunciar
+vitória em primeiro turno inexistente. Em 2022 a distinção era invisível
+porque nenhum candidato a presidente teve votos anulados; um produto
+calibrado só contra 2022 herdaria o erro sem perceber.
+
+Corrigido em `denominators.BASE_MAIORIA_ABSOLUTA`, na probabilidade de
+maioria absoluta do motor, e na base padrão da API e do painel. Três testes
+travam a regra.
+
+## Definição matemática e auditoria
+
+Ver [DEFINICAO-E-AUDITORIA.md](DEFINICAO-E-AUDITORIA.md). Em resumo: além da
+projeção, o sistema calcula o que já **não depende mais de modelo** (limite
+determinístico) e registra toda projeção feita para conferência posterior.
+
+A auditoria já quantificou o problema de calibração que este documento
+suspeitava: no Senado, a cobertura dos intervalos de 80% fica entre 10% e 30%
+nas fases iniciais da apuração. Os σ precisam crescer quando a cobertura cai.

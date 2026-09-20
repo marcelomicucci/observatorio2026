@@ -573,3 +573,9 @@ _WEB = Path(__file__).resolve().parent.parent.parent / "web"
 def painel():
     """Serve o painel. O navegador só fala com esta API, nunca com o TSE."""
     return FileResponse(_WEB / "index.html", media_type="text/html")
+
+
+# Registrado por último, quando os auxiliares acima já existem.
+from . import decided_audit as _decided_audit  # noqa: E402
+
+_decided_audit.register(app)

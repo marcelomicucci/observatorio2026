@@ -65,10 +65,29 @@ COLS_CANDIDATO = (
 )
 
 #: Colunas exigidas em `detalhe_votacao_munzona`.
+#:
+#: Este arquivo e o equivalente historico do bloco `e`/`v` do EA20, com os
+#: nomes escritos por extenso. Em particular ele tem uma coluna chamada
+#: **QT_VOTOS_CONCORRENTES**: "votos a concorrentes" e nome proprio do TSE,
+#: nao interpretacao nossa. E as identidades sao as mesmas do EA20:
+#:
+#:     QT_VOTOS_CONCORRENTES = QT_TOTAL_VOTOS_VALIDOS
+#:                           + QT_TOTAL_VOTOS_ANULADOS
+#:                           + QT_TOTAL_VOTOS_ANUL_SUBJUD      (= vvc)
+#:     QT_VOTOS = QT_VOTOS_CONCORRENTES
+#:              + QT_VOTOS_BRANCOS + QT_TOTAL_VOTOS_NULOS      (= tv)
+#:
+#: Ha tambem QT_ELEITORES_SECOES_NAO_INSTALADAS, o equivalente de `esni`:
+#: eleitores que nao produziram voto porque a secao nao foi instalada.
 COLS_DETALHE = (
     "ANO_ELEICAO", "NR_TURNO", "CD_ELEICAO", "SG_UF", "CD_MUNICIPIO",
-    "NR_ZONA", "CD_CARGO", "QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
-    "QT_VOTOS_NOMINAIS", "QT_VOTOS_BRANCOS", "QT_VOTOS_NULOS",
+    "NR_ZONA", "CD_CARGO", "ST_VOTO_EM_TRANSITO",
+    "QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
+    "QT_TOTAL_SECOES", "QT_SECOES_NAO_INSTALADAS",
+    "QT_ELEITORES_SECOES_NAO_INSTALADAS",
+    "QT_VOTOS", "QT_VOTOS_CONCORRENTES", "QT_TOTAL_VOTOS_VALIDOS",
+    "QT_TOTAL_VOTOS_ANULADOS", "QT_TOTAL_VOTOS_ANUL_SUBJUD",
+    "QT_VOTOS_BRANCOS", "QT_TOTAL_VOTOS_NULOS",
 )
 
 #: Cargos de interesse, com o mesmo código do EA11/EA20.
@@ -164,13 +183,44 @@ class DetalheHistorico:
     aptos: int
     comparecimento: int
     abstencoes: int
-    nominais: int
+    #: `tv` — total de votos. No Senado de 2018 vai ate 2x o comparecimento.
+    total_votos: int
+    #: `vvc` — votos a concorrentes. Denominador da maioria absoluta.
+    concorrentes: int
+    #: `vv` — validos.
+    validos: int
+    anulados: int
+    anulados_sub_judice: int
     brancos: int
     nulos: int
+    secoes_total: int
+    secoes_nao_instaladas: int
+    #: `esni` historico: eleitores que nao produziram voto.
+    eleitores_secoes_nao_instaladas: int
+    em_transito: bool = False
 
     @property
     def unit(self) -> str:
         return f"{self.uf}:{self.cd_municipio}:{self.zona}"
+
+    def invariantes(self) -> list[str]:
+        """As mesmas identidades do EA20, conferidas no historico."""
+        problemas = []
+        soma = self.validos + self.anulados + self.anulados_sub_judice
+        if self.concorrentes != soma:
+            problemas.append(
+                f"concorrentes {self.concorrentes} != validos+anulados+"
+                f"subjudice {soma}")
+        tv = self.concorrentes + self.brancos + self.nulos
+        if self.total_votos != tv:
+            problemas.append(
+                f"total_votos {self.total_votos} != concorrentes+brancos+"
+                f"nulos {tv}")
+        if self.comparecimento + self.abstencoes != self.aptos:
+            problemas.append(
+                f"comparecimento+abstencoes != aptos "
+                f"({self.comparecimento}+{self.abstencoes} != {self.aptos})")
+        return problemas
 
     @property
     def turnout(self) -> float | None:
@@ -185,8 +235,13 @@ class DetalheHistorico:
 
     @property
     def taxa_valida(self) -> float | None:
-        total = self.nominais + self.brancos + self.nulos
-        return (self.nominais / total) if total else None
+        """Votos a concorrentes sobre o total de votos.
+
+        Usa `concorrentes`, nao `validos`: e o mesmo denominador da maioria
+        absoluta, e e o que o motor projeta.
+        """
+        return ((self.concorrentes / self.total_votos)
+                if self.total_votos else None)
 
 
 def _abrir(caminho: Path) -> zipfile.ZipFile:
@@ -278,7 +333,11 @@ def ler_detalhe(caminho: Path, uf: str, *,
                 cargos: tuple[str, ...] = ("1", "3", "5"),
                 turno: str = "1") -> Iterator[DetalheHistorico]:
     obrig = ("QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
-             "QT_VOTOS_NOMINAIS", "QT_VOTOS_BRANCOS", "QT_VOTOS_NULOS")
+             "QT_VOTOS", "QT_VOTOS_CONCORRENTES", "QT_TOTAL_VOTOS_VALIDOS",
+             "QT_TOTAL_VOTOS_ANULADOS", "QT_TOTAL_VOTOS_ANUL_SUBJUD",
+             "QT_VOTOS_BRANCOS", "QT_TOTAL_VOTOS_NULOS",
+             "QT_TOTAL_SECOES", "QT_SECOES_NAO_INSTALADAS",
+             "QT_ELEITORES_SECOES_NAO_INSTALADAS")
     for membro in membros(caminho, uf):
         for r in _linhas(caminho, membro, COLS_DETALHE):
             if r["CD_CARGO"] not in cargos or r["NR_TURNO"] != turno:
@@ -297,9 +356,19 @@ def ler_detalhe(caminho: Path, uf: str, *,
                 aptos=campos["QT_APTOS"],
                 comparecimento=campos["QT_COMPARECIMENTO"],
                 abstencoes=campos["QT_ABSTENCOES"],
-                nominais=campos["QT_VOTOS_NOMINAIS"],
+                total_votos=campos["QT_VOTOS"],
+                concorrentes=campos["QT_VOTOS_CONCORRENTES"],
+                validos=campos["QT_TOTAL_VOTOS_VALIDOS"],
+                anulados=campos["QT_TOTAL_VOTOS_ANULADOS"],
+                anulados_sub_judice=campos["QT_TOTAL_VOTOS_ANUL_SUBJUD"],
                 brancos=campos["QT_VOTOS_BRANCOS"],
-                nulos=campos["QT_VOTOS_NULOS"],
+                nulos=campos["QT_TOTAL_VOTOS_NULOS"],
+                secoes_total=campos["QT_TOTAL_SECOES"],
+                secoes_nao_instaladas=campos["QT_SECOES_NAO_INSTALADAS"],
+                eleitores_secoes_nao_instaladas=campos[
+                    "QT_ELEITORES_SECOES_NAO_INSTALADAS"],
+                em_transito=(str(r.get("ST_VOTO_EM_TRANSITO", "N")).strip()
+                             == "S"),
             )
 
 

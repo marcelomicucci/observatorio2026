@@ -11,3 +11,6 @@ data/exports/
 node_modules/
 web/dist/
 .pytest_cache/
+
+data/previsoes/
+!data/previsoes/.gitkeep
