@@ -495,10 +495,19 @@ const MAPA = (() => {
     }
     svg.append(g);
 
-    /* A dica vive no contêiner, não no documento: assim ela some junto com
-     * o mapa quando a tela é trocada, em vez de ficar órfã no `body`. */
+    /* A dica vive no contêiner, para sumir junto com o mapa quando a tela é
+     * trocada, mas se posiciona em coordenadas de JANELA (`fixed`).
+     *
+     * Medir contra o contêiner parecia o certo e falhava do jeito mais
+     * chato: o mapa é mais alto que a tela, então, com a página rolada, um
+     * município no alto do mapa estava dentro do contêiner e fora da janela
+     * — a dica abria acima da área visível e o leitor via só a última
+     * linha. A moldura que importa é a que a pessoa enxerga.
+     *
+     * Uma dica de sobrevoo some ao tirar o mouse, então não precisa rolar
+     * junto com nada. */
     const dica = cria('div',
-      'position:absolute;z-index:40;pointer-events:none;display:none;'
+      'position:fixed;z-index:60;pointer-events:none;display:none;'
       + 'background:var(--panel);border:1px solid var(--line);'
       + 'border-radius:8px;padding:10px 12px;'
       + 'box-shadow:0 6px 22px rgba(0,0,0,.45);max-width:320px');
@@ -515,19 +524,20 @@ const MAPA = (() => {
     }
     function moverDica(ev) {
       if (!dentro) return;
-      const r = alvo.getBoundingClientRect();
-      const x = ev.clientX - r.left, y = ev.clientY - r.top;
-      // Vira de lado perto da borda: dica cortada pela metade é pior do que
-      // dica longe do cursor.
       const l = dica.offsetWidth, a = dica.offsetHeight;
-      dica.style.left = (x + 16 + l > r.width ? x - l - 14 : x + 16) + 'px';
-      dica.style.top = Math.max(0, y + 14 + a > r.height ? y - a - 12
-                                                         : y + 14) + 'px';
+      const W = window.innerWidth, H = window.innerHeight;
+      const M = 8;
+      // Preferência: à direita e abaixo do cursor. Se não couber, vira para
+      // o outro lado; se ainda não couber, encosta na borda. O grude final
+      // é o que garante que ela apareça inteira sempre.
+      let x = ev.clientX + 16;
+      let y = ev.clientY + 14;
+      if (x + l > W - M) x = ev.clientX - l - 14;
+      if (y + a > H - M) y = ev.clientY - a - 12;
+      dica.style.left = Math.max(M, Math.min(x, W - l - M)) + 'px';
+      dica.style.top = Math.max(M, Math.min(y, H - a - M)) + 'px';
     }
 
-    if (getComputedStyle(alvo).position === 'static') {
-      alvo.style.position = 'relative';
-    }
     alvo.replaceChildren(svg, dica);
     return {camada, ctx, semDado, total: feicoes.length,
             recortado: feicoes.length !== gj.features.length};

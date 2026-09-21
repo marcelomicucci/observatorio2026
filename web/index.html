@@ -327,19 +327,52 @@ const LISTA = {
     if (this.ativa) this.enviar();
   },
   titulo(it) {
+    if (it.titulo) return it.titulo;
     const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
-    return `${c.nome} — ${it.uf ? it.uf.toUpperCase() : 'Brasil'}`;
+    const onde = it.municipio_nome
+      ? `${it.municipio_nome}/${(it.uf || '').toUpperCase()}`
+      : it.uf ? it.uf.toUpperCase() : 'Brasil';
+    return `${c.nome} — ${onde}`;
   },
   /* Forma que o telão consome — a mesma que a API devolve, para os dois
    * caminhos caírem no mesmo código de exibição. */
   resolvidas() {
-    return this.itens.map((it, i) => ({
-      indice: i, titulo: this.titulo(it), cargo: it.cargo,
-      cargo_nome: (CARGOS.find(x => x.cd === it.cargo) || {}).nome,
-      uf: it.uf || null, municipio: null, municipio_nome: null,
-      camada: it.camada || 'definicao', segundos: it.segundos || 20,
-      recorte_nao_decisorio: false, aviso_recorte: null, erro: null,
-    }));
+    return this.itens.map((it, i) => {
+      const cargo = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
+      const mun = !!it.municipio;
+      return {
+        indice: i, titulo: this.titulo(it), cargo: it.cargo,
+        cargo_nome: cargo.nome,
+        uf: it.uf || null,
+        municipio: it.municipio || null,
+        municipio_nome: it.municipio_nome || null,
+        camada: it.camada || 'definicao', segundos: it.segundos || 20,
+        recorte_nao_decisorio: mun,
+        // §3 recalculado aqui, não copiado: um item editado na lista não
+        // pode perder o aviso que o arquivo trazia.
+        aviso_recorte: mun
+          ? 'Recorte do voto. A disputa é decidida '
+            + (cargo.abr === 'br' ? 'no total do Brasil'
+               : 'no total de ' + (it.uf || '').toUpperCase())
+            + ' — liderar aqui não é ser eleito por aqui.'
+          : null,
+        erro: null,
+      };
+    });
+  },
+  /** Traz o roteiro do arquivo para a lista, para poder ser editado. */
+  deArquivo(telas) {
+    this.ler();
+    for (const t of telas) {
+      if (t.erro) continue;
+      this.itens.push({
+        cargo: t.cargo, uf: t.uf || null,
+        municipio: t.municipio || null,
+        municipio_nome: t.municipio_nome || null,
+        camada: t.camada || 'definicao', segundos: t.segundos || 20,
+      });
+    }
+    this.salvar();
   },
   enviar() {
     if (!canalTelao) return false;
@@ -361,6 +394,9 @@ const LISTA = {
     for (const it of this.itens) {
       l.push(`  - {cargo: ${nomes[it.cargo]}`
         + (it.uf ? `, uf: ${it.uf}` : '')
+        // Código, não nome: nome de município não é chave única no país, e
+        // o resolvedor do roteiro recusa nome ambíguo.
+        + (it.municipio ? `, municipio: "${it.municipio}"` : '')
         + `, camada: ${it.camada || 'definicao'}`
         + `, segundos: ${it.segundos || 20}}`);
     }
@@ -388,13 +424,25 @@ function blocoLista(roteiroArquivo) {
   const itens = LISTA.itens;
   const mexeu = () => { LISTA.salvar(); render(); };
 
+  const validasArquivo = (roteiroArquivo.dados || []).filter(t => !t.erro);
+
   if (!itens.length) {
-    return el('div', {cls: 'nota'},
-      el('b', {}, 'Lista desta sessão. '),
-      'Vazia. Em qualquer pesquisa, "＋ enviar para a lista do telão" '
-      + 'acrescenta o recorte que estiver na tela. Serve para montar a '
-      + 'sequência durante a apuração, quando o roteiro do arquivo deixa de '
-      + 'dar conta.');
+    return el('div', {},
+      el('div', {cls: 'nota'},
+        el('b', {}, 'Lista desta sessão. '),
+        'Vazia. O roteiro abaixo vem do arquivo e não se edita pela tela — '
+        + 'mas dá para copiá-lo para uma lista de trabalho, mexer nela à '
+        + 'vontade e pôr no telão. Em qualquer pesquisa, '
+        + '"＋ enviar para a lista do telão" acrescenta o recorte que '
+        + 'estiver na tela.'),
+      validasArquivo.length
+        ? el('div', {cls: 'visoes'}, el('button', {
+            onclick: () => { LISTA.deArquivo(validasArquivo); render(); },
+            title: 'Copia as telas do arquivo para uma lista editável. O '
+                 + 'arquivo não é alterado.',
+          }, `editar esta sequência (copia as ${validasArquivo.length} `
+             + 'telas)'))
+        : null);
   }
 
   const total = itens.reduce((s, it) => s + (it.segundos || 20), 0);
@@ -448,7 +496,12 @@ function blocoLista(roteiroArquivo) {
       el('th', {}, ''))),
     el('tbody', {}, ...itens.map((it, i) => el('tr', {},
       el('td', {}, String(i + 1)),
-      el('td', {}, LISTA.titulo(it)),
+      el('td', {}, LISTA.titulo(it),
+        // O aviso do §3 acompanha o item para dentro da lista editável:
+        // copiar uma tela do arquivo não pode apagar o que ela carregava.
+        it.municipio
+          ? [' ', el('span', {cls: 'tag warn'}, 'recorte não decisório')]
+          : null),
       el('td', {}, el('select', {
         onchange: e => { it.camada = e.target.value; mexeu(); },
       }, ...['definicao', 'lider', 'margem', 'cobertura'].map(c =>
@@ -561,12 +614,21 @@ async function viewTelao() {
       el('td', {cls: 'num'}, `${t.segundos}s`),
       el('td', {}, t.erro
         ? el('span', {cls: 'tag err', title: t.erro}, 'erro')
-        : el('button', {
+        : [el('button', {
+            style: 'font-size:11px;padding:2px 9px;border-radius:999px;'
+                 + 'border:1px solid var(--line);background:var(--panel);'
+                 + 'color:var(--muted);cursor:pointer;margin-right:5px',
+            onclick: () => comandarTelao('ir', validas.indexOf(t)),
+          }, 'ir para'),
+          // Escolher a dedo: às vezes o operador quer três das cinco telas
+          // do arquivo, não a sequência inteira.
+          el('button', {
             style: 'font-size:11px;padding:2px 9px;border-radius:999px;'
                  + 'border:1px solid var(--line);background:var(--panel);'
                  + 'color:var(--muted);cursor:pointer',
-            onclick: () => comandarTelao('ir', validas.indexOf(t)),
-          }, 'ir para')))))));
+            title: 'Copia só esta tela para a lista editável',
+            onclick: () => { LISTA.deArquivo([t]); render(); },
+          }, '＋ lista')]))))));
 
   const ruins = r.dados.filter(t => t.erro);
   if (ruins.length) {
