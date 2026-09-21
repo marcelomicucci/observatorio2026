@@ -158,6 +158,12 @@ const MAPA = (() => {
 
   const SEM_DADO = 'url(#hachura)';
 
+  /* Território conhecido, resultado ainda não chegou. Tom liso e apagado,
+   * não hachura: hachura diz "não sabemos nada deste lugar", e aqui se sabe
+   * — ele existe, está na disputa e ainda não tem voto contado. No começo
+   * da noite o mapa inteiro fica assim, e é essa a imagem certa dele. */
+  const AGUARDANDO = '#2a313d';
+
   // -- camadas -------------------------------------------------------------
 
   /* Duas camadas, não cinco.
@@ -220,6 +226,21 @@ const MAPA = (() => {
     },
   };
 
+  /* Nomes antigos de camada, de antes da fusão.
+   *
+   * Roteiros já escritos, listas guardadas no navegador e o próprio
+   * config/telao.yaml ainda falam em definicao/margem/cobertura. Sem esta
+   * tabela, o `CAMADAS[nome] || lider` caía em silêncio no mapa de líderes
+   * — e a tela "onde ainda falta apurar" passou a mostrar quem lidera sem
+   * ninguém perceber. Apelido explícito é diferente de fallback: diz para
+   * onde cada nome antigo foi. */
+  const APELIDOS = {definicao: 'lider', margem: 'lider', cobertura: 'apurar'};
+
+  function camadaCanonica(nome) {
+    const c = APELIDOS[nome] || nome;
+    return CAMADAS[c] ? c : null;
+  }
+
   function num(v) {
     return v == null ? 'n/d' : v.toFixed(1).replace('.', ',');
   }
@@ -248,6 +269,7 @@ const MAPA = (() => {
 
   function pinta(dado, camada, ctx) {
     if (!dado) return SEM_DADO;
+    if (dado.aguardando) return AGUARDANDO;
     if (camada.tipo === 'categorica') {
       const k = camada.chave(dado);
       if (k == null) return SEM_DADO;
@@ -263,6 +285,7 @@ const MAPA = (() => {
 
   function descreve(dado, camada, ctx) {
     if (!dado) return 'sem dado';
+    if (dado.aguardando) return 'aguardando resultado';
     if (camada.tipo === 'categorica') return camada.texto(dado);
     const v = camada.valor(dado);
     if (v == null) return 'sem dado';
@@ -308,6 +331,12 @@ const MAPA = (() => {
         'capital'));
     }
     box.append(tit);
+
+    if (d.aguardando) {
+      box.append(cria('div', 'font-size:12.5px;color:var(--muted)',
+                      'aguardando resultado'));
+      return box;
+    }
 
     const tab = cria('table', 'border-collapse:collapse;font-size:12.5px');
     const linha = (nome, partido, votos, pct, forte) => {
@@ -379,7 +408,11 @@ const MAPA = (() => {
   }
 
   async function desenhar(alvo, dados, opts) {
-    const camada = CAMADAS[opts.camada] || CAMADAS.lider;
+    const idCamada = camadaCanonica(opts.camada);
+    if (!idCamada && opts.camada) {
+      console.warn('camada desconhecida, usando lider:', opts.camada);
+    }
+    const camada = CAMADAS[idCamada || 'lider'];
     const gj = await malha(opts.malha);
     const porCodigo = new Map(dados.filter(d => d.cd_ibge)
                                    .map(d => [d.cd_ibge, d]));
@@ -455,7 +488,8 @@ const MAPA = (() => {
       // O contorno de status só entra na camada do líder: em "onde falta
       // apurar" a pergunta é outra, e marcar definição ali competiria com
       // a informação que a camada existe para dar.
-      const est = camada.tipo === 'categorica' ? ESTADO_DE(dado) : null;
+      const est = (camada.tipo === 'categorica' && dado && !dado.aguardando)
+        ? ESTADO_DE(dado) : null;
       const finoPadrao = opts.malha === 'uf.json' ? 1 : 0.25;
       // Território escolhido no filtro: contorno branco, acima de tudo.
       // Mostrar um município sozinho num mapa o deixa sem referência de
@@ -646,10 +680,13 @@ const MAPA = (() => {
                         'máximo ' + f(ctx.max)));
       }
     }
+    if (dados.some(d => d.aguardando)) {
+      box.append(item(AGUARDANDO, null, 'aguardando resultado'));
+    }
     box.append(item(SEM_DADO, '╱', 'sem dado'));
     return box;
   }
 
   return {CAMADAS, desenhar, barraPonderada, legenda, descreve, DEF_CORES,
-          estadoDe: ESTADO_DE, detalhe};
+          estadoDe: ESTADO_DE, detalhe, camadaCanonica};
 })();

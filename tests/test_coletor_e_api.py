@@ -346,3 +346,129 @@ def test_decided_marca_o_recorte_por_uf_como_nao_decisorio(cliente):
     assert d["dados"][0]["recorte_nao_decisorio"] is True
     nacional = cliente.get("/api/v1/decided?cargo=1").json()
     assert nacional["dados"][0]["recorte_nao_decisorio"] is False
+
+
+def test_nomes_antigos_de_camada_viram_nomes_atuais():
+    """Todo apelido tem que apontar para uma camada que existe.
+
+    Quando as camadas do mapa foram fundidas, a lista do roteiro continuou
+    oferecendo quatro nomes e o mapa passou a conhecer dois. `cobertura`
+    chegava ao mapa como nome desconhecido e caia em silencio no mapa de
+    lideres: a tela "onde ainda falta apurar" mostrava quem lidera, e
+    ninguem via erro nenhum.
+    """
+    from obs2026.api.telao import APELIDOS_CAMADA, CAMADAS
+    for antigo, atual in APELIDOS_CAMADA.items():
+        assert atual in CAMADAS, (antigo, atual)
+        assert antigo not in CAMADAS, antigo
+    assert APELIDOS_CAMADA["cobertura"] == "apurar"
+
+
+def test_roteiro_so_entrega_nomes_atuais_de_camada(cliente):
+    """O telao nao pode receber nome que o mapa nao conhece."""
+    from obs2026.api.telao import CAMADAS
+    d = cliente.get("/api/v1/telao/roteiro").json()
+    for t in d["dados"]:
+        if not t["erro"]:
+            assert t["camada"] in CAMADAS, t
+    # A tela "onde ainda falta apurar" tem que chegar como tal.
+    falta = [t for t in d["dados"] if "falta apurar" in t["titulo"]]
+    assert falta and falta[0]["camada"] == "apurar"
+
+
+# ------------------------------------------------- gravação do roteiro ----
+
+@pytest.fixture
+def roteiro_preservado():
+    """Os testes gravam no config/telao.yaml de verdade; este fixture põe o
+    arquivo de volta exatamente como estava, e apaga as cópias de segurança
+    criadas durante o teste."""
+    from obs2026.config import CONFIG_DIR
+    arq = Path(CONFIG_DIR) / "telao.yaml"
+    pasta = Path(CONFIG_DIR) / "telao.anterior"
+    original = arq.read_bytes()
+    antes = set(pasta.glob("*")) if pasta.exists() else set()
+    yield arq
+    arq.write_bytes(original)
+    if pasta.exists():
+        for f in set(pasta.glob("*")) - antes:
+            f.unlink()
+        if not any(pasta.iterdir()):
+            pasta.rmdir()
+
+
+JSON = {"Content-Type": "application/json"}
+
+
+def test_gravar_roteiro_valido_escreve_o_arquivo(cliente, roteiro_preservado):
+    corpo = {"roteiro": [
+        {"cargo": "1", "camada": "lider", "segundos": 45,
+         "titulo": "Presidente — Brasil"},
+        {"cargo": "3", "uf": "pa", "camada": "apurar", "segundos": 10},
+    ]}
+    r = cliente.post("/api/v1/telao/roteiro", json=corpo, headers=JSON)
+    assert r.status_code == 200, r.text
+    texto = roteiro_preservado.read_text(encoding="utf-8")
+    # A documentação do arquivo sobrevive à gravação.
+    assert "# CAMPOS" in texto and "Gravado pelo painel" in texto
+
+    lido = cliente.get("/api/v1/telao/roteiro").json()["dados"]
+    assert [(t["cargo"], t["segundos"], t["camada"]) for t in lido] == \
+        [("1", 45, "lider"), ("3", 10, "apurar")]
+    # Título escrito à mão fica; título montado não é congelado no arquivo.
+    assert lido[0]["titulo_livre"] == "Presidente — Brasil"
+    assert lido[1]["titulo_livre"] is None
+    assert "titulo" not in texto.split("cargo: governador")[1]
+
+
+def test_gravar_guarda_a_versao_anterior(cliente, roteiro_preservado):
+    from obs2026.config import CONFIG_DIR
+    original = roteiro_preservado.read_bytes()
+    r = cliente.post("/api/v1/telao/roteiro", headers=JSON,
+                     json={"roteiro": [{"cargo": "1", "segundos": 20}]})
+    assert r.status_code == 200
+    copias = sorted((Path(CONFIG_DIR) / "telao.anterior").glob("*.yaml"))
+    assert copias and copias[-1].read_bytes() == original
+
+
+def test_roteiro_com_tela_quebrada_nao_e_gravado(cliente, roteiro_preservado):
+    """Tela que não resolve impede a gravação inteira.
+
+    Gravar e deixar o telão pular a tela seria descobrir o erro com o
+    projetor ligado.
+    """
+    antes = roteiro_preservado.read_bytes()
+    r = cliente.post("/api/v1/telao/roteiro", headers=JSON, json={"roteiro": [
+        {"cargo": "1", "segundos": 20},
+        {"cargo": "3", "segundos": 20},               # governador sem UF
+    ]})
+    assert r.status_code == 422
+    assert "tela 2" in str(r.json())
+    assert roteiro_preservado.read_bytes() == antes
+
+
+def test_gravacao_recusa_formulario_de_outra_pagina(cliente,
+                                                    roteiro_preservado):
+    """Loopback não basta: o navegador do operador também está em loopback.
+
+    Um formulário de qualquer site aberto nele chega como text/plain, sem
+    pré-verificação de CORS. Por isso só JSON é aceito, e só da mesma
+    origem.
+    """
+    antes = roteiro_preservado.read_bytes()
+    r = cliente.post("/api/v1/telao/roteiro",
+                     content='{"roteiro": []}',
+                     headers={"Content-Type": "text/plain"})
+    assert r.status_code == 415
+    r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": []},
+                     headers={**JSON, "Origin": "https://exemplo.com"})
+    assert r.status_code == 403
+    assert roteiro_preservado.read_bytes() == antes
+
+
+def test_tempo_fora_da_faixa_e_trazido_para_dentro(cliente,
+                                                   roteiro_preservado):
+    r = cliente.post("/api/v1/telao/roteiro", headers=JSON, json={"roteiro": [
+        {"cargo": "1", "segundos": 1}, {"cargo": "1", "segundos": 9999}]})
+    assert r.status_code == 200
+    assert [t["segundos"] for t in r.json()["dados"]] == [5, 300]

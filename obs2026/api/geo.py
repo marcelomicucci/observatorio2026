@@ -108,10 +108,11 @@ def register(app) -> None:
             return M.envelope([], snapshots=[], estado="aguardando",
                               motivo="nenhuma geografia para o filtro")
 
+        # Sem resultado nenhum ainda não é motivo para não haver mapa. O
+        # território existe antes do primeiro voto contado, e o mapa vazio
+        # é justamente a imagem do começo da noite: tudo aguardando. As
+        # unidades sem resultado entram abaixo, marcadas como tais.
         totais = M._latest_snapshot_ids(s, ct.id, list(geos))
-        if not totais:
-            return M.envelope([], snapshots=[], estado="aguardando",
-                              motivo="nenhum resultado capturado ainda")
 
         cands = {c.id: c for c in s.execute(select(Candidate).where(
             Candidate.contest_id == ct.id)).scalars().all()}
@@ -199,6 +200,7 @@ def register(app) -> None:
             linhas.append({
                 # Chave de junção com a malha: código IBGE, sempre.
                 "cd_ibge": cd_geo,
+                "aguardando": False,
                 "cd_tse": g.cd_tse,
                 "uf": g.uf,
                 "nome": g.nome,
@@ -240,11 +242,47 @@ def register(app) -> None:
                             and dfn.disputa_definida],
             })
 
+        # Territórios sem resultado. Entram com tudo nulo e marcados:
+        #
+        # `aguardando` e não "0% apurado". As duas coisas coincidem no começo
+        # da noite, e deixam de coincidir quando a quebra por município ainda
+        # não foi coletada mas o total do estado já foi — Senado em SP com
+        # 100% apurado no estado e cada município dizendo "0%" seria uma
+        # contradição na mesma tela. "Aguardando resultado" é verdade nos
+        # dois casos (§9: ausência é nulo com motivo, nunca zero).
+        com_resultado = {t.geography_id for t in totais}
+        for gid, g in geos.items():
+            if gid in com_resultado:
+                continue
+            cd_geo = (g.cd_ibge if tipo == "mu" else cod_uf.get(g.uf))
+            linhas.append({
+                "cd_ibge": cd_geo, "cd_tse": g.cd_tse, "uf": g.uf,
+                "nome": g.nome,
+                "nome_extenso": (g.nome if tipo == "mu"
+                                 else UF_EXTENSO.get(g.uf, g.nome)),
+                "capital": g.capital,
+                "eleitorado": None,
+                "lider_sqcand": None, "lider_nome": None,
+                "lider_partido": None, "lider_votos": None,
+                "lider_pct": None,
+                "segundo_sqcand": None, "segundo_nome": None,
+                "segundo_partido": None, "segundo_votos": None,
+                "segundo_pct": None,
+                "margem_pp": None, "cobertura_pct": None,
+                "regiao": REGIOES.get((cd_geo or "")[:1]),
+                "unidade_decide": tipo == ct.abrangencia_decisoria,
+                "eleito_tse": False,
+                "andamento": None, "definicao": None,
+                "vagas": ct.vagas, "eleitos": [],
+                "aguardando": True,
+            })
+
         # Paleta categórica dos líderes, estável por candidato.
         lideres = sorted({x["lider_sqcand"] for x in linhas
                           if x["lider_sqcand"]})
         return M.envelope(
-            linhas, snapshots=snaps, estado="observado",
+            linhas, snapshots=snaps,
+            estado="observado" if totais else "aguardando",
             denominador=DenBase.VALIDOS_COMPUTADOS,
             quality_flags=anomalias,
             extra={

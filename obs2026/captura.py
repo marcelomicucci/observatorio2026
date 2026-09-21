@@ -251,7 +251,9 @@ def _legenda(api: str, tela: dict, quantos: int = 5) -> str:
 
     lista = (((cands or {}).get("dados") or [{}])[0] or {}).get(
         "candidatos") or []
-    lista.sort(key=lambda c: -(c["oficial"].get("votos") or 0))
+    # Votos; empate (e tudo zerado) em ordem alfabetica.
+    lista.sort(key=lambda c: (-(c["oficial"].get("votos") or 0),
+                              str(c["oficial"].get("nome_urna", ""))))
     projecoes = {x["sqcand"]: x for x in ((proj or {}).get("dados") or [])}
     publicavel = bool((proj or {}).get("publicavel"))
 

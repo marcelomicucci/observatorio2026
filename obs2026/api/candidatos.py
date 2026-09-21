@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 def register(app) -> None:
     from . import app as M
     from ..candidates import osidosos as OS
+    from ..tse.parsers.common import fold
     from ..config import DATA_DIR
     from ..engine.denominators import Base as DenBase
     from ..storage.models import (Candidate, Geography, ObservedResult)
@@ -70,7 +71,15 @@ def register(app) -> None:
                 ObservedResult.snapshot_id == t.snapshot_id,
                 ObservedResult.geography_id == t.geography_id,
             )).scalars().all()
-            rows.sort(key=lambda r: -r.votos)
+            # Votos, e o nome como desempate. Antes do primeiro voto contado
+            # todos empatam em zero, e sem desempate a ordem seria a do banco
+            # — arbitrária e diferente a cada recarga. Com ele, zerado é
+            # ordem alfabética; assim que a apuração começa, o resultado
+            # manda. Uma regra só, sem modo "antes" e modo "depois".
+            def _ordem(r):
+                c = cands.get(r.candidate_id)
+                return (-r.votos, fold(c.nome_urna) if c else "")
+            rows.sort(key=_ordem)
 
             lista = []
             for r in rows:

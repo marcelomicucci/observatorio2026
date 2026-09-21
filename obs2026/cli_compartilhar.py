@@ -41,7 +41,8 @@ def registrar(app: typer.Typer, env_opt) -> None:
         uf: str = typer.Option(None, "--uf"),
         municipio: str = typer.Option(
             None, "--municipio", help="codigo TSE de 5 digitos"),
-        camada: str = typer.Option("definicao", "--camada"),
+        camada: str = typer.Option(
+            "lider", "--camada", help="lider ou apurar"),
         api: str = typer.Option("http://localhost:8026", "--api",
                                 help="endereco do painel local"),
         largura: int = typer.Option(1920, "--largura"),

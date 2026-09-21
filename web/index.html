@@ -247,41 +247,14 @@ const st = new Proxy({}, {
 const cargoAtual = () => CARGOS.find(c => c.cd === (st.cargo || '1'));
 
 /* Telão: esta janela conduz a projeção. BroadcastChannel liga as duas
- * janelas do mesmo navegador sem passar pelo servidor, então trocar de cargo
- * aqui muda a projeção na hora. Se esta janela fechar, o telão mantém o
- * último recorte e segue atualizando sozinho. */
+ * janelas do mesmo navegador sem passar pelo servidor. Se esta janela
+ * fechar, o telão segue o roteiro sozinho. */
 let canalTelao = null;
 try { canalTelao = new BroadcastChannel('observatorio-telao'); }
 catch (e) { /* navegador sem suporte: o telão fica autônomo */ }
 
-/* Último recorte enviado, para não reenviar o mesmo.
- *
- * Importa porque no telão um comando de recorte **interrompe o carrossel** —
- * é o comportamento certo quando alguém troca de UF de propósito, e é
- * destrutivo quando a janela apenas se redesenhou. Editar o tempo de uma
- * tela na lista redesenha o painel; sem este guarda, isso apagaria do telão
- * a lista que estava sendo editada. */
-let ultimoRecorte = null;
-
-function conduzirTelao() {
-  if (!canalTelao) return;
-  const r = {cargo: st.cargo || '1', uf: st.uf || null,
-             camada: st.camada || 'definicao'};
-  const chave = JSON.stringify(r);
-  if (chave === ultimoRecorte) return;
-  // Com a lista em uso, quem manda no telão é ela: navegar pelas pesquisas
-  // não pode derrubar a sequência que o operador montou.
-  if (LISTA.ativa) { ultimoRecorte = chave; return; }
-  ultimoRecorte = chave;
-  canalTelao.postMessage({tipo: 'recorte', recorte: r});
-}
-
 function abrirTelao() {
-  const q = new URLSearchParams({
-    cargo: st.cargo || '1', camada: st.camada || 'definicao',
-  });
-  if (st.uf) q.set('uf', st.uf);
-  window.open('/telao?' + q, 'telao-observatorio');
+  window.open('/telao', 'telao-observatorio');
 }
 
 function comandarTelao(acao, indice) {
@@ -289,42 +262,102 @@ function comandarTelao(acao, indice) {
   canalTelao.postMessage({tipo: 'comando', acao, indice});
 }
 
-/* --------------------------------------------- lista da sessão do telão
+/* Mostrar um recorte no telão agora, fora do roteiro.
  *
- * Durante a apuração uma disputa esquenta e o roteiro do arquivo deixa de
- * servir. Parar, editar YAML e recarregar, com o projetor ligado na sala,
- * não é opção. Daqui o operador monta a sequência enquanto pesquisa: achou
- * algo que merece ir ao telão, clica em "enviar para a lista".
+ * Antes isto acontecia sozinho: qualquer troca de cargo ou UF no painel era
+ * enviada ao projetor e interrompia o carrossel. Com o operador pesquisando
+ * no notebook enquanto a sala olha o telão, isso é o contrário do que se
+ * quer — cada clique de pesquisa virava uma troca de tela na parede. Agora
+ * é um botão, e o telão fica no recorte até alguém mandar retomar. */
+function mostrarNoTelaoAgora() {
+  if (!canalTelao) return;
+  canalTelao.postMessage({tipo: 'recorte', recorte: {
+    cargo: st.cargo || '1', uf: st.uf || null,
+    camada: MAPA.camadaCanonica(st.camada) || 'lider',
+  }});
+}
+
+function retomarRoteiro() {
+  if (!canalTelao) return;
+  canalTelao.postMessage({tipo: 'roteiro', roteiro: ROTEIRO.telasGravadas,
+                          daSessao: false});
+}
+
+/* ------------------------------------------------------ roteiro do telão
  *
- * A lista vive no navegador, não no servidor. **Não existe endpoint que
- * grave o roteiro** — o §10 manda separar administração autenticada de
- * leitura pública, e uma rota de escrita aberta seria o contrário disso.
- * Então a lista é do operador, e o arquivo continua sendo a base
- * versionada.
+ * Uma lista só. Ela vem de config/telao.yaml, é editada aqui e gravada de
+ * volta no mesmo arquivo — que é o que o telão, a captura de imagens e
+ * qualquer outra janela leem.
  *
- * Para que uma boa sequência improvisada não morra quando o navegador
- * fechar, existe "copiar como YAML": o texto vai para a área de
- * transferência pronto para colar em `config/telao.yaml`. É também o único
- * jeito de a lista chegar à captura de imagens, que lê o arquivo — nada que
- * sai do navegador depende do que só existe dentro dele.
+ * A versão anterior tinha duas listas, a do arquivo (só leitura) e a "da
+ * sessão" (editável, só no navegador), e o caminho de volta era copiar YAML
+ * e colar no arquivo. Duas listas com nomes parecidos, uma delas invisível
+ * para o resto do sistema, é o tipo de coisa que dá errado com o projetor
+ * ligado.
+ *
+ * Enquanto não se grava, as alterações ficam guardadas no navegador: fechar
+ * a aba por engano não perde o trabalho.
  */
-const LISTA = {
-  itens: [],
-  ativa: false,
-  ler() {
-    try {
-      this.itens = JSON.parse(localStorage.getItem('telao-lista') || '[]');
-      this.ativa = localStorage.getItem('telao-lista-ativa') === '1';
-    } catch (e) { this.itens = []; this.ativa = false; }
-    if (!Array.isArray(this.itens)) this.itens = [];
-    return this.itens;
+const ROTEIRO = {
+  CHAVE: 'telao-rascunho',
+  arquivo: [],          // como está gravado
+  itens: [],            // como está na tela
+  telasGravadas: [],    // resolvidas pela API, para mandar ao telão
+  carregado: false,
+  baseMudou: false,
+
+  deTela(t) {
+    return {
+      cargo: t.cargo, uf: t.uf || null,
+      municipio: t.municipio || null,
+      municipio_nome: t.municipio_nome || null,
+      camada: MAPA.camadaCanonica(t.camada) || 'lider',
+      segundos: t.segundos || 20,
+      titulo: t.titulo_livre || null,
+    };
   },
-  salvar() {
+  assinatura(lista) {
+    return JSON.stringify(lista.map(i => [i.cargo, i.uf || null,
+      i.municipio || null, i.camada, i.segundos, i.titulo || null]));
+  },
+  carregar(telas) {
+    this.telasGravadas = telas.filter(t => !t.erro);
+    this.arquivo = this.telasGravadas.map(t => this.deTela(t));
+    let r = null;
+    try { r = JSON.parse(localStorage.getItem(this.CHAVE) || 'null'); }
+    catch (e) { r = null; }
+    if (r && Array.isArray(r.itens)) {
+      this.itens = r.itens;
+      // O arquivo mudou por fora desde que o rascunho começou (outra
+      // janela gravou, alguém editou o YAML). Não se descarta nada
+      // sozinho, mas o operador precisa saber.
+      this.baseMudou = r.base !== this.assinatura(this.arquivo);
+    } else {
+      this.itens = this.arquivo.map(x => ({...x}));
+      this.baseMudou = false;
+    }
+    this.carregado = true;
+  },
+  async garantir() {
+    if (!this.carregado) this.carregar((await get('/telao/roteiro')).dados);
+  },
+  get sujo() {
+    return this.assinatura(this.itens) !== this.assinatura(this.arquivo);
+  },
+  guardar() {
     try {
-      localStorage.setItem('telao-lista', JSON.stringify(this.itens));
-      localStorage.setItem('telao-lista-ativa', this.ativa ? '1' : '0');
-    } catch (e) { /* sem armazenamento: a lista vale só nesta janela */ }
-    if (this.ativa) this.enviar();
+      if (this.sujo) {
+        localStorage.setItem(this.CHAVE, JSON.stringify(
+          {base: this.assinatura(this.arquivo), itens: this.itens}));
+      } else {
+        localStorage.removeItem(this.CHAVE);
+      }
+    } catch (e) { /* sem armazenamento: vale só enquanto a aba viver */ }
+  },
+  descartar() {
+    this.itens = this.arquivo.map(x => ({...x}));
+    this.baseMudou = false;
+    this.guardar();
   },
   titulo(it) {
     if (it.titulo) return it.titulo;
@@ -334,250 +367,235 @@ const LISTA = {
       : it.uf ? it.uf.toUpperCase() : 'Brasil';
     return `${c.nome} — ${onde}`;
   },
-  /* Forma que o telão consome — a mesma que a API devolve, para os dois
-   * caminhos caírem no mesmo código de exibição. */
-  resolvidas() {
-    return this.itens.map((it, i) => {
-      const cargo = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
-      const mun = !!it.municipio;
-      return {
-        indice: i, titulo: this.titulo(it), cargo: it.cargo,
-        cargo_nome: cargo.nome,
-        uf: it.uf || null,
-        municipio: it.municipio || null,
-        municipio_nome: it.municipio_nome || null,
-        camada: it.camada || 'definicao', segundos: it.segundos || 20,
-        recorte_nao_decisorio: mun,
-        // §3 recalculado aqui, não copiado: um item editado na lista não
-        // pode perder o aviso que o arquivo trazia.
-        aviso_recorte: mun
-          ? 'Recorte do voto. A disputa é decidida '
-            + (cargo.abr === 'br' ? 'no total do Brasil'
-               : 'no total de ' + (it.uf || '').toUpperCase())
-            + ' — liderar aqui não é ser eleito por aqui.'
-          : null,
-        erro: null,
-      };
+  total() {
+    return this.itens.reduce((s, it) => s + (it.segundos || 20), 0);
+  },
+  async gravar() {
+    const r = await fetch(API + '/telao/roteiro', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({roteiro: this.itens.map(it => ({
+        cargo: it.cargo, uf: it.uf, municipio: it.municipio,
+        camada: it.camada, segundos: it.segundos, titulo: it.titulo,
+      }))}),
     });
-  },
-  /** Traz o roteiro do arquivo para a lista, para poder ser editado. */
-  deArquivo(telas) {
-    this.ler();
-    for (const t of telas) {
-      if (t.erro) continue;
-      this.itens.push({
-        cargo: t.cargo, uf: t.uf || null,
-        municipio: t.municipio || null,
-        municipio_nome: t.municipio_nome || null,
-        camada: t.camada || 'definicao', segundos: t.segundos || 20,
-      });
+    const corpo = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const d = corpo.detail || {};
+      const erros = Array.isArray(d.erros) ? d.erros
+        : [typeof d === 'string' ? d : `erro ${r.status}`];
+      throw Object.assign(new Error('não gravado'), {erros});
     }
-    this.salvar();
-  },
-  enviar() {
-    if (!canalTelao) return false;
-    canalTelao.postMessage({tipo: 'roteiro', roteiro: this.resolvidas(),
-                            daSessao: true});
-    return true;
-  },
-  add(it) {
-    this.ler();
-    this.itens.push(it);
-    this.salvar();
-  },
-  yaml() {
-    const l = ['# Colado de "copiar como YAML" no painel.',
-               'padrao_segundos: 20',
-               'camada_padrao: definicao',
-               'roteiro:'];
-    const nomes = {1: 'presidente', 3: 'governador', 5: 'senador'};
-    for (const it of this.itens) {
-      l.push(`  - {cargo: ${nomes[it.cargo]}`
-        + (it.uf ? `, uf: ${it.uf}` : '')
-        // Código, não nome: nome de município não é chave única no país, e
-        // o resolvedor do roteiro recusa nome ambíguo.
-        + (it.municipio ? `, municipio: "${it.municipio}"` : '')
-        + `, camada: ${it.camada || 'definicao'}`
-        + `, segundos: ${it.segundos || 20}}`);
-    }
-    return l.join('\n') + '\n';
+    this.carregar(corpo.dados);         // o que o servidor resolveu
+    this.itens = this.arquivo.map(x => ({...x}));
+    this.guardar();
+    // O telão passa ao roteiro novo na hora, sem esperar a releitura.
+    retomarRoteiro();
+    return corpo;
   },
 };
-LISTA.ler();
 
-function enviarParaLista() {
+async function enviarParaLista() {
   const cargo = cargoAtual();
   if (cargo.abr === 'uf' && !st.uf) {
     alert(`${cargo.nome} é decidido em cada estado. Escolha a UF antes de `
-        + 'mandar para a lista.');
+        + 'mandar para o telão.');
     return;
   }
-  LISTA.add({cargo: cargo.cd, uf: st.uf || null,
-             camada: st.camada || 'definicao', segundos: 20});
+  await ROTEIRO.garantir();
+  ROTEIRO.itens.push({
+    cargo: cargo.cd, uf: st.uf || null, municipio: null,
+    municipio_nome: null,
+    camada: MAPA.camadaCanonica(st.camada) || 'lider',
+    segundos: 20, titulo: null,
+  });
+  ROTEIRO.guardar();
   navegacao();
 }
 
-/* A lista montada nesta sessão: montar, reordenar, cronometrar e mandar ao
- * telão sem tocar no arquivo nem parar a projeção. */
-function blocoLista(roteiroArquivo) {
-  LISTA.ler();
-  const itens = LISTA.itens;
-  const mexeu = () => { LISTA.salvar(); render(); };
+/* Editor. Nada aqui chama `render()`: mudar um tempo ou uma camada mexe no
+ * dado e no texto do resumo, e só. A versão anterior redesenhava a página
+ * inteira a cada número alterado — o campo perdia o foco, a rolagem pulava
+ * para o topo e a roteiro era buscado de novo no servidor. */
+function editorRoteiro() {
+  const raiz = el('div', {});
+  const resumo = el('div', {cls: 'resumo'});
+  const acoes = el('div', {cls: 'visoes'});
+  const msg = el('div', {});
+  const tabela = el('div', {});
+  raiz.append(resumo, acoes, msg, tabela);
 
-  const validasArquivo = (roteiroArquivo.dados || []).filter(t => !t.erro);
+  const fmtTempo = s => `${Math.floor(s / 60)}min ${s % 60}s`;
 
-  if (!itens.length) {
-    return el('div', {},
-      el('div', {cls: 'nota'},
-        el('b', {}, 'Lista desta sessão. '),
-        'Vazia. O roteiro abaixo vem do arquivo e não se edita pela tela — '
-        + 'mas dá para copiá-lo para uma lista de trabalho, mexer nela à '
-        + 'vontade e pôr no telão. Em qualquer pesquisa, '
-        + '"＋ enviar para a lista do telão" acrescenta o recorte que '
-        + 'estiver na tela.'),
-      validasArquivo.length
-        ? el('div', {cls: 'visoes'}, el('button', {
-            onclick: () => { LISTA.deArquivo(validasArquivo); render(); },
-            title: 'Copia as telas do arquivo para uma lista editável. O '
-                 + 'arquivo não é alterado.',
-          }, `editar esta sequência (copia as ${validasArquivo.length} `
-             + 'telas)'))
-        : null);
+  function desenharResumo() {
+    const sujo = ROTEIRO.sujo;
+    poe(resumo,
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Telas'),
+        el('div', {cls: 'v'}, String(ROTEIRO.itens.length)),
+        el('div', {cls: 'n'}, 'na sequência')),
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Volta completa'),
+        el('div', {cls: 'v'}, fmtTempo(ROTEIRO.total())),
+        el('div', {cls: 'n'}, 'somando os tempos de cada tela')),
+      el('div', {cls: 'kpi', style: sujo
+          ? 'border-color:var(--warn,#e3b341)' : null},
+        el('div', {cls: 'k'}, 'Situação'),
+        el('div', {cls: 'v', style: 'font-size:17px'},
+          sujo ? 'alterações não gravadas' : 'gravado'),
+        el('div', {cls: 'n'}, sujo
+          ? 'o telão continua no roteiro gravado'
+          : 'é o que o telão está usando')));
+    poe(acoes,
+      el('button', {
+        onclick: salvar, disabled: sujo ? null : '',
+        style: sujo ? 'border-color:var(--warn,#e3b341);color:var(--fg);'
+                    + 'font-weight:600' : 'opacity:.5',
+      }, 'Gravar'),
+      el('button', {
+        onclick: () => {
+          if (!confirm('Descartar as alterações e voltar ao roteiro '
+                     + 'gravado?')) return;
+          ROTEIRO.descartar(); poe(msg); desenhar();
+        },
+        disabled: sujo ? null : '',
+        style: sujo ? null : 'opacity:.5',
+      }, 'Descartar alterações'));
   }
 
-  const total = itens.reduce((s, it) => s + (it.segundos || 20), 0);
-  const cab = el('div', {cls: 'visoes'},
-    el('button', {
-      onclick: () => {
-        LISTA.ativa = !LISTA.ativa;
-        if (LISTA.ativa) { LISTA.salvar(); }
-        else {
-          LISTA.salvar();
-          // Voltar ao arquivo é explícito: o telão não adivinha que a lista
-          // saiu de cena.
-          if (canalTelao) canalTelao.postMessage(
-            {tipo: 'roteiro', roteiro: roteiroArquivo.dados, daSessao: false});
-        }
-        render();
-      },
-      style: LISTA.ativa
-        ? 'border-color:var(--proj,#7c5cff);color:var(--fg)' : null,
-    }, LISTA.ativa ? '● em uso no telão — voltar ao arquivo'
-                   : '▸ usar esta lista no telão'),
-    el('button', {
-      onclick: async () => {
-        try {
-          await navigator.clipboard.writeText(LISTA.yaml());
-          alert('YAML na área de transferência. Cole em config/telao.yaml '
-              + 'para a lista virar permanente — e para a captura de '
-              + 'imagens enxergá-la, já que ela lê o arquivo.');
-        } catch (e) { prompt('Copie o YAML:', LISTA.yaml()); }
-      },
-      title: 'A lista só existe neste navegador. Colada no arquivo, ela '
-           + 'passa a valer para todos e fica versionada.',
-    }, 'copiar como YAML'),
-    el('button', {
-      onclick: () => {
-        if (!confirm(`Apagar as ${itens.length} telas da lista?`)) return;
-        LISTA.itens = []; LISTA.ativa = false; mexeu();
-      },
-    }, 'limpar lista'));
+  async function salvar() {
+    poe(msg, el('div', {cls: 'nota'}, 'gravando…'));
+    try {
+      await ROTEIRO.gravar();
+      poe(msg, el('div', {cls: 'nota'}, el('b', {}, 'Gravado. '),
+        'O telão já passou para a sequência nova. A versão anterior ficou '
+        + 'em config/telao.anterior/.'));
+      desenhar();
+    } catch (e) {
+      // Nada foi gravado: o servidor recusa o roteiro inteiro se uma tela
+      // não resolve. Mostrar qual, e por quê.
+      poe(msg, el('div', {cls: 'nota aten'},
+        el('b', {}, 'Não gravado. '),
+        ...(e.erros || [e.message]).map(x => el('div', {}, '· ' + x))));
+    }
+  }
 
-  const botao = (txt, acao, titulo) => el('button', {
-    style: 'font-size:11px;padding:2px 8px;border-radius:6px;'
+  const botao = (txt, acao, titulo, desligado) => el('button', {
+    style: 'font-size:12px;padding:3px 9px;border-radius:6px;'
          + 'border:1px solid var(--line);background:var(--panel);'
-         + 'color:var(--muted);cursor:pointer;margin-right:4px',
-    onclick: acao, title: titulo || '',
+         + 'color:var(--muted);cursor:pointer;margin-right:4px'
+         + (desligado ? ';opacity:.4;cursor:not-allowed' : ''),
+    onclick: desligado ? null : acao, title: titulo || '',
+    disabled: desligado ? '' : null,
   }, txt);
 
-  const tabela = el('table', {},
-    el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Tela'),
-      el('th', {}, 'Camada'), el('th', {cls: 'num'}, 'Tempo'),
-      el('th', {}, ''))),
-    el('tbody', {}, ...itens.map((it, i) => el('tr', {},
-      el('td', {}, String(i + 1)),
-      el('td', {}, LISTA.titulo(it),
-        // O aviso do §3 acompanha o item para dentro da lista editável:
-        // copiar uma tela do arquivo não pode apagar o que ela carregava.
-        it.municipio
-          ? [' ', el('span', {cls: 'tag warn'}, 'recorte não decisório')]
-          : null),
-      el('td', {}, el('select', {
-        onchange: e => { it.camada = e.target.value; mexeu(); },
-      }, ...['definicao', 'lider', 'margem', 'cobertura'].map(c =>
-        el('option', {value: c,
-                      selected: (it.camada || 'definicao') === c ? '' : null},
-           c)))),
-      el('td', {cls: 'num'}, el('input', {
-        type: 'number', min: '5', max: '300',
-        value: String(it.segundos || 20),
-        style: 'width:58px;background:var(--bg);color:var(--fg);'
-             + 'border:1px solid var(--line);border-radius:6px;padding:3px 6px;'
-             + 'font:inherit;font-size:12px;text-align:right',
-        onchange: e => {
-          // Tela de 2 s não é tela: ninguém lê um mapa nesse tempo. O telão
-          // já impõe o piso de 5 s; aqui o operador vê o piso acontecer.
-          it.segundos = Math.max(5, Math.min(300,
-            parseInt(e.target.value, 10) || 20));
-          mexeu();
-        },
-      }), ' s'),
-      el('td', {},
-        botao('▲', () => {
-          if (i === 0) return;
-          [itens[i - 1], itens[i]] = [itens[i], itens[i - 1]]; mexeu();
-        }, 'subir'),
-        botao('▼', () => {
-          if (i === itens.length - 1) return;
-          [itens[i + 1], itens[i]] = [itens[i], itens[i + 1]]; mexeu();
-        }, 'descer'),
-        botao('ir para', () => comandarTelao('ir', i),
-              LISTA.ativa ? 'Salta para esta tela no telão'
-                          : 'Só funciona com a lista em uso no telão'),
-        botao('✕', () => { itens.splice(i, 1); mexeu(); }, 'remover'))))));
+  function desenharTabela() {
+    const itens = ROTEIRO.itens;
+    const sujo = ROTEIRO.sujo;
+    if (!itens.length) {
+      poe(tabela, el('div', {cls: 'estado'},
+        'Roteiro vazio. Em qualquer pesquisa, "＋ enviar para o telão" '
+        + 'acrescenta o recorte que estiver na tela.'));
+      return;
+    }
+    poe(tabela, el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Tela'),
+        el('th', {}, 'Camada'), el('th', {cls: 'num'}, 'Tempo'),
+        el('th', {}, ''))),
+      el('tbody', {}, ...itens.map((it, i) => el('tr', {},
+        el('td', {}, String(i + 1)),
+        el('td', {}, ROTEIRO.titulo(it),
+          it.municipio
+            ? [' ', el('span', {cls: 'tag warn',
+                title: 'Recorte do voto: liderar aqui não é ser eleito por '
+                     + 'aqui. O telão mostra esse aviso junto.'},
+                'recorte não decisório')]
+            : null),
+        el('td', {}, el('select', {
+          onchange: e => { it.camada = e.target.value; mudou(); },
+          style: 'background:var(--bg);color:var(--fg);border:1px solid '
+               + 'var(--line);border-radius:6px;padding:4px 6px;font:inherit;'
+               + 'font-size:13px',
+        }, ...Object.entries(MAPA.CAMADAS).map(([id, c]) =>
+          el('option', {value: id,
+                        selected: it.camada === id ? '' : null},
+             c.rotulo)))),
+        el('td', {cls: 'num'}, el('input', {
+          type: 'number', min: '5', max: '300', step: '5',
+          value: String(it.segundos || 20),
+          style: 'width:62px;background:var(--bg);color:var(--fg);'
+               + 'border:1px solid var(--line);border-radius:6px;'
+               + 'padding:4px 6px;font:inherit;font-size:13px;'
+               + 'text-align:right',
+          // Enquanto digita, só guarda se já for um número válido: digitar
+          // "15" passa por "1", e prender o "1" no piso de 5 no meio da
+          // digitação transformaria 15 em 55.
+          oninput: e => {
+            const v = parseInt(e.target.value, 10);
+            if (v >= 5 && v <= 300) { it.segundos = v; mudou(); }
+          },
+          // Ao sair do campo, o piso e o teto valem. Tela de 2 s não é
+          // tela: ninguém lê um mapa nesse tempo.
+          onchange: e => {
+            const v = Math.max(5, Math.min(300,
+              parseInt(e.target.value, 10) || 20));
+            e.target.value = String(v);
+            it.segundos = v; mudou();
+          },
+        }), ' s'),
+        el('td', {style: 'white-space:nowrap'},
+          botao('▲', () => {
+            [itens[i - 1], itens[i]] = [itens[i], itens[i - 1]];
+            mudou(true);
+          }, 'subir', i === 0),
+          botao('▼', () => {
+            [itens[i + 1], itens[i]] = [itens[i], itens[i + 1]];
+            mudou(true);
+          }, 'descer', i === itens.length - 1),
+          // Com alterações pendentes a posição na tela não é a posição no
+          // telão, e "ir para" saltaria para outra tela.
+          botao('ir para', () => comandarTelao('ir', i),
+                sujo ? 'Grave antes: o telão ainda está na sequência '
+                       + 'gravada' : 'Salta para esta tela no telão', sujo),
+          botao('✕', () => { itens.splice(i, 1); mudou(true); },
+                'remover')))))));
+  }
 
-  return el('div', {},
-    el('h3', {style: 'margin:22px 0 4px;font-size:15px'},
-      `Lista desta sessão · ${itens.length} tela(s) · `
-      + `${Math.floor(total / 60)}min ${total % 60}s`),
-    el('div', {cls: 'nota', style: 'margin:0 0 10px'},
-      LISTA.ativa
-        ? 'Em uso no telão agora. O roteiro do arquivo volta quando você '
-          + 'clicar em "voltar ao arquivo" — a releitura periódica do '
-          + 'arquivo não derruba a lista no meio da apuração.'
-        : 'Montada, mas o telão ainda está no roteiro do arquivo.'),
-    cab, tabela,
-    el('div', {cls: 'nota aten'},
-      el('b', {}, 'A lista vive neste navegador. '),
-      'Não existe rota que grave o roteiro no servidor — administração com '
-      + 'escrita aberta a qualquer um seria o oposto do §10. Consequências '
-      + 'práticas: outra máquina não vê esta lista, e a captura de imagens '
-      + '(`obs2026 compartilhar`) lê o arquivo, não daqui. Para que valha '
-      + 'em todo lugar, "copiar como YAML" e colar em config/telao.yaml.'));
+  // `estrutura`: a ordem ou o número de linhas mudou, e só então a tabela
+  // é refeita. Tempo e camada não refazem nada.
+  function mudou(estrutura) {
+    ROTEIRO.guardar();
+    poe(msg);
+    desenharResumo();
+    if (estrutura) desenharTabela();
+    else {
+      // O botão "ir para" depende de haver alteração pendente.
+      for (const b of tabela.querySelectorAll('button')) {
+        if (b.textContent === 'ir para') {
+          const s = ROTEIRO.sujo;
+          b.disabled = s;
+          b.style.opacity = s ? '.4' : '';
+          b.style.cursor = s ? 'not-allowed' : 'pointer';
+        }
+      }
+    }
+    navegacao();   // atualiza o contador na trilha, que é barato
+  }
+
+  function desenhar() { desenharResumo(); desenharTabela(); }
+  desenhar();
+  if (ROTEIRO.baseMudou) {
+    poe(msg, el('div', {cls: 'nota aten'},
+      el('b', {}, 'O arquivo mudou desde que estas alterações começaram. '),
+      'Gravar agora substitui o que está no arquivo. Para partir do que '
+      + 'está gravado, descarte as alterações.'));
+  }
+  return raiz;
 }
 
-/* Painel de controle do carrossel. Mostra o roteiro de config/telao.yaml,
- * permite pular para uma tela e pausar. Editar de forma permanente se faz no
- * arquivo: assim o roteiro da noite fica versionado e reproduzível, em vez
- * de existir só na memória de um navegador. */
 async function viewTelao() {
   const r = await get('/telao/roteiro');
   rodape(r);
-  const validas = r.dados.filter(t => !t.erro);
+  ROTEIRO.carregar(r.dados);
   const out = [];
-
-  out.push(el('div', {cls: 'resumo'},
-    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Telas no roteiro'),
-      el('div', {cls: 'v'}, String(r.telas_validas)),
-      el('div', {cls: 'n'}, r.telas_com_erro
-        ? `${r.telas_com_erro} com erro, serão puladas` : 'todas resolvidas')),
-    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Volta completa'),
-      el('div', {cls: 'v'}, `${Math.floor(r.duracao_total_s / 60)}min `
-        + `${r.duracao_total_s % 60}s`),
-      el('div', {cls: 'n'}, 'somando os tempos de cada tela')),
-    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Arquivo'),
-      el('div', {cls: 'v', style: 'font-size:14px'}, r.arquivo),
-      el('div', {cls: 'n'}, 'edite lá para mudar de forma permanente'))));
 
   out.push(el('div', {cls: 'visoes'},
     el('button', {onclick: abrirTelao}, 'Abrir telão ↗'),
@@ -586,68 +604,27 @@ async function viewTelao() {
     el('button', {onclick: () => comandarTelao('seguir')}, '▸ seguir'),
     el('button', {onclick: () => comandarTelao('proxima')}, 'próxima ▸'),
     el('button', {
-      onclick: () => {
-        if (canalTelao) canalTelao.postMessage(
-          {tipo: 'roteiro', roteiro: r.dados});
-      },
-      title: 'Reenvia o roteiro ao telão sem recarregar a janela dele',
-    }, 'recarregar roteiro')));
+      onclick: retomarRoteiro,
+      title: 'Depois de "mostrar no telão agora", volta à sequência gravada',
+    }, '↻ retomar roteiro')));
 
-  out.push(blocoLista(r));
-
-  out.push(el('table', {},
-    el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Tela'),
-      el('th', {}, 'Cargo'), el('th', {}, 'Onde'), el('th', {}, 'Camada'),
-      el('th', {cls: 'num'}, 'Tempo'), el('th', {}, ''))),
-    el('tbody', {}, ...r.dados.map((t, i) => el('tr', {},
-      el('td', {}, String(i + 1)),
-      el('td', {}, t.titulo,
-        t.recorte_nao_decisorio
-          ? [' ', el('span', {cls: 'tag warn',
-              title: t.aviso_recorte}, 'recorte não decisório')]
-          : null),
-      el('td', {}, t.cargo_nome),
-      el('td', {}, t.municipio_nome
-        ? `${t.municipio_nome}/${(t.uf || '').toUpperCase()}`
-        : (t.uf ? t.uf.toUpperCase() : 'Brasil')),
-      el('td', {}, t.camada),
-      el('td', {cls: 'num'}, `${t.segundos}s`),
-      el('td', {}, t.erro
-        ? el('span', {cls: 'tag err', title: t.erro}, 'erro')
-        : [el('button', {
-            style: 'font-size:11px;padding:2px 9px;border-radius:999px;'
-                 + 'border:1px solid var(--line);background:var(--panel);'
-                 + 'color:var(--muted);cursor:pointer;margin-right:5px',
-            onclick: () => comandarTelao('ir', validas.indexOf(t)),
-          }, 'ir para'),
-          // Escolher a dedo: às vezes o operador quer três das cinco telas
-          // do arquivo, não a sequência inteira.
-          el('button', {
-            style: 'font-size:11px;padding:2px 9px;border-radius:999px;'
-                 + 'border:1px solid var(--line);background:var(--panel);'
-                 + 'color:var(--muted);cursor:pointer',
-            title: 'Copia só esta tela para a lista editável',
-            onclick: () => { LISTA.deArquivo([t]); render(); },
-          }, '＋ lista')]))))));
+  out.push(editorRoteiro());
 
   const ruins = r.dados.filter(t => t.erro);
   if (ruins.length) {
     out.push(el('div', {cls: 'nota aten'},
-      el('b', {}, 'Telas que não resolveram. '),
-      'O telão pula estas: projetar o município errado é pior do que pular a '
-      + 'tela. ',
+      el('b', {}, 'Telas do arquivo que não resolveram. '),
+      'O telão pula estas, e elas ficaram fora da lista acima: projetar o '
+      + 'município errado é pior do que pular a tela. ',
       ...ruins.map(t => el('div', {}, `· ${t.titulo}: ${t.erro}`))));
   }
   out.push(el('div', {cls: 'nota'}, el('b', {}, 'Como operar. '),
-    'Abra o telão, arraste a janela para o projetor e deixe em tela cheia. '
-    + 'No próprio telão: espaço pausa, setas navegam, R recarrega os dados. '
-    + 'Mudar de cargo ou UF nas outras abas desta janela interrompe o '
-    + 'carrossel e fixa o telão naquele recorte — clique em "recarregar '
-    + 'roteiro" para voltar ao automático.'));
-  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Recorte não decisório. '),
-    'Telas municipais de presidente ou governador são recorte do voto, não a '
-    + 'unidade que elege. O telão marca essas telas com aviso próprio, e '
-    + 'isso não é configurável.'));
+    'Abra o telão, arraste a janela para o projetor e deixe em tela cheia '
+    + '(F11). No próprio telão: espaço pausa, setas navegam, R recarrega os '
+    + 'dados. Para mexer na sequência, edite aqui e clique em Gravar — o '
+    + 'telão passa à nova na hora. Para mostrar algo fora da sequência, use '
+    + '"▸ mostrar no telão agora" em qualquer pesquisa, e "↻ retomar '
+    + 'roteiro" para voltar.'));
   return el('div', {}, ...out);
 }
 
@@ -688,22 +665,29 @@ function navegacao() {
     kids.push(el('span', {}, '· disputa nacional, inclui o exterior'));
   }
 
-  // O botão fica na trilha, não na aba do telão: quem está pesquisando
-  // descobre o recorte que vale a pena projetar aqui, e não deveria ter que
-  // trocar de aba e remontar o recorte de memória para pô-lo na fila.
-  const n = LISTA.ler().length;
+  // Os botões ficam na trilha, não na aba do telão: quem está pesquisando
+  // descobre ali o recorte que vale a pena projetar, e não deveria ter que
+  // trocar de aba e remontar o recorte de memória.
+  const pendente = ROTEIRO.carregado && ROTEIRO.sujo;
   kids.push(el('button', {
     cls: 'prolista',
     onclick: enviarParaLista,
-    title: 'Acrescenta este recorte à lista do telão. A lista é desta '
-         + 'sessão; o roteiro permanente é config/telao.yaml.',
-  }, '＋ enviar para a lista do telão',
-     n ? el('span', {cls: 'cont'}, String(n)) : null));
-  if (n) {
+    title: 'Acrescenta este recorte ao fim do roteiro do telão. Vale '
+         + 'depois de gravar, na aba Telão.',
+  }, '＋ enviar para o telão',
+     pendente ? el('span', {cls: 'cont', title: 'alterações não gravadas'},
+                   'não gravado') : null));
+  kids.push(el('button', {
+    cls: 'prolista vazio',
+    onclick: mostrarNoTelaoAgora,
+    title: 'Mostra este recorte no projetor agora, fora da sequência. '
+         + '"Retomar roteiro", na aba Telão, volta ao automático.',
+  }, '▸ mostrar no telão agora'));
+  if (pendente) {
     kids.push(el('button', {
       cls: 'prolista vazio',
       onclick: () => { st.visao = 'telao'; },
-    }, 'ver lista ›'));
+    }, 'gravar ›'));
   }
   poe(document.getElementById('escopo'), ...kids);
 
@@ -712,7 +696,6 @@ function navegacao() {
       role: 'tab', 'aria-selected': String(v.id === (st.visao || 'resultado')),
       onclick: () => { st.visao = v.id; },
     }, v.nome)));
-  conduzirTelao();
 }
 
 function rodape(d) {
@@ -844,7 +827,10 @@ async function viewResultado() {
   if (dfn) for (const c of dfn.candidatos) estados[c.sqcand] = c;
 
   const lista = ((bloco && bloco.candidatos) || [])
-    .slice().sort((a, b) => b.oficial.votos - a.oficial.votos);
+    // Votos; empate (e tudo zerado) em ordem alfabética.
+    .slice().sort((a, b) => (b.oficial.votos - a.oficial.votos)
+      || String(a.oficial.nome_urna).localeCompare(
+           String(b.oficial.nome_urna), 'pt-BR'));
   const maxPct = Math.max(...lista.map(c => c.oficial.pct || 0), 0);
 
   const out = [];
@@ -1049,6 +1035,20 @@ async function viewMapa() {
     `/map-layers?cargo=${cargo.cd}&abrangencia=${abr}${uf}`);
   rodape(m);
   if (!m.dados.length) {
+    if (abr === 'mu' && st.uf) {
+      // Sem municípios naquela UF não é a mesma coisa que sem dado: o
+      // estado tem resultado, só a quebra por município ainda não chegou.
+      return el('div', {cls: 'estado'},
+        `Resultado por município de ${cargo.nome.toLowerCase()} em `
+        + `${st.uf.toUpperCase()} ainda sem dado. O total do estado está `
+        + 'em Resultado. ',
+        el('button', {
+          style: 'margin-left:6px;font-size:12.5px;padding:5px 12px;'
+               + 'border-radius:999px;border:1px solid var(--line);'
+               + 'background:var(--panel);color:var(--fg);cursor:pointer',
+          onclick: () => { st.uf = ''; st.municipio = ''; st.detalhe = ''; },
+        }, '◂ voltar ao mapa de estados'));
+    }
     return el('div', {cls: 'estado'}, m.status_motivo || 'sem dados');
   }
 
@@ -1176,8 +1176,9 @@ function tabelaMapa(m, camada, ctx) {
           el('td', {cls: 'num'}, d.margem_pp == null
             ? el('span', {cls: 'null'}, 'n/d')
             : d.margem_pp.toFixed(1).replace('.', ',') + ' pp'),
-          el('td', {}, e
-            ? el('span', {cls: 'tag'}, e.sim + ' ' + e.txt)
+          el('td', {}, d.aguardando
+            ? el('span', {cls: 'null'}, 'aguardando resultado')
+            : e ? el('span', {cls: 'tag'}, e.sim + ' ' + e.txt)
             : el('span', {cls: 'null'}, 'em aberto')),
           el('td', {cls: 'num'}, n(d.cobertura_pct)));
       }))));

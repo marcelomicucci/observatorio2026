@@ -21,3 +21,6 @@ data/cache/fotos/
 
 # Imagens do telao: derivadas, reproduziveis e pesadas.
 data/telao/
+
+# Copias de seguranca do roteiro, gravadas pelo painel a cada alteracao.
+config/telao.anterior/

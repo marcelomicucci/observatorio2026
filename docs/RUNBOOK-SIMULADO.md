@@ -36,7 +36,7 @@ cd observatorio2026
 python -m pytest tests/ -q
 ```
 
-Os 94 testes rodam contra os payloads reais baixados em 20/09. Se algum
+Os 116 testes rodam contra os payloads reais baixados em 20/09. Se algum
 quebrar, o contrato mudou — investigar antes de ligar qualquer coisa.
 
 ```bash
@@ -153,20 +153,26 @@ para o projetor e deixe em tela cheia (F11).
 
 No próprio telão: **espaço** pausa, **setas** navegam, **R** recarrega.
 
-O carrossel vem de `config/telao.yaml`, versionado. Duas formas de mudar:
+O carrossel vem de `config/telao.yaml`. Para mexer nele, a aba **Telão**
+mostra a sequência editável: tempo, camada, ordem, remover. Nada vai para o
+projetor até clicar em **Gravar** — aí o arquivo é regravado (a versão
+anterior fica em `config/telao.anterior/`) e o telão passa à sequência nova
+na hora. Tela que não resolve impede a gravação inteira, com o motivo.
 
-- **Permanente** — editar o arquivo. O telão relê sozinho a cada 2 min.
-- **Durante a apuração** — em qualquer pesquisa do painel, **＋ enviar para a
-  lista do telão** acrescenta o recorte que estiver na tela. Na aba Telão a
-  lista pode ser reordenada, cronometrada e posta no ar com **usar esta lista
-  no telão**.
+Em qualquer pesquisa do painel há dois botões na trilha:
 
-A lista vive **no navegador**, não no servidor: não existe rota que grave o
-roteiro, porque administração com escrita aberta a qualquer um é o oposto do
-§10. Consequências práticas, que importam na hora: outra máquina não vê essa
-lista, e a captura de imagens lê o arquivo. Se a sequência improvisada ficou
-boa, **copiar como YAML** e colar em `config/telao.yaml` — aí ela vale para
-todos e fica versionada.
+- **＋ enviar para o telão** — acrescenta aquele recorte ao fim da sequência
+  (vale depois de gravar);
+- **▸ mostrar no telão agora** — põe aquele recorte no projetor já, fora da
+  sequência. Ele fica lá até **↻ retomar roteiro**, na aba Telão.
+
+Navegar no painel **não** mexe mais no projetor. Antes, cada troca de cargo
+ou UF interrompia o carrossel — pesquisar no notebook virava troca de tela
+na parede.
+
+A gravação só é aceita da própria máquina e só da própria página do painel.
+Se um dia o servidor for publicado, a rota continua recusando quem vem de
+fora.
 
 As duas janelas conversam por `BroadcastChannel`, que só liga janelas do
 **mesmo navegador**. Segundo monitor funciona; segunda máquina, não — lá o

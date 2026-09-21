@@ -172,7 +172,7 @@ const CARGOS = {
  * Se a janela de controle fechar, o telão NÃO para: mantém o último recorte
  * (guardado em localStorage) e segue atualizando os dados sozinho. Numa noite
  * de apuração, tela preta por fechar a janela errada é inaceitável. */
-let recorte = {cargo: '1', uf: null, camada: 'definicao'};
+let recorte = {cargo: '1', uf: null, camada: 'lider'};
 try {
   const g = localStorage.getItem('telao-recorte');
   if (g) recorte = {...recorte, ...JSON.parse(g)};
@@ -226,7 +226,11 @@ try {
     const d = ev.data || {};
     if (d.tipo === 'recorte') {
       // Recorte manual interrompe o carrossel: quem mexeu quer ver aquilo.
+      // E segura — a releitura periódica do arquivo não pode devolver o
+      // carrossel sozinha dois minutos depois. Quem volta é o "retomar
+      // roteiro" do painel.
       roteiro = [];
+      roteiroDeSessao = true;
       recorte = {...recorte, ...d.recorte};
       try {
         localStorage.setItem('telao-recorte', JSON.stringify(recorte));
@@ -271,7 +275,7 @@ let tempoTela = 0;
 const telasValidas = () => roteiro.filter(t => !t.erro);
 
 async function carregarRoteiro() {
-  if (roteiroDeSessao) return;   // a lista do operador manda
+  if (roteiroDeSessao) return;   // controle manual segura a tela
   try {
     const r = await get('/telao/roteiro');
     roteiro = r.dados || [];
@@ -285,7 +289,7 @@ function aplicarTela(t) {
   if (!t) return;
   recorte = {...recorte,
     cargo: t.cargo, uf: t.uf || null, municipio: t.municipio || null,
-    camada: t.camada || 'definicao',
+    camada: t.camada || 'lider',
     titulo: t.titulo, aviso_recorte: t.aviso_recorte};
   tempoTela = Math.max(5, t.segundos || 20);
   restante = tempoTela;
@@ -440,7 +444,10 @@ async function carregar() {
     if (dfn) for (const c of dfn.candidatos) estados[c.sqcand] = c;
 
     const lista = (((cands.dados || [])[0] || {}).candidatos || [])
-      .slice().sort((a, b) => b.oficial.votos - a.oficial.votos);
+      // Votos; empate (e tudo zerado) em ordem alfabética.
+      .slice().sort((a, b) => (b.oficial.votos - a.oficial.votos)
+      || String(a.oficial.nome_urna).localeCompare(
+           String(b.oficial.nome_urna), 'pt-BR'));
     const projecoes = {};
     if (proj && proj.dados) for (const x of proj.dados) projecoes[x.sqcand] = x;
     // A escala das barras considera apurado E projetado: senão a barra da
@@ -498,10 +505,37 @@ async function carregar() {
       pintura = MAPA.desenhar(caixaMapa, mapa.dados, {
         // O desenho tambem pode terminar tarde; o alvo ja foi substituido
         // se outra tela assumiu, entao pintar nele e inofensivo.
-        malha: mapa.malha, camada: recorte.camada || 'definicao',
+        malha: mapa.malha, camada: recorte.camada || 'lider',
         recorte: mapa.recorte_ibge, largura: 900, altura: 900,
       }).catch(() => poe(caixaMapa,
         el('div', {cls: 'vazio'}, 'mapa indisponível')));
+    } else if (uf) {
+      /* Sem resultado por município naquela UF — no começo da noite, ou
+       * porque a varredura ainda não passou por lá. "Sem mapa para este
+       * recorte" num telão parece defeito, e o painel inteiro fica com
+       * meia tela vazia. O mapa de estados já existe: enquadrado na UF e
+       * com ela destacada, ele ainda diz onde se está olhando, e a nota
+       * diz o que falta. */
+      pintura = get(`/map-layers?cargo=${recorte.cargo}&abrangencia=uf`)
+        .then(e => {
+          if (desatualizada()) return;
+          const alvo = (e.dados || []).find(d => d.uf === uf);
+          if (!alvo) throw new Error('sem dado da UF');
+          return MAPA.desenhar(caixaMapa, e.dados, {
+            malha: e.malha, camada: recorte.camada || 'lider',
+            foco: alvo.cd_ibge, destaque: alvo.cd_ibge,
+            largura: 900, altura: 900,
+          }).then(() => {
+            caixaMapa.style.position = 'relative';
+            caixaMapa.append(el('div', {
+              style: 'position:absolute;left:1vw;bottom:1vh;right:1vw;'
+                   + 'font-size:1vw;color:var(--muted);text-align:center',
+            }, `Resultado por município em ${uf.toUpperCase()} ainda sem `
+               + 'dado — mostrando o estado.'));
+          });
+        })
+        .catch(() => poe(caixaMapa, el('div', {cls: 'vazio'},
+          `resultado por município em ${uf.toUpperCase()} ainda sem dado`)));
     } else {
       poe(caixaMapa, el('div', {cls: 'vazio'}, 'sem mapa para este recorte'));
     }

@@ -8,7 +8,15 @@
 #   cargo       presidente | governador | senador        (obrigatório)
 #   uf          sigla, obrigatória para governador e senador
 #   municipio   código TSE (5 dígitos) ou IBGE (7), OU nome + uf
-#   camada      definicao | lider | margem | cobertura   (opcional)
+#   camada      lider | apurar                           (opcional)
+#                 lider   quem lidera: cor do 1o, tom pela margem sobre o
+#                         2o, contorno amarelo se matematicamente definido
+#                         e verde se eleito segundo o TSE
+#                 apurar  onde falta apurar: quanto do eleitorado ainda
+#                         nao entrou na conta (escuro = falta mais)
+#               Os nomes antigos (definicao, margem, cobertura) continuam
+#               aceitos e sao traduzidos: definicao e margem viram lider,
+#               cobertura vira apurar.
 #   segundos    tempo da tela; usa `padrao_segundos` se omitido
 #   titulo      rótulo livre; se omitido, é montado a partir do recorte
 #
@@ -24,7 +32,7 @@
 # de resolvida por adivinhação (§2.1). Código dispensa a UF.
 
 padrao_segundos: 20
-camada_padrao: definicao
+camada_padrao: lider
 
 roteiro:
   - cargo: presidente
@@ -32,7 +40,7 @@ roteiro:
     segundos: 30
 
   - cargo: presidente
-    camada: cobertura
+    camada: apurar
     titulo: Presidente — onde ainda falta apurar
     segundos: 15
 
