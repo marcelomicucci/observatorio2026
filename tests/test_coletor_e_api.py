@@ -472,3 +472,35 @@ def test_tempo_fora_da_faixa_e_trazido_para_dentro(cliente,
         {"cargo": "1", "segundos": 1}, {"cargo": "1", "segundos": 9999}]})
     assert r.status_code == 200
     assert [t["segundos"] for t in r.json()["dados"]] == [5, 300]
+
+
+# ------------------------------------------------ compartilhar (WhatsApp) ---
+
+def test_compartilhar_so_aceita_o_proprio_painel(cliente):
+    """A rota roda um navegador sem cabeça nesta máquina: mesma trava da
+    gravação do roteiro — formulário de outra página não passa."""
+    r = cliente.post("/api/v1/compartilhar", content='{"telas": null}',
+                     headers={"Content-Type": "text/plain"})
+    assert r.status_code == 415
+    r = cliente.post("/api/v1/compartilhar", json={"telas": None},
+                     headers={"Content-Type": "application/json",
+                              "Origin": "https://exemplo.com"})
+    assert r.status_code == 403
+
+
+def test_compartilhar_recusa_pedido_malformado(cliente):
+    r = cliente.post("/api/v1/compartilhar", json={"telas": ["x"]},
+                     headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+    r = cliente.post("/api/v1/compartilhar", json={"recorte": {"uf": "pa"}},
+                     headers={"Content-Type": "application/json"})
+    assert r.status_code == 400
+
+
+def test_imagem_nao_sai_de_data_telao(cliente):
+    """A rota de imagem só serve o padrão de nome da captura; caminho com
+    ponto-ponto ou extensão diferente não chega ao disco."""
+    for dia, nome in (("..", "config.yaml"), ("2026-09-21", "..%2F..%2Fx.png"),
+                      ("2026-09-21", "000000-0-x.txt")):
+        r = cliente.get(f"/api/v1/compartilhar/imagem/{dia}/{nome}")
+        assert r.status_code in (400, 404), (dia, nome, r.status_code)

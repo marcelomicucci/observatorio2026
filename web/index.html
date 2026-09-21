@@ -277,6 +277,146 @@ function mostrarNoTelaoAgora() {
   }});
 }
 
+/* ------------------------------------------------------------ WhatsApp
+ *
+ * Fotografa telas do telão e oferece as formas de mandar. O envio é de quem
+ * opera: o painel prepara tudo e para um passo antes.
+ *
+ * "Compartilhar…" usa a janela de compartilhamento do sistema. No Windows,
+ * com o WhatsApp instalado, ele aparece ali, e imagem e legenda vão juntas.
+ * Onde o navegador não oferece isso, sobram copiar imagem e copiar legenda,
+ * para colar no WhatsApp Web.
+ */
+async function prepararWhatsApp(pedido, rotulo) {
+  const caixa = el('div', {});
+  const fundo = el('div', {
+    style: 'position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);'
+         + 'display:flex;align-items:flex-start;justify-content:center;'
+         + 'overflow:auto;padding:5vh 16px',
+    onclick: e => { if (e.target === fundo) fundo.remove(); },
+  }, el('div', {
+    style: 'background:var(--panel);border:1px solid var(--line);'
+         + 'border-radius:12px;padding:18px 20px;max-width:760px;width:100%',
+  }, el('div', {style: 'display:flex;align-items:center;gap:10px;'
+                     + 'margin-bottom:12px'},
+       el('b', {style: 'font-size:16px'}, '📷 Para o WhatsApp'),
+       el('span', {style: 'color:var(--muted);font-size:13px'}, rotulo),
+       el('button', {
+         style: 'margin-left:auto;background:none;border:0;color:var(--muted);'
+              + 'font-size:20px;cursor:pointer',
+         onclick: () => fundo.remove(), title: 'fechar',
+       }, '×')),
+     caixa));
+  document.body.append(fundo);
+  poe(caixa, el('div', {cls: 'estado'},
+    'Fotografando o telão… leva alguns segundos por tela.'));
+
+  let r;
+  try {
+    const resp = await fetch(API + '/compartilhar', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(pedido),
+    });
+    r = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(
+      (r && r.detail) ? String(r.detail) : `erro ${resp.status}`);
+  } catch (e) {
+    poe(caixa, el('div', {cls: 'nota aten'},
+      el('b', {}, 'Não foi possível fotografar. '), e.message));
+    return;
+  }
+  if (!r.fotos.length) {
+    poe(caixa, el('div', {cls: 'nota aten'},
+      el('b', {}, 'Nenhuma imagem gravada. '),
+      ...r.puladas.map(p => el('div', {}, `· ${p.titulo}: ${p.motivo}`))));
+    return;
+  }
+
+  const blobs = await Promise.all(r.fotos.map(f =>
+    fetch(f.url).then(x => x.blob())));
+  const arquivos = blobs.map((b, i) =>
+    new File([b], r.fotos[i].arquivo, {type: 'image/png'}));
+
+  const botao = (txt, acao, destaque) => el('button', {
+    style: 'font-size:13px;padding:7px 14px;border-radius:999px;'
+         + 'cursor:pointer;border:1px solid '
+         + (destaque ? '#25d366;background:#25d366;color:#08140c;'
+                       + 'font-weight:600'
+                     : 'var(--line);background:var(--bg);color:var(--fg)'),
+    onclick: acao,
+  }, txt);
+  const aviso = el('div', {style: 'font-size:12.5px;color:var(--muted);'
+                                + 'min-height:18px;margin-top:8px'});
+  const avisar = t => { aviso.textContent = t; };
+
+  const podeCompartilhar = !!(navigator.canShare
+    && navigator.canShare({files: arquivos}));
+
+  const acoes = el('div', {style: 'display:flex;gap:8px;flex-wrap:wrap'},
+    podeCompartilhar ? botao('Compartilhar… (escolher o WhatsApp)',
+      async () => {
+        try {
+          await navigator.share({files: arquivos, text: r.legenda});
+          avisar('Enviado para a janela de compartilhamento.');
+        } catch (e) {
+          if (e.name !== 'AbortError') avisar('Não abriu: ' + e.message);
+        }
+      }, true) : null,
+    botao('Copiar legenda', async () => {
+      try {
+        await navigator.clipboard.writeText(r.legenda);
+        avisar('Legenda copiada. No WhatsApp: Ctrl+V.');
+      } catch (e) { avisar('Não consegui copiar: ' + e.message); }
+    }));
+
+  poe(caixa,
+    acoes, aviso,
+    podeCompartilhar ? null : el('div', {cls: 'nota'},
+      'Este navegador não oferece a janela de compartilhamento. Use '
+      + '"copiar imagem" em cada tela e cole no WhatsApp Web (Ctrl+V), e '
+      + 'depois "copiar legenda".'),
+    ...r.fotos.map((f, i) => el('div', {
+      style: 'margin-top:14px;border:1px solid var(--line);border-radius:8px;'
+           + 'overflow:hidden'},
+      el('img', {src: URL.createObjectURL(blobs[i]), alt: f.titulo,
+                 style: 'display:block;width:100%'}),
+      el('div', {style: 'display:flex;gap:8px;align-items:center;'
+                      + 'padding:8px 10px;flex-wrap:wrap'},
+        el('b', {style: 'font-size:13px'}, f.titulo),
+        el('span', {style: 'margin-left:auto'}),
+        botao('Copiar imagem', async () => {
+          try {
+            await navigator.clipboard.write(
+              [new ClipboardItem({'image/png': blobs[i]})]);
+            avisar(`Imagem "${f.titulo}" copiada. No WhatsApp: Ctrl+V.`);
+          } catch (e) { avisar('Não consegui copiar: ' + e.message); }
+        }),
+        el('a', {href: f.url, download: f.arquivo,
+                 style: 'font-size:13px;color:var(--muted)'}, 'baixar')))),
+    r.puladas.length ? el('div', {cls: 'nota aten'},
+      el('b', {}, 'Telas que não saíram. '),
+      ...r.puladas.map(p => el('div', {}, `· ${p.titulo}: ${p.motivo}`)))
+      : null,
+    el('details', {style: 'margin-top:12px'},
+      el('summary', {}, 'ver a legenda'),
+      el('pre', {style: 'white-space:pre-wrap;font-size:12.5px'},
+         r.legenda)),
+    el('div', {style: 'font-size:12px;color:var(--muted);margin-top:8px'},
+      'Guardado também em ', el('code', {}, r.pasta)));
+}
+
+function whatsappDestaTela() {
+  const cargo = cargoAtual();
+  if (cargo.abr === 'uf' && !st.uf) {
+    alert(`${cargo.nome} é decidido em cada estado. Escolha a UF antes.`);
+    return;
+  }
+  prepararWhatsApp({recorte: {
+    cargo: cargo.cd, uf: st.uf || null,
+    camada: MAPA.camadaCanonica(st.camada) || 'lider',
+  }}, `${cargo.nome} — ${st.uf ? st.uf.toUpperCase() : 'Brasil'}`);
+}
+
 function retomarRoteiro() {
   if (!canalTelao) return;
   canalTelao.postMessage({tipo: 'roteiro', roteiro: ROTEIRO.telasGravadas,
@@ -606,7 +746,14 @@ async function viewTelao() {
     el('button', {
       onclick: retomarRoteiro,
       title: 'Depois de "mostrar no telão agora", volta à sequência gravada',
-    }, '↻ retomar roteiro')));
+    }, '↻ retomar roteiro'),
+    el('button', {
+      onclick: () => prepararWhatsApp({telas: null},
+        'todas as telas do roteiro gravado'),
+      title: 'Fotografa cada tela do roteiro gravado, com a legenda dos '
+           + 'números, pronto para mandar no WhatsApp',
+      style: 'border-color:#25d366',
+    }, '📷 WhatsApp: roteiro inteiro')));
 
   out.push(editorRoteiro());
 
@@ -683,6 +830,12 @@ function navegacao() {
     title: 'Mostra este recorte no projetor agora, fora da sequência. '
          + '"Retomar roteiro", na aba Telão, volta ao automático.',
   }, '▸ mostrar no telão agora'));
+  kids.push(el('button', {
+    cls: 'prolista vazio',
+    onclick: whatsappDestaTela,
+    title: 'Fotografa este recorte como ele aparece no telão, com a '
+         + 'legenda dos números, pronto para mandar no WhatsApp.',
+  }, '📷 WhatsApp'));
   if (pendente) {
     kids.push(el('button', {
       cls: 'prolista vazio',

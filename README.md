@@ -80,14 +80,12 @@ tela. O roteiro se edita e se grava pelo próprio painel. Qualquer pesquisa
 vira tela com um clique; "mostrar agora" põe um recorte no projetor fora da
 sequência.
 
-**O grupo pede "manda aí como está".**
-
-```bash
-python -m obs2026.cli compartilhar
-```
-
-Fotografa as telas do telão, escreve a legenda com os números do mesmo
-instante e deixa tudo na área de transferência. No WhatsApp é Ctrl+V. O envio
+**O grupo pede "manda aí como está".** Botão **📷 WhatsApp** no painel —
+em qualquer pesquisa, ou na aba Telão para o roteiro inteiro. Fotografa as
+telas como aparecem no telão, escreve a legenda com os números do mesmo
+instante e abre a janela de compartilhar do Windows, onde é só escolher o
+grupo. Sem ela, copiar imagem e legenda e colar no WhatsApp Web. Também pelo
+terminal: `python -m obs2026.cli compartilhar`. O envio
 fica com quem opera, de propósito: a API oficial não entrega para grupos, e
 projeção eleitoral não deve circular sem alguém ter olhado. A legenda sempre
 diz que o número não é oficial, e só mostra projeção se o gate estatístico

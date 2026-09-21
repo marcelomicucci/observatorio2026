@@ -52,6 +52,8 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .local import LOCAIS, somente_local  # noqa: F401
+
 CARGOS = {"presidente": "1", "governador": "3", "senador": "5"}
 CARGO_NOME = {v: k for k, v in CARGOS.items()}
 ABRANGENCIA = {"1": "br", "3": "uf", "5": "uf"}
@@ -63,9 +65,6 @@ CAMADAS = ("lider", "apurar")
 APELIDOS_CAMADA = {"definicao": "lider", "margem": "lider",
                    "cobertura": "apurar"}
 
-#: Quem pode gravar. `testclient` é o endereço que o cliente de teste do
-#: Starlette informa; ele só existe dentro do processo, nunca na rede.
-LOCAIS = {"127.0.0.1", "::1", "localhost", "testclient"}
 #: Limites do que se aceita gravar. Um roteiro de noite de apuração tem
 #: dezenas de telas, não milhares; o teto existe para um erro de clique não
 #: virar um arquivo de megabytes.
@@ -272,30 +271,11 @@ def register(app) -> None:
         cfg = yaml.safe_load(caminho.read_text(encoding="utf-8")) or {}
         return resposta(resolver(cfg, s))
 
-    def _conferir_origem(req: Request) -> None:
-        host = req.client.host if req.client else ""
-        if host not in LOCAIS:
-            raise HTTPException(
-                403, "o roteiro só pode ser gravado da própria máquina")
-        tipo = (req.headers.get("content-type") or "").split(";")[0].strip()
-        if tipo != "application/json":
-            # Formulário de outra página chega como text/plain ou
-            # x-www-form-urlencoded, sem passar pelo CORS.
-            raise HTTPException(415, "envie o roteiro como application/json")
-        origem = req.headers.get("origin")
-        if origem:
-            from urllib.parse import urlsplit
-            o = urlsplit(origem)
-            if (o.hostname not in LOCAIS
-                    or (o.port or 80) != (req.url.port or 80)):
-                raise HTTPException(
-                    403, f"origem {origem!r} não pode gravar o roteiro")
-
     @app.post("/api/v1/telao/roteiro")
     async def gravar_roteiro(req: Request,
                              s: Session = Depends(M.get_session)):
         """Grava o roteiro em config/telao.yaml, se todas as telas resolvem."""
-        _conferir_origem(req)
+        somente_local(req, "gravar o roteiro")
         try:
             corpo = await req.json()
         except ValueError as exc:

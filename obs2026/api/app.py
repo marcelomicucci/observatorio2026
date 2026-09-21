@@ -650,6 +650,7 @@ from . import projecao as _projecao  # noqa: E402
 from . import telao as _telao  # noqa: E402
 from . import convergencia as _convergencia  # noqa: E402
 from . import fotos as _fotos  # noqa: E402
+from . import compartilhar as _compartilhar  # noqa: E402
 
 _decided_audit.register(app)
 _geo.register(app)
@@ -658,3 +659,4 @@ _projecao.register(app)
 _telao.register(app)
 _convergencia.register(app)
 _fotos.register(app)
+_compartilhar.register(app)

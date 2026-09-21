@@ -198,6 +198,21 @@ telão roda sozinho pelo roteiro do arquivo, sem controle ao vivo.
 
 ### 5. Mandar no grupo, quando pedirem
 
+**Pelo painel**, sem terminal:
+
+- **📷 WhatsApp**, na trilha de qualquer pesquisa — fotografa aquele recorte
+  como ele aparece no telão;
+- **📷 WhatsApp: roteiro inteiro**, na aba Telão — fotografa cada tela do
+  roteiro gravado.
+
+Abre um painel com as imagens e a legenda. **Compartilhar…** abre a janela de
+compartilhamento do Windows, onde o WhatsApp aparece se o aplicativo estiver
+instalado: escolher o grupo e enviar. Sem essa janela, **copiar imagem** e
+**copiar legenda**, e colar no WhatsApp Web com Ctrl+V. Leva alguns segundos
+por tela, e uma captura por vez.
+
+**Pelo terminal**, o mesmo:
+
 ```bash
 python -m obs2026.cli compartilhar
 ```
