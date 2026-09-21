@@ -29,6 +29,23 @@ from sqlalchemy.orm import Session
 REGIOES = {"1": "Norte", "2": "Nordeste", "3": "Sudeste",
            "4": "Sul", "5": "Centro-Oeste"}
 
+#: Nome por extenso das UFs. O TSE manda a sigla e a malha do IBGE manda só
+#: o código, então "AM" é tudo que existe no dado — e "AM" numa tela de
+#: projeção obriga o espectador a decodificar. Tabela fixa se justifica aqui
+#: porque o conjunto é fechado e não muda: a última alteração no quadro de
+#: unidades da federação foi em 1988.
+UF_EXTENSO = {
+    "ac": "Acre", "al": "Alagoas", "ap": "Amapá", "am": "Amazonas",
+    "ba": "Bahia", "ce": "Ceará", "df": "Distrito Federal",
+    "es": "Espírito Santo", "go": "Goiás", "ma": "Maranhão",
+    "mt": "Mato Grosso", "ms": "Mato Grosso do Sul", "mg": "Minas Gerais",
+    "pa": "Pará", "pb": "Paraíba", "pr": "Paraná", "pe": "Pernambuco",
+    "pi": "Piauí", "rj": "Rio de Janeiro", "rn": "Rio Grande do Norte",
+    "rs": "Rio Grande do Sul", "ro": "Rondônia", "rr": "Roraima",
+    "sc": "Santa Catarina", "sp": "São Paulo", "se": "Sergipe",
+    "to": "Tocantins", "zz": "Exterior",
+}
+
 _WEB = Path(__file__).resolve().parent.parent.parent / "web"
 
 
@@ -185,6 +202,9 @@ def register(app) -> None:
                 "cd_tse": g.cd_tse,
                 "uf": g.uf,
                 "nome": g.nome,
+                # Município já vem com nome de gente; UF vem como sigla.
+                "nome_extenso": (g.nome if tipo == "mu"
+                                 else UF_EXTENSO.get(g.uf, g.nome)),
                 "capital": g.capital,
                 "eleitorado": t.eleitorado_total,
                 "lider_sqcand": lider.sqcand if lider else None,

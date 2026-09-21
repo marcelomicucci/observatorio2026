@@ -37,7 +37,13 @@ const MAPA = (() => {
 
   // -- projeção ------------------------------------------------------------
 
-  function projetor(features, largura, altura, pad = 8) {
+  /* `expandir` afasta a moldura do que está sendo enquadrado.
+   *
+   * Serve para abrir um município sem que ele vire uma mancha solta: a
+   * escala sai do município, o desenho continua sendo o do estado inteiro,
+   * e o que sobra em volta é a vizinhança. Um território sozinho na tela,
+   * sem nada ao redor, não diz onde fica. */
+  function projetor(features, largura, altura, pad = 8, expandir = 1) {
     let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
     for (const f of features) {
       const polis = f.geometry.type === 'Polygon'
@@ -46,6 +52,11 @@ const MAPA = (() => {
         if (x < x0) x0 = x; if (x > x1) x1 = x;
         if (y < y0) y0 = y; if (y > y1) y1 = y;
       }
+    }
+    if (expandir > 1 && x1 > x0) {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const mw = (x1 - x0) * expandir / 2, mh = (y1 - y0) * expandir / 2;
+      x0 = cx - mw; x1 = cx + mw; y0 = cy - mh; y1 = cy + mh;
     }
     // Correção de cosseno: sem ela o Brasil aparece esticado na horizontal.
     const k = Math.cos((y0 + y1) / 2 * Math.PI / 180);
@@ -259,6 +270,114 @@ const MAPA = (() => {
     return v.toFixed(casas).replace('.', ',') + (camada.unidade || '');
   }
 
+  /* -- painel de detalhe do território -------------------------------------
+   *
+   * Substitui a dica nativa do SVG, que era uma linha corrida: nome, 1º, 2º,
+   * margem e estado emendados por pontos médios. Cabia num `<title>` e não
+   * cabia na cabeça de ninguém — para comparar dois territórios era preciso
+   * reler a frase inteira duas vezes.
+   *
+   * Aqui cada fato tem sua linha e os números ficam alinhados à direita, que
+   * é o que permite comparar de relance. O conteúdo NÃO muda com a camada:
+   * quem aponta um território quer saber o que há nele, não o recorte que o
+   * botão de cima selecionou.
+   */
+  function fmt(n) {
+    return n == null ? 'n/d' : n.toLocaleString('pt-BR');
+  }
+
+  function cria(tag, estilo, texto) {
+    const e = document.createElement(tag);
+    if (estilo) e.style.cssText = estilo;
+    if (texto != null) e.textContent = texto;
+    return e;
+  }
+
+  function detalhe(d) {
+    const box = cria('div', 'display:flex;flex-direction:column;gap:6px');
+    if (!d) {
+      box.append(cria('div', 'color:var(--muted)', 'sem dado'));
+      return box;
+    }
+
+    const tit = cria('div', 'font-weight:700;font-size:14px;color:var(--fg)',
+                     d.nome_extenso || d.nome);
+    if (d.capital) {
+      tit.append(cria('span',
+        'font-weight:400;font-size:11px;color:var(--muted);margin-left:6px',
+        'capital'));
+    }
+    box.append(tit);
+
+    const tab = cria('table', 'border-collapse:collapse;font-size:12.5px');
+    const linha = (nome, partido, votos, pct, forte) => {
+      const tr = document.createElement('tr');
+      const cel = (txt, estilo) => {
+        const td = cria('td', 'padding:1px 0', txt);
+        if (estilo) td.style.cssText += ';' + estilo;
+        return td;
+      };
+      tr.append(cel(nome || '—',
+        (forte ? 'font-weight:600;' : '') + 'padding-right:10px'));
+      // As três colunas da direita não quebram. Só o nome quebra, porque é
+      // o único campo de tamanho imprevisível — deixar "P 9963" virar duas
+      // linhas desalinha a tabela inteira e some com a comparação.
+      tr.append(cel(partido || '',
+        'color:var(--muted);padding-right:12px;white-space:nowrap'));
+      // Alinhados à direita: coluna de número que não alinha não se compara.
+      tr.append(cel(fmt(votos),
+        'text-align:right;font-variant-numeric:tabular-nums;'
+        + 'padding-right:10px;white-space:nowrap'));
+      tr.append(cel(pct == null ? 'n/d'
+                    : pct.toFixed(2).replace('.', ',') + '%',
+        'text-align:right;font-variant-numeric:tabular-nums;'
+        + 'white-space:nowrap'
+        + (forte ? ';font-weight:600' : '')));
+      return tr;
+    };
+    tab.append(linha(d.lider_nome, d.lider_partido, d.lider_votos,
+                     d.lider_pct, true));
+    if (d.segundo_nome) {
+      tab.append(linha(d.segundo_nome, d.segundo_partido, d.segundo_votos,
+                       d.segundo_pct, false));
+    }
+    box.append(tab);
+
+    const meta = cria('div',
+      'font-size:11.5px;color:var(--muted);display:flex;flex-direction:'
+      + 'column;gap:2px');
+    if (d.margem_pp != null) {
+      meta.append(cria('div', null,
+        'margem ' + d.margem_pp.toFixed(1).replace('.', ',') + ' pp'));
+    }
+    meta.append(cria('div', null,
+      'apurado ' + (d.cobertura_pct == null ? 'n/d'
+        : d.cobertura_pct.toFixed(1).replace('.', ',') + '%')
+      + ' de ' + fmt(d.eleitorado) + ' eleitores'));
+    box.append(meta);
+
+    // Estado sempre, inclusive "em aberto". No mapa a ausência de contorno
+    // já diz isso; num texto, o silêncio seria lido como esquecimento.
+    const e = ESTADO_DE(d);
+    box.append(cria('div',
+      'font-size:12px;font-weight:600;color:'
+      + (e ? e.cor : 'var(--muted)'),
+      (e ? e.sim + ' ' + e.txt : '○ em aberto')));
+
+    if (d.unidade_decide === false) {
+      box.append(cria('div',
+        'font-size:11px;color:var(--muted);max-width:280px;line-height:1.35',
+        'Recorte do voto: liderar aqui não é ser eleito por aqui.'));
+    }
+    return box;
+  }
+
+  /** Mesma informação em texto puro, para leitor de tela e para o `alt`. */
+  function resumoTexto(d, camada, ctx) {
+    if (!d) return 'sem dado';
+    return (d.nome_extenso || d.nome) + ': ' + descreve(d, camada, ctx);
+  }
+
   async function desenhar(alvo, dados, opts) {
     const camada = CAMADAS[opts.camada] || CAMADAS.lider;
     const gj = await malha(opts.malha);
@@ -299,7 +418,15 @@ const MAPA = (() => {
     }
 
     const W = opts.largura || 720, H = opts.altura || 620;
-    const proj = projetor(feicoes, W, H);
+    /* Abrir um território: a escala vem dele, o desenho continua sendo o do
+     * conjunto. O fator 3,2 foi escolhido para o alvo ocupar cerca de um
+     * terço da moldura — grande o bastante para ser lido, pequeno o
+     * bastante para os vizinhos dizerem onde ele fica. */
+    const foco = opts.foco
+      ? feicoes.filter(f => String(f.properties.cd) === String(opts.foco))
+      : [];
+    const proj = foco.length ? projetor(foco, W, H, 8, 3.2)
+                             : projetor(feicoes, W, H);
     const svg = svgEl('svg', {
       viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
       'aria-label': 'Mapa: ' + camada.rotulo,
@@ -334,23 +461,32 @@ const MAPA = (() => {
       // Mostrar um município sozinho num mapa o deixa sem referência de
       // onde fica; destacá-lo dentro do estado responde a mesma pergunta
       // sem tirar o contexto.
-      const alvo = opts.destaque && dado && dado.cd_ibge === opts.destaque;
+      // `destacado`, não `alvo`: `alvo` é o contêiner recebido por
+      // parâmetro, e sombreá-lo aqui é a mesma armadilha que já fez o mapa
+      // desenhar o Brasil inteiro para mostrar Alagoas.
+      const destacado = opts.destaque && dado
+                        && dado.cd_ibge === opts.destaque;
       const p = svgEl('path', {
         d: caminho(f, proj),
         fill: pinta(dado, camada, ctx),
-        stroke: alvo ? 'var(--fg)' : (est ? est.cor : 'var(--bg)'),
-        'stroke-width': alvo ? (opts.malha === 'uf.json' ? 3.2 : 1.6)
+        stroke: destacado ? 'var(--fg)' : (est ? est.cor : 'var(--bg)'),
+        'stroke-width': destacado ? (opts.malha === 'uf.json' ? 3.2 : 1.6)
                         : est ? (opts.malha === 'uf.json' ? 2.6 : 0.9)
                         : finoPadrao,
-        'stroke-dasharray': (!alvo && est && est.traco) ? est.traco : null,
+        'stroke-dasharray': (!destacado && est && est.traco) ? est.traco
+                            : null,
         'stroke-linejoin': 'round',
       });
-      const t = svgEl('title');
-      t.textContent = (dado ? dado.nome : f.properties.cd)
-        + ' — ' + descreve(dado, camada, ctx)
-        + (dado ? '\neleitorado: ' + dado.eleitorado.toLocaleString('pt-BR')
-                : '');
-      p.append(t);
+      // `aria-label` e não `<title>`: o `<title>` faz o navegador abrir a
+      // dica nativa por cima do painel, e ficam duas.
+      p.setAttribute('aria-label', dado
+        ? resumoTexto(dado, camada, ctx)
+        : f.properties.cd + ': sem dado');
+      if (dado) {
+        p.addEventListener('mouseenter', () => mostrarDica(dado));
+        p.addEventListener('mouseleave', esconderDica);
+        p.addEventListener('mousemove', moverDica);
+      }
       if (dado && opts.aoClicar) {
         p.style.cursor = 'pointer';
         p.addEventListener('click', () => opts.aoClicar(dado));
@@ -359,7 +495,40 @@ const MAPA = (() => {
     }
     svg.append(g);
 
-    alvo.replaceChildren(svg);
+    /* A dica vive no contêiner, não no documento: assim ela some junto com
+     * o mapa quando a tela é trocada, em vez de ficar órfã no `body`. */
+    const dica = cria('div',
+      'position:absolute;z-index:40;pointer-events:none;display:none;'
+      + 'background:var(--panel);border:1px solid var(--line);'
+      + 'border-radius:8px;padding:10px 12px;'
+      + 'box-shadow:0 6px 22px rgba(0,0,0,.45);max-width:320px');
+    let dentro = null;
+
+    function mostrarDica(d) {
+      dentro = d;
+      dica.replaceChildren(detalhe(d));
+      dica.style.display = 'block';
+    }
+    function esconderDica() {
+      dentro = null;
+      dica.style.display = 'none';
+    }
+    function moverDica(ev) {
+      if (!dentro) return;
+      const r = alvo.getBoundingClientRect();
+      const x = ev.clientX - r.left, y = ev.clientY - r.top;
+      // Vira de lado perto da borda: dica cortada pela metade é pior do que
+      // dica longe do cursor.
+      const l = dica.offsetWidth, a = dica.offsetHeight;
+      dica.style.left = (x + 16 + l > r.width ? x - l - 14 : x + 16) + 'px';
+      dica.style.top = Math.max(0, y + 14 + a > r.height ? y - a - 12
+                                                         : y + 14) + 'px';
+    }
+
+    if (getComputedStyle(alvo).position === 'static') {
+      alvo.style.position = 'relative';
+    }
+    alvo.replaceChildren(svg, dica);
     return {camada, ctx, semDado, total: feicoes.length,
             recortado: feicoes.length !== gj.features.length};
   }
@@ -472,5 +641,5 @@ const MAPA = (() => {
   }
 
   return {CAMADAS, desenhar, barraPonderada, legenda, descreve, DEF_CORES,
-          estadoDe: ESTADO_DE};
+          estadoDe: ESTADO_DE, detalhe};
 })();

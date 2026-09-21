@@ -928,15 +928,39 @@ function filtroTerritorial(m, abr) {
                   v => { st.municipio = v; }, `todos (${munis.length})`));
   }
 
-  if (st.regiao || st.uf || st.municipio) {
+  /* Voltar um nível, explícito.
+   *
+   * Descer é intuitivo — clica-se no que se quer ver. Subir não tem gesto:
+   * sem botão, a única saída é mexer nos seletores, e quem clicou três
+   * vezes para chegar num município não deveria ter que desfazer o caminho
+   * de trás para frente. O rótulo diz para onde vai, não "voltar". */
+  const acima = st.municipio
+    ? {rotulo: `◂ voltar a ${(st.uf || '').toUpperCase()}`,
+       acao: () => { st.municipio = ''; }}
+    : st.uf
+    ? {rotulo: st.regiao ? `◂ voltar ao ${st.regiao}` : '◂ voltar ao Brasil',
+       acao: () => { st.uf = ''; st.detalhe = ''; }}
+    : st.regiao
+    ? {rotulo: '◂ voltar ao Brasil', acao: () => { st.regiao = ''; }}
+    : null;
+
+  if (acima) {
     kids.push(el('button', {
-      style: 'align-self:flex-end;font-size:12px;padding:5px 12px;'
+      style: 'align-self:flex-end;font-size:12.5px;padding:6px 14px;'
+           + 'border-radius:999px;border:1px solid var(--muted);'
+           + 'background:var(--panel);color:var(--fg);cursor:pointer',
+      onclick: acima.acao,
+    }, acima.rotulo));
+  }
+  if (st.municipio || (st.regiao && st.uf)) {
+    kids.push(el('button', {
+      style: 'align-self:flex-end;font-size:12px;padding:6px 12px;'
            + 'border-radius:999px;border:1px solid var(--line);'
            + 'background:var(--panel);color:var(--muted);cursor:pointer',
       onclick: () => {
         st.regiao = ''; st.uf = ''; st.municipio = ''; st.detalhe = '';
       },
-    }, 'limpar filtro'));
+    }, 'Brasil inteiro'));
   }
   return el('div', {
     style: 'display:flex;gap:11px;align-items:flex-end;flex-wrap:wrap;'
@@ -1015,7 +1039,10 @@ async function viewMapa() {
     try {
       const r = await MAPA.desenhar(caixa, dados, {
         malha: m.malha, camada: camadaId, recorte,
+        // Destaque marca; foco enquadra. Clicar num município agora abre o
+        // município, como clicar num estado abre o estado.
         destaque: st.municipio || null,
+        foco: st.municipio || null,
         largura: 760, altura: abr === 'mu' ? 640 : 540,
         aoClicar: d => {
           if (abr === 'mu') { st.municipio = d.cd_ibge; return; }
@@ -1027,14 +1054,9 @@ async function viewMapa() {
       const sel = st.municipio
         ? dados.find(d => d.cd_ibge === st.municipio) : null;
       poe(pe,
-        sel ? el('div', {cls: 'nota'},
-                el('b', {}, sel.nome + '/' + (sel.uf || '').toUpperCase()
-                          + '. '),
-                MAPA.descreve(sel, r.camada, r.ctx),
-                ` · ${fmt(sel.eleitorado)} eleitores`,
-                sel.unidade_decide ? null
-                  : ' · recorte do voto: liderar aqui não é ser eleito '
-                  + 'por aqui.') : null,
+        // O mesmo painel do sobrevoo, fixo: o território escolhido no
+        // filtro merece ficar legível sem manter o mouse parado em cima.
+        sel ? el('div', {cls: 'nota'}, MAPA.detalhe(sel)) : null,
         MAPA.legenda(r.camada, r.ctx, dados),
         el('div', {cls: 'nota'}, el('b', {}, 'Área não é eleitorado. '),
            m.aviso_cartografico),
