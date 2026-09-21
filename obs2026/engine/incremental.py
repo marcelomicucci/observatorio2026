@@ -72,25 +72,16 @@ class CarregadorIncremental:
             if not caminho.exists():
                 continue
             inicio = self._offsets.get(dia, 0)
-            tamanho = caminho.stat().st_size
-            if tamanho <= inicio:
+            if caminho.stat().st_size <= inicio:
                 continue
-            with open(caminho, "r", encoding="utf-8") as fh:
-                fh.seek(inicio)
-                for linha in fh:
-                    linha = linha.strip()
-                    if not linha:
-                        continue
-                    try:
-                        ref = SnapshotRef(**json.loads(linha))
-                    except (json.JSONDecodeError, TypeError):
-                        # Linha truncada: o coletor ainda está escrevendo.
-                        # Não avançamos o deslocamento além dela; a próxima
-                        # passagem relê.
-                        break
-                    n += 1
-                    self._registrar(ref)
-                self._offsets[dia] = fh.tell()
+            # A leitura em binário cuida da linha que o coletor ainda está
+            # escrevendo. A versão anterior lia em modo texto e chamava
+            # `tell()` depois de um `break` — o que levanta erro justamente
+            # no caso da linha truncada que ela dizia tratar.
+            for ref, fim in self.archive.manifest_desde(dia, inicio):
+                n += 1
+                self._registrar(ref)
+                self._offsets[dia] = fim
         return n
 
     def _registrar(self, ref: SnapshotRef) -> None:

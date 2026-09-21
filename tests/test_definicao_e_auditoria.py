@@ -379,11 +379,18 @@ def test_segunda_passagem_do_incremental_nao_relê_nada(tmp_path):
     if not origem.days():
         pytest.skip("arquivo bruto vazio")
 
-    # Cópia congelada de algumas capturas de Governador.
+    # Cópia congelada de algumas capturas de Governador. Procura em todos os
+    # dias, do mais recente para trás: olhar só o último dia fazia o teste
+    # ser pulado sempre que a coleta mais recente fosse de outro cargo.
     destino = RawArchive(tmp_path, "copia")
-    dia = origem.days()[-1]
-    refs = [r for r in origem.manifest(dia)
-            if r.kind == "ea20" and r.path and r.cargo == "3" and r.mun][:40]
+    dia, refs = None, []
+    for d in reversed(origem.days()):
+        refs = [r for r in origem.manifest(d)
+                if r.kind == "ea20" and r.path and r.cargo == "3"
+                and r.mun][:40]
+        if refs:
+            dia = d
+            break
     if not refs:
         pytest.skip("sem capturas de governador no arquivo bruto")
     (destino.root / "manifest").mkdir(parents=True, exist_ok=True)

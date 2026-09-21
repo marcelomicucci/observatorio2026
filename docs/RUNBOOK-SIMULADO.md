@@ -129,22 +129,40 @@ falha é registrada e a rodada segue; rodada que estoura o intervalo
 recomeça em vez de enfileirar. Nada disso derruba a apuração, que é o que
 importa.
 
-### 3. Carga e painel, em outro terminal
-
-```bash
-python -m obs2026.cli carregar
-```
+### 3. Painel, em outro terminal
 
 ```bash
 python -m uvicorn obs2026.api.app:app --port 8026
 ```
 
-Ou, para as duas coisas de uma vez, o atalho `Iniciar Observatório 2026.cmd`
-na pasta.
+Ou o atalho `Iniciar Observatório 2026.cmd` na pasta. Painel em
+`http://localhost:8026`.
 
-Painel em `http://localhost:8026`. A carga é reexecutável: rodar de novo não
-duplica snapshot nem voto. O registro de projeções lê o arquivo bruto
-direto, então **não depende** de `carregar` ter rodado.
+**Não é preciso rodar `carregar` durante a coleta.** O `coletar` grava no
+banco sozinho, a cada 5 s, só o que chegou — e grava os totais de Brasil e UF
+antes dos municípios. O `carregar` à mão serve depois de uma coleta avulsa
+(`scripts/coletar_uf.py`) ou para reconstruir o banco (`--recriar`). Ele
+também é incremental: a primeira vez lê tudo (uns 6 minutos com o simulado
+inteiro), as seguintes só o novo.
+
+**O que o `coletar` prioriza, nesta ordem:**
+
+1. **totais de Brasil e de cada UF**, a cada 10 s, em nível próprio na fila —
+   nenhum município passa na frente, por maior que seja;
+2. municípios que o EA14/EA15 acusou como mudados;
+3. a varredura de segurança, uma vez por hora.
+
+**O que ele não busca:** o que o TSE já marcou como finalizado. Sai das
+buscas e continua vigiado pelo EA14/EA15; se o TSE re-totalizar, volta na
+hora. Para desligar e buscar tudo sempre:
+
+```bash
+python -m obs2026.cli coletar --buscar-finalizados
+```
+
+**Se o coletor cair ou o notebook dormir:** religar. Ele retoma do arquivo
+bruto o que já sabia (ETags e quem já está em dia) em cerca de um segundo, em
+vez de baixar tudo de novo.
 
 ### 4. Telão
 
@@ -224,7 +242,7 @@ colado nela.
 | **série de erros na mesma fonte** | abre o circuito por 5 min | verificar rede antes de forçar |
 | **payload fora de contrato** | recusa ingerir, registra `ParseError` | comparar com a fixture; o bruto está salvo |
 | **divergência contábil crítica** | bloqueia projeção, mantém apuração no ar | ler o código da invariante em `quality/checks.py` |
-| **queda do processo** | bruto em disco está íntegro | religar e rodar `carregar` — é idempotente |
+| **queda do processo** | bruto em disco está íntegro; ao religar, retoma ETags e quem já está em dia | religar o `coletar`; ele recarrega o banco sozinho |
 | **projeção falha numa disputa** | registra e segue; a coleta não para | ver `falhas` no resumo do `coletar` |
 | **captura não grava imagem** | recusa a foto e diz qual tela e por quê | o servidor está no ar? a tela resolve? |
 | **telão preto no projetor** | mantém o último recorte se o controle fechar | F5 na janela do telão; o roteiro volta do arquivo |

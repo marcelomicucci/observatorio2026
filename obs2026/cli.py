@@ -306,7 +306,11 @@ def coletar(env_name: str = ENV_OPT,
             segundos: float = typer.Option(0, help="0 = sem limite"),
             projetar: bool = typer.Option(
                 None, help="registra projecoes periodicamente "
-                           "(padrao: config/collector.yaml)")):
+                           "(padrao: config/collector.yaml)"),
+            pular_finalizados: bool = typer.Option(
+                None, "--pular-finalizados/--buscar-finalizados",
+                help="nao busca de novo o que o TSE ja finalizou; segue "
+                     "vigiando pelo EA14/EA15 (padrao: config)")):
     """Coleta contínua, registrando projeções ao longo da apuração.
 
     A cada `projecao.intervalo_s` o sistema projeta todas as disputas e grava
@@ -349,45 +353,78 @@ def coletar(env_name: str = ENV_OPT,
                       f"folga {b['folga_rps']:.1f} req/s")
             col = Collector(cat, client, archive, cfg, on_result=on_result)
 
-            if not quer_projetar:
+            # Retoma do que o arquivo bruto já sabe. Sem isto, um coletor
+            # reiniciado no meio da noite trataria os 16.897 arquivos como
+            # novos e passaria uns 14 minutos baixando de novo o que já tem,
+            # cego para as mudanças reais nesse intervalo.
+            if pular_finalizados is not None:
+                col.pular_finalizados = pular_finalizados
+            rest = await asyncio.to_thread(col.restaurar_do_arquivo)
+            if rest["etags"]:
+                con.print(f"retomada: {br(rest['etags'])} fontes com ETag, "
+                          f"{br(rest['tokens'])} municipios ja em dia")
+            if col.pular_finalizados:
+                con.print(f"finalizados: {br(rest['finalizados'])} arquivos "
+                          f"fora das buscas (vigiados pelo EA14/EA15)")
+            else:
+                con.print("[yellow]pular finalizados desligado: busca "
+                          "tudo, sempre[/]")
+
+            # Laços auxiliares. O da coleta manda: quando ele termina, os
+            # outros são encerrados.
+            auxiliares: list[tuple[str, object, asyncio.Task]] = []
+
+            if cfg.carga_ativa:
+                from .storage.carga import CargaContinua
+                carga = CargaContinua(env, archive, cfg.carga_intervalo_s)
+                await asyncio.to_thread(carga.sincronizar_catalogo, cat)
+                con.print(f"banco: carga continua a cada "
+                          f"{cfg.carga_intervalo_s:.0f}s, Brasil e UF antes "
+                          f"dos municipios")
+                auxiliares.append(("carga", carga,
+                                   asyncio.create_task(carga.rodar())))
+            else:
+                con.print("[yellow]carga continua desligada: o painel so "
+                          "muda com `carregar` a mao[/]")
+
+            if quer_projetar:
+                from .engine import audit as _audit
+                from .engine.registro_continuo import RegistradorContinuo
+                reg = RegistradorContinuo(
+                    env=env, thr=thr, archive=archive,
+                    diario=_audit.Diario(DATA_DIR / "previsoes", env.name),
+                    intervalo_s=cfg.projecao_intervalo_s,
+                    n_sims=cfg.projecao_n_sims,
+                )
+                con.print(f"projecoes: a cada "
+                          f"{cfg.projecao_intervalo_s:.0f}s, "
+                          f"{cfg.projecao_n_sims} simulacoes, em thread "
+                          f"separada")
+                auxiliares.append(("projecao", reg,
+                                   asyncio.create_task(reg.rodar())))
+            else:
                 con.print("[yellow]registro de projecoes desligado: o "
                           "grafico de convergencia ficara sem pontos[/]")
-                return await col.run(max_seconds=segundos or None), None
 
-            from .engine import audit as _audit
-            from .engine.registro_continuo import RegistradorContinuo
-            reg = RegistradorContinuo(
-                env=env, thr=thr, archive=archive,
-                diario=_audit.Diario(DATA_DIR / "previsoes", env.name),
-                intervalo_s=cfg.projecao_intervalo_s,
-                n_sims=cfg.projecao_n_sims,
-            )
-            con.print(f"projecoes: a cada {cfg.projecao_intervalo_s:.0f}s, "
-                      f"{cfg.projecao_n_sims} simulacoes, em thread separada")
-
-            # Os dois laços correm juntos. O da coleta manda: quando ele
-            # termina, o de projeção é encerrado — não faz sentido continuar
-            # projetando sobre um dado que parou de chegar.
-            tarefa_coleta = asyncio.create_task(
-                col.run(max_seconds=segundos or None))
-            tarefa_proj = asyncio.create_task(reg.rodar())
+            extras: dict = {}
             try:
-                stats_coleta = await tarefa_coleta
+                stats_coleta = await col.run(max_seconds=segundos or None)
             finally:
-                reg.parar()
-                try:
-                    await asyncio.wait_for(tarefa_proj, timeout=30)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
-                    tarefa_proj.cancel()
-            return stats_coleta, reg.stats.__dict__
+                for nome, laco, tarefa in auxiliares:
+                    laco.parar()
+                    try:
+                        await asyncio.wait_for(tarefa, timeout=60)
+                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                        tarefa.cancel()
+                    st = getattr(laco, "stats")
+                    extras[nome] = st if isinstance(st, dict) else st.__dict__
+            return stats_coleta, extras
         finally:
             await client.aclose()
 
     with IpLock(str(env.lock_path)):
-        stats, stats_proj = asyncio.run(run())
-    saida = {**stats, **counters}
-    if stats_proj:
-        saida["projecao"] = stats_proj
+        stats, extras = asyncio.run(run())
+    saida = {**stats, **counters, **extras}
     con.print(json.dumps(saida, ensure_ascii=False, indent=2))
 
 
@@ -407,12 +444,19 @@ def auditar_csv(
 
 @app.command("carregar")
 def carregar(env_name: str = ENV_OPT,
-             recriar: bool = typer.Option(False, help="apaga e recria o banco")):
-    """Carrega o arquivo bruto no banco. Reexecutável sem duplicar."""
+             recriar: bool = typer.Option(False, help="apaga e recria o banco"),
+             completa: bool = typer.Option(
+                 False, help="relê o arquivo bruto inteiro, não só o novo")):
+    """Carrega no banco o que chegou ao arquivo bruto desde a última carga.
+
+    Incremental: guarda no banco até onde cada dia do manifesto já foi lido
+    e retoma dali. A primeira carga lê tudo; as seguintes, só o novo — o
+    custo passa a acompanhar o que mudou, não o tamanho da noite.
+    Reexecutável sem duplicar, como antes.
+    """
     import asyncio as _a
     from .storage.db import create_all, drop_all, make_engine, make_session_factory
-    from .storage.ingest import ingest_ea20, sync_catalog
-    from .tse.parsers import ea20 as ea20_parser
+    from .storage.ingest import sync_catalog
 
     env, cfg = load_environment(env_name), load_collector()
     archive = RawArchive(DATA_DIR / "raw", env.name)
@@ -434,31 +478,16 @@ def carregar(env_name: str = ENV_OPT,
         cstats = sync_catalog(s, cat)
         con.print(f"catalogo: {cstats}")
 
-        tot = {"snapshot": 0, "candidates": 0, "results": 0}
-        flags: dict[str, int] = {}
-        n = 0
-        for day in archive.days():
-            for ref in archive.manifest(day):
-                if ref.kind != "ea20" or not ref.path:
-                    continue
-                try:
-                    r = ea20_parser.parse(archive.load(ref))
-                except Exception as exc:       # noqa: BLE001
-                    flags[f"parse:{type(exc).__name__}"] = \
-                        flags.get(f"parse:{type(exc).__name__}", 0) + 1
-                    continue
-                out = ingest_ea20(s, env, ref, r)
-                for k in tot:
-                    tot[k] += out[k]
-                for f in out["flags"]:
-                    flags[f] = flags.get(f, 0) + 1
-                n += 1
-                if n % 200 == 0:
-                    s.commit()
-        s.commit()
+        from .storage.carga import carregar_novos
+        tot = carregar_novos(s, env, archive, completa=completa)
 
-    con.print(f"EA20 processados: {br(n)}")
-    con.print(f"gravados: {tot}")
+    flags = tot.pop("flags")
+    con.print(f"linhas novas no manifesto: {br(tot['linhas'])}"
+              + ("" if tot["linhas"] else "  (nada novo desde a última carga)"))
+    con.print(f"EA20 processados: {br(tot['ea20'])} "
+              f"({br(tot['grandes'])} de Brasil e UF, gravados primeiro)")
+    con.print(f"gravados: snapshot={tot['snapshot']} "
+              f"candidatos={tot['candidates']} resultados={tot['results']}")
     if flags:
         con.print("[yellow]sinalizacoes:[/]")
         for k, v in sorted(flags.items(), key=lambda x: -x[1]):

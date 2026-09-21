@@ -396,6 +396,25 @@ class InstitutionalSeat(Base):
     substituicao_nota: Mapped[str | None] = mapped_column(Text)
 
 
+class CargaManifesto(Base):
+    """Até onde cada dia do manifesto já foi carregado no banco.
+
+    Existe para a carga ser incremental: sem isto, cada `carregar` relia o
+    arquivo bruto inteiro — todos os EA20 capturados desde o começo — e o
+    tempo de carga crescia a noite toda, justamente quando mais importa.
+
+    Mora no banco, não num arquivo ao lado, e é atualizada na mesma
+    transação que os dados. Assim as duas coisas não descasam: recriar o
+    banco apaga o ponto de retomada junto, e uma queda no meio da carga não
+    deixa o ponto adiante (pulando dados) nem atrás dos dados gravados.
+    """
+
+    __tablename__ = "carga_manifesto"
+    dia: Mapped[str] = mapped_column(String(10), primary_key=True)
+    deslocamento: Mapped[int] = mapped_column(BigInteger, default=0)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AuditEvent(Base):
     """Auditoria de toda mudança de premissa ou classificação (§10)."""
 

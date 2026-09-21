@@ -48,11 +48,35 @@ cadence:
   # É ROTATIVA: o coletor empurra uma fatia proporcional a cada 5 s, em vez de
   # despejar os 16.897 alvos de uma vez. Mesmo ciclo completo, carga plana.
   # A 900 s (proposta original do §8.1) o custo seria 18,8 req/s — sozinho
-  # estoura o teto de 20. A 1800 s cai para 9,4 req/s e o piso total fica em
-  # 16,4 req/s, com folga para a detecção. Medido, não estimado.
-  reconcile_interval_s: 1800
-  # Controle nacional/UF do EA20 (não depende de detecção).
-  control_interval_s: 20
+  # estoura o teto de 20.
+  #
+  # 3600 s, e não 1800: a cota que a varredura liberou foi para o controle,
+  # abaixo. A varredura é rede de segurança — as mudanças chegam pelo
+  # EA14/EA15 —, e o total do estado é o número que a sala está olhando.
+  # Trocar meia hora por uma hora na rede de segurança compra o total do
+  # estado duas vezes mais fresco. Custo: 4,7 req/s.
+  reconcile_interval_s: 3600
+  # Controle nacional/UF do EA20 (não depende de detecção). São os números
+  # grandes — Brasil e cada UF, por cargo — e têm prioridade absoluta na fila
+  # (nível próprio, acima de qualquer município). A cada 10 s: 8,3 req/s.
+  #
+  # Piso total: 2,9 + 8,3 + 4,7 = 15,9 req/s, com 4,1 req/s de folga para os
+  # municípios que mudaram — mais folga que antes (3,6), não menos.
+  control_interval_s: 10
+  # Não buscar de novo o que o TSE já marcou como FINALIZADO (andamento `f`),
+  # seja município, UF ou Brasil. Numa apuração, a maior parte do país
+  # termina bem antes do fim da noite, e continuar buscando esses arquivos é
+  # cota gasta sem informação nova — cota que falta a quem ainda está
+  # contando.
+  #
+  # Finalizado não é imutável: decisão judicial e voto sub judice podem
+  # re-totalizar. Por isso a unidade finalizada sai das buscas mas continua
+  # VIGIADA pelo EA14/EA15, que corre sempre e custa o mesmo. A assinatura de
+  # lá inclui a hora da totalização; se o TSE re-totalizar, ela muda e a
+  # unidade volta a ser buscada na hora.
+  #
+  # `false` volta ao comportamento antigo: busca tudo, sempre.
+  pular_finalizados: true
   # Teto de itens EA20 despachados por ciclo, para a fila não engolir o budget.
   max_inflight_results: 400
 
@@ -71,6 +95,14 @@ cadence:
 #
 # A simulacao roda em thread separada: numpy no laco de eventos travaria as
 # requisicoes ao TSE justamente no pico.
+# Carga continua do bruto para o banco, dentro do `coletar`. E o que faz o
+# painel e o telao mudarem sozinhos: sem isto, o banco so mudava quando
+# alguem rodava `carregar` a mao. Incremental (so o que chegou), com Brasil e
+# UF gravados antes dos municipios em cada passada.
+carga:
+  ativa: true
+  intervalo_s: 5
+
 projecao:
   ativa: true
   intervalo_s: 120
@@ -82,4 +114,7 @@ priority:
   # Peso na fila: eleitorado da unidade x fator. Territórios grandes e atrasados
   # primeiro, mas com envelhecimento para nenhum ficar sem atendimento.
   aging_boost_per_minute: 0.15
+  # Desempate entre itens do nível de totais. A precedência sobre os
+  # municípios NÃO vem deste número — vem do nível na fila. Com peso só,
+  # São Paulo (9,3 milhões de eleitores) passava à frente do total nacional.
   control_weight: 1000000

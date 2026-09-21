@@ -380,6 +380,24 @@ function linha(c, i, maxPct, estados, projecoes) {
  * lugar com o titulo de outro. Aconteceu de verdade em teste. */
 let cargaAtual = 0;
 
+/* Projeção em cache de 60 s por recorte.
+ *
+ * O apurado é relido a cada 10 s, porque é o número que a sala olha e o TSE
+ * atualiza rápido. A projeção não precisa desse ritmo — o coletor já a
+ * registra a cada 2 minutos — e cada pedido roda 1.200 simulações no
+ * servidor. Pedi-la a cada 10 s tiraria processador da coleta justamente no
+ * pico. */
+const PROJ_TTL_MS = 60000;
+const cacheProj = new Map();
+function projecaoEmCache(qs) {
+  const c = cacheProj.get(qs);
+  if (c && Date.now() - c.t < PROJ_TTL_MS) return c.p;
+  const p = get(`/projection?${qs}&sims=1200&registrar=false`)
+    .catch(() => null);
+  cacheProj.set(qs, {t: Date.now(), p});
+  return p;
+}
+
 async function carregar() {
   const minhaCarga = ++cargaAtual;
   const desatualizada = () => minhaCarga !== cargaAtual;
@@ -419,7 +437,7 @@ async function carregar() {
           + (uf ? `&uf=${uf}` : ''))
         .catch(() => null),
       // Projeção é acessória no telão: se falhar, o apurado continua.
-      get(`/projection?${qs}&sims=1200&registrar=false`).catch(() => null),
+      projecaoEmCache(qs),
     ]);
 
     if (desatualizada()) return;   // outra tela ja assumiu
@@ -601,8 +619,10 @@ async function carregar() {
   if (telasValidas().length) irPara(0); else carregar();
   setInterval(tique, 1000);
   // Atualização dos dados, independente da troca de telas: o telão não
-  // depende de ninguém mexer no controle.
-  setInterval(carregar, 30000);
+  // depende de ninguém mexer no controle. 10 s: o total do estado chega ao
+  // banco a cada 10 s pelo coletor, e esperar 30 s aqui desperdiçaria dois
+  // terços disso. A leitura é barata; a projeção, que não é, fica em cache.
+  setInterval(carregar, 10000);
   // O roteiro pode ser editado no arquivo durante a noite; releitura
   // periódica evita ter que recarregar a janela do projetor.
   setInterval(async () => {

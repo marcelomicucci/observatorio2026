@@ -130,6 +130,36 @@ class RawArchive:
                 if line:
                     yield SnapshotRef(**json.loads(line))
 
+    def manifest_desde(self, day: str, inicio: int = 0):
+        """Linhas do manifesto a partir de um deslocamento em bytes.
+
+        Devolve pares `(ref, fim)`, em que `fim` é o deslocamento logo
+        depois da linha — o valor a guardar para retomar dali.
+
+        Lê em binário, de propósito. Em modo texto, `tell()` depois de um
+        `break` no meio de um `for` levanta erro, e o deslocamento de texto
+        nem é byte. Lendo linha a linha em binário o deslocamento é exato.
+
+        Para na primeira linha sem quebra final: é a que o coletor ainda está
+        escrevendo. Ela não é devolvida e o deslocamento não passa dela — a
+        próxima leitura a pega inteira.
+        """
+        p = self.root / "manifest" / f"{day}.jsonl"
+        if not p.exists():
+            return
+        with open(p, "rb") as fh:
+            fh.seek(inicio)
+            pos = inicio
+            while True:
+                linha = fh.readline()
+                if not linha or not linha.endswith(b"\n"):
+                    return
+                pos += len(linha)
+                texto = linha.strip()
+                if not texto:
+                    continue
+                yield SnapshotRef(**json.loads(texto.decode("utf-8"))), pos
+
     def days(self) -> list[str]:
         d = self.root / "manifest"
         return sorted(p.stem for p in d.glob("*.jsonl"))

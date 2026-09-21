@@ -107,6 +107,10 @@ class CollectorConfig:
     projecao_ativa: bool = True
     projecao_intervalo_s: float = 180.0
     projecao_n_sims: int = 1500
+    carga_ativa: bool = True
+    carga_intervalo_s: float = 5.0
+    #: Não buscar EA20 de unidade que o TSE já marcou como finalizada.
+    pular_finalizados: bool = True
 
     def budget_floor_rps(self, *, n_accompaniment: int, n_control: int,
                          n_municipal: int) -> dict:
@@ -239,6 +243,10 @@ def load_collector(config_dir: Path = CONFIG_DIR) -> CollectorConfig:
         projecao_intervalo_s=float(
             (c.get("projecao") or {}).get("intervalo_s", 180)),
         projecao_n_sims=int((c.get("projecao") or {}).get("n_sims", 1500)),
+        carga_ativa=bool((c.get("carga") or {}).get("ativa", True)),
+        carga_intervalo_s=float(
+            (c.get("carga") or {}).get("intervalo_s", 5)),
+        pular_finalizados=bool(ca.get("pular_finalizados", True)),
     )
 
 

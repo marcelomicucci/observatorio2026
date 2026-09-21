@@ -358,3 +358,52 @@ do que um mapa de 800 px distingue):
 | Municípios | 5.570 | 3,61 MB | 2,97 MB |
 
 Diferente do CDN de resultados, este host responde normalmente a `curl`.
+
+---
+
+## Achados da operação contínua (21/09)
+
+### O EA14 e o EA20 do Brasil discordam no horário de totalização
+
+No simulado, o EA14 diz que o **Brasil** totalizou em **19/09 às 06:50:15** —
+a hora em que o **exterior** terminou. O EA20 do Brasil diz totalização em
+**18/09 às 16:59:26** e foi **gerado em 18/09 às 16:59:57**, e nunca foi
+regenerado depois: as capturas seguintes voltam 304. Os dois arquivos estão
+com `and: f` e 100%.
+
+Consequência para o coletor: a regra que decide "este arquivo já contém a
+última totalização" compara a hora de geração do EA20 com a hora de
+totalização do EA14. Para o total do Brasil, e para alguns totais de UF de
+governador, ela não fecha — e o arquivo segue sendo conferido a cada 10 s,
+com 304. É o comportamento correto: não dá para provar que está em dia, então
+não se para de conferir. O custo é baixo (resposta vazia) e a alternativa —
+confiar no `and: f` sozinho — abriria a brecha descrita abaixo.
+
+**A conferir em outubro:** se o EA20 do Brasil passa a ser regenerado quando
+o exterior termina. Se não for, o total do Brasil não traria o exterior
+final, e isso precisa ser visto no primeiro dia de divulgação oficial.
+
+### EA14/EA15 à frente do EA20: a brecha de remarcar o que foi reaberto
+
+A FAQ do TSE avisa que o acompanhamento pode chegar **antes** do EA20
+regenerado. Com "pular finalizados", isso abria uma brecha: uma
+re-totalização aparece no EA15, o município é reaberto, o coletor busca o EA20
+e recebe ainda a versão antiga — que diz `and: f`. Remarcá-lo como finalizado
+nessa hora faria a versão nova nunca ser buscada.
+
+Fechado: o alvo reaberto só volta a finalizado com um EA20 **gerado depois**
+da totalização que o reabriu. Há teste para isso.
+
+### O coletor não gravava no banco
+
+Só no arquivo bruto. O painel e o telão leem do banco, que só mudava com
+`carregar` à mão. O arquivo bruto do simulado tinha os 5.571 municípios de
+senador; o banco, 300. Agora o `coletar` carrega o bruto no banco a cada 5 s,
+de forma incremental: 15 ms por passada quando não há nada novo.
+
+### O acompanhamento era sequencial
+
+Os 57 arquivos EA14/EA15 eram buscados um de cada vez, uns 30 s só de
+latência. Como o controle e a fila só andam entre um acompanhamento e outro,
+o total do estado, configurado para a cada 10 s, saía na prática a cada 30.
+Medido: **1 volta do laço em 30 s antes, 47 depois**.

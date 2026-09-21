@@ -54,8 +54,21 @@ log = logging.getLogger("obs2026.collector")
 RECONCILE_TICK_S = 5.0
 
 
+#: Níveis da fila. O nível decide antes do peso: nada de nível mais baixo
+#: sai da fila enquanto houver algo de nível mais alto nela.
+NIVEL_MUNICIPAL = 0
+NIVEL_TOTAIS = 1
+
+
 @dataclass(order=True)
 class _QueueItem:
+    # Nível antes do peso. Com peso só, os totais de Brasil e UF tinham peso
+    # fixo de 1.000.000 e cada município o seu eleitorado — e São Paulo
+    # (9,3 milhões), Rio, BH, Brasília e mais uma dúzia passavam à frente do
+    # total nacional. Na noite, o número que a sala olha é o total; o
+    # município é detalhe dele. Nenhum peso numérico resolve isso de forma
+    # robusta, porque qualquer teto pode ser ultrapassado; um nível resolve.
+    neg_nivel: int
     neg_priority: float
     seq: int
     target: Target = field(compare=False)
@@ -77,16 +90,20 @@ class PriorityQueue:
         self._counter = itertools.count()
         self.aging = aging_boost_per_minute
 
-    def push(self, target: Target, priority: float, reason: str = "") -> bool:
+    def push(self, target: Target, priority: float, reason: str = "",
+             nivel: int = NIVEL_MUNICIPAL) -> bool:
         key = target.key
         cur = self._index.get(key)
         if cur is not None:
-            # já na fila: mantém a maior prioridade, não duplica requisição
-            if priority > -cur.neg_priority:
-                cur.neg_priority = -priority
+            # já na fila: mantém o maior nível e a maior prioridade, sem
+            # duplicar requisição
+            if (-nivel, -priority) < (cur.neg_nivel, cur.neg_priority):
+                cur.neg_nivel = min(cur.neg_nivel, -nivel)
+                cur.neg_priority = min(cur.neg_priority, -priority)
                 heapq.heapify(self._heap)
             return False
-        item = _QueueItem(-priority, next(self._counter), target, reason=reason)
+        item = _QueueItem(-nivel, -priority, next(self._counter), target,
+                          reason=reason)
         self._index[key] = item
         heapq.heappush(self._heap, item)
         return True
@@ -123,6 +140,10 @@ class CollectorStats:
     changes_detected: int = 0
     parse_errors: int = 0
     reconcile_sweeps: int = 0
+    #: buscas evitadas porque o TSE já marcou a unidade como finalizada
+    finalizados_pulados: int = 0
+    #: unidades finalizadas que o acompanhamento reabriu (re-totalização)
+    finalizados_reabertos: int = 0
     started_at: float = field(default_factory=time.monotonic)
 
     def as_dict(self, client: TseClient, queue: PriorityQueue) -> dict:
@@ -155,6 +176,185 @@ class Collector:
         self._stop = asyncio.Event()
         self._reconcile_cursor = 0
         self._reconcile_cache: list[Target] | None = None
+        #: EA20 que o TSE marcou como finalizado. Saem do controle e da
+        #: varredura; voltam quando o acompanhamento acusar mudança.
+        self.pular_finalizados = bool(getattr(cfg, "pular_finalizados", True))
+        self.finalizados: set[str] = set()
+        #: assinatura de Brasil e de cada UF, vinda do EA14/EA15 — é o que
+        #: reabre um total finalizado se o TSE re-totalizar
+        self.tokens_totais: dict[str, str] = {}
+        #: alvos reabertos: só voltam a finalizados com um EA20 gerado depois
+        #: desta hora (a da totalização que os reabriu)
+        self._exige_gerado_apos: dict[str, datetime | None] = {}
+
+    def restaurar_do_arquivo(self) -> dict:
+        """Recupera do arquivo bruto o que o coletor já sabia.
+
+        O coletor guarda na memória duas coisas que o tornam barato: o ETag
+        de cada arquivo (para o TSE responder 304 em vez de mandar tudo) e a
+        última assinatura de progresso de cada município (para só buscar
+        quem mudou). Um processo novo começava sem nenhuma das duas — e um
+        reinício no meio da noite, por queda ou por o notebook dormir,
+        virava 16.897 downloads completos, uns 14 minutos em que as
+        mudanças de verdade esperavam na fila.
+
+        As duas coisas estão no manifesto. **ETag** é sempre seguro de
+        restaurar: no pior caso o TSE responde com o conteúdo novo.
+
+        **Assinatura de progresso** exige cuidado. Restaurá-la diz "este
+        município já está em dia", e se não estiver ele fica parado até a
+        varredura de segurança passar, uma hora depois. O caso real é um
+        coletor que caiu entre ler o EA15 e buscar os EA20.
+
+        A prova usada é exata: a assinatura inclui a hora da última
+        totalização do município, e o manifesto guarda a hora em que o TSE
+        **gerou** cada EA20. Um EA20 gerado depois da última totalização
+        necessariamente a contém. Só se restaura o município cujo EA20, em
+        todos os cargos daquela eleição, foi gerado depois dela; o resto é
+        buscado de novo, como antes.
+
+        A primeira versão comparava a hora de *captura* do EA20 com a de
+        captura do EA15 — correta, mas cega quando os EA20 vieram de uma
+        varredura anterior ao primeiro EA15, e aí quase nada era restaurado.
+        """
+        ultimo: dict[str, SnapshotRef] = {}
+        ea15: dict[tuple[str, str], SnapshotRef] = {}
+        ea14: dict[str, SnapshotRef] = {}
+        #: hora de geração (no TSE) do EA20 mais recente de cada unidade
+        ea20_gerado: dict[tuple[str, str, str, str], datetime] = {}
+        #: o mesmo para os arquivos de total (Brasil e UF), por chave
+        total_gerado: dict[str, datetime] = {}
+        for dia in self.archive.days():
+            for ref in self.archive.manifest(dia):
+                if ref.status not in (200, 304):
+                    continue
+                if ref.etag or ref.last_modified:
+                    ultimo[ref.key] = ref
+                if ref.kind == "ea15" and ref.path and ref.uf:
+                    ea15[(ref.election, ref.uf)] = ref
+                elif ref.kind == "ea14" and ref.path:
+                    ea14[ref.election] = ref
+                elif ref.kind == "ea20" and ref.source_generated_at:
+                    try:
+                        g = datetime.fromisoformat(ref.source_generated_at)
+                    except ValueError:
+                        continue
+                    if ref.mun:
+                        k = (ref.election, ref.cargo, ref.uf, ref.mun)
+                        if k not in ea20_gerado or g > ea20_gerado[k]:
+                            ea20_gerado[k] = g
+                    elif (ref.key not in total_gerado
+                          or g > total_gerado[ref.key]):
+                        total_gerado[ref.key] = g
+
+        for key, ref in ultimo.items():
+            st = self.client.st(key)
+            st.etag = ref.etag
+            st.last_modified = ref.last_modified
+            st.last_sha256 = ref.sha256
+
+        por_eleicao: dict[str, list] = {}
+        for c in self.catalog.contests:
+            por_eleicao.setdefault(c.election, []).append(c)
+
+        tokens = pendentes = 0
+        for (eleicao, uf), ref in ea15.items():
+            try:
+                acc = ab_parser.parse(self.archive.load(ref), ref.kind, uf)
+            except Exception as exc:                   # noqa: BLE001
+                log.warning("retomada: EA15 %s ilegivel: %r", ref.key, exc)
+                continue
+            exigidos = [c for c in por_eleicao.get(eleicao, [])
+                        if not (uf == "zz" and not c.cargo.includes_exterior)]
+            if not exigidos:
+                continue
+            for unit in acc.units:
+                if unit.tpabr != "mu":
+                    continue
+                gerados = [ea20_gerado.get((eleicao, c.cargo.cd, uf,
+                                            unit.cdabr))
+                           for c in exigidos]
+                if any(g is None for g in gerados):
+                    em_dia = False          # algum cargo nunca foi buscado
+                elif unit.totalized_at is None:
+                    em_dia = True           # nada totalizado ainda
+                else:
+                    em_dia = all(g >= unit.totalized_at for g in gerados)
+                if em_dia:
+                    self.progress_tokens[f"{eleicao}:{unit.key}"] = \
+                        unit.change_token()
+                    tokens += 1
+                    # Em dia E finalizado: sai das buscas desde já.
+                    if self.pular_finalizados and unit.andamento == "f":
+                        for c in exigidos:
+                            self.finalizados.add(self.catalog.urls.ea20_mun(
+                                eleicao, c.cargo.cd, uf, unit.cdabr).key)
+                else:
+                    pendentes += 1
+
+        # Totais: Brasil e UF, a partir do EA14, que traz o Brasil e todas as
+        # UFs. Mesma prova dos municípios: o arquivo de total gerado depois
+        # da última totalização a contém.
+        unidades_total: dict[str, object] = {}
+        for eleicao, ref in ea14.items():
+            try:
+                acc = ab_parser.parse(self.archive.load(ref), ref.kind, None)
+            except Exception as exc:                   # noqa: BLE001
+                log.warning("retomada: EA14 %s ilegivel: %r", ref.key, exc)
+                continue
+            for u in acc.units:
+                if u.tpabr == "br":
+                    unidades_total[f"{eleicao}:br"] = u
+                elif u.tpabr == "uf":
+                    unidades_total[f"{eleicao}:uf:{u.cdabr.lower()}"] = u
+        for escopo, u in unidades_total.items():
+            self.tokens_totais[escopo] = u.change_token()
+        if self.pular_finalizados:
+            for t in self.catalog.control_targets():
+                u = unidades_total.get(self._escopo_total(t))
+                g = total_gerado.get(t.key)
+                if u is None or g is None or u.andamento != "f":
+                    continue
+                if u.totalized_at is None or g >= u.totalized_at:
+                    self.finalizados.add(t.key)
+
+        return {"etags": len(ultimo), "tokens": tokens,
+                "pendentes": pendentes,
+                "finalizados": len(self.finalizados)}
+
+    def _escopo_total(self, t: Target) -> str:
+        """Unidade de acompanhamento que cobre um alvo de controle: Brasil
+        para o arquivo nacional, a UF para o arquivo estadual."""
+        if t.uf is None:
+            return f"{t.election}:br"
+        return f"{t.election}:uf:{t.uf}"
+
+    def _reabrir(self, key: str, totalizado_em: datetime | None) -> None:
+        """Tira um alvo dos finalizados e registra o que ele precisa provar
+        para voltar: um EA20 gerado depois da totalização que o reabriu.
+
+        Sem essa exigência havia uma brecha. O TSE avisa que o EA14/EA15
+        pode chegar antes do EA20 regenerado: a re-totalização aparece no
+        acompanhamento, o coletor busca o EA20, recebe ainda a versão antiga
+        — que diz `and: f` — e o remarcaria como finalizado. A versão nova,
+        quando saísse, nunca seria buscada.
+        """
+        if key in self.finalizados:
+            self.finalizados.discard(key)
+            self.stats.finalizados_reabertos += 1
+        self._exige_gerado_apos[key] = totalizado_em
+
+    def _reabrir_totais(self, eleicao: str, escopo: str,
+                        totalizado_em: datetime | None = None) -> None:
+        for t in self.catalog.control_targets():
+            if t.election == eleicao and self._escopo_total(t) == escopo:
+                self._reabrir(t.key, totalizado_em)
+
+    def _pular(self, t: Target) -> bool:
+        if self.pular_finalizados and t.key in self.finalizados:
+            self.stats.finalizados_pulados += 1
+            return True
+        return False
 
     def stop(self) -> None:
         self._stop.set()
@@ -197,8 +397,33 @@ class Collector:
     async def cycle_accompaniment(self) -> int:
         """Busca EA14/EA15 e enfileira o EA20 de quem mudou."""
         enqueued = 0
-        for t in self.catalog.accompaniment_targets():
-            fetch, payload, _ = await self._capture(t)
+
+        # Em paralelo. Um de cada vez, os 57 arquivos levavam uns 30 s só de
+        # latência de rede — e o controle e a fila só andam entre um
+        # acompanhamento e outro, então o total do estado, configurado para
+        # a cada 10 s, saía na prática a cada 30. O teto de requisições
+        # continua sendo o do token bucket; o que muda é não esperar a
+        # resposta de um para pedir o próximo.
+        alvos = self.catalog.accompaniment_targets()
+        sem = asyncio.Semaphore(max(1, int(getattr(self.cfg, "max_workers",
+                                                   16))))
+
+        async def buscar(t: Target):
+            async with sem:
+                return await self._capture(t)
+
+        capturas = await asyncio.gather(*(buscar(t) for t in alvos),
+                                        return_exceptions=True)
+        for c in capturas:
+            # Bloqueio do TSE para tudo, como antes: insistir reinicia a
+            # penalidade.
+            if isinstance(c, BlockedError):
+                raise c
+        for t, c in zip(alvos, capturas):
+            if isinstance(c, BaseException):
+                log.error("acompanhamento falhou em %s: %r", t.url, c)
+                continue
+            fetch, payload, _ = c
             self.stats.accompaniment_fetches += 1
             if payload is None:
                 continue
@@ -216,6 +441,18 @@ class Collector:
                 if unit.electorate:
                     self.electorate[f"{t.election}:{unit.key}"] = \
                         unit.electorate.te
+                if unit.tpabr in ("br", "uf"):
+                    # Um total finalizado só volta a ser buscado se a
+                    # assinatura dele mudar — re-totalização.
+                    escopo = (f"{t.election}:br" if unit.tpabr == "br"
+                              else f"{t.election}:uf:{unit.cdabr.lower()}")
+                    tok = unit.change_token()
+                    antes = self.tokens_totais.get(escopo)
+                    self.tokens_totais[escopo] = tok
+                    if antes is not None and antes != tok:
+                        self._reabrir_totais(t.election, escopo,
+                                             unit.totalized_at)
+                    continue
                 if unit.tpabr != "mu" or t.uf is None:
                     continue
                 tok_key = f"{t.election}:{unit.key}"
@@ -233,6 +470,9 @@ class Collector:
                         c.election, c.cargo.cd, t.uf, unit.cdabr
                     )
                     w = (unit.electorate.te if unit.electorate else 1)
+                    # Mudou: se estava finalizado, deixa de estar até um
+                    # EA20 posterior a esta totalização dizer de novo.
+                    self._reabrir(tgt.key, unit.totalized_at)
                     if self.queue.push(tgt, float(w), reason="mudanca"):
                         enqueued += 1
         return enqueued
@@ -242,7 +482,10 @@ class Collector:
     async def cycle_control(self) -> None:
         """EA20 nacional e por UF. Sempre, independentemente de detecção."""
         for t in self.catalog.control_targets():
-            self.queue.push(t, self.cfg.control_weight, reason="controle")
+            if self._pular(t):
+                continue
+            self.queue.push(t, self.cfg.control_weight, reason="controle",
+                            nivel=NIVEL_TOTAIS)
 
     # -- varredura de reconciliação --------------------------------------
 
@@ -269,6 +512,8 @@ class Collector:
             self._reconcile_cursor += 1
             if self._reconcile_cursor % total == 0:
                 self.stats.reconcile_sweeps += 1
+            if self._pular(t):
+                continue
             key = f"{t.election}:mu:{t.mun}"
             w = self.electorate.get(key, 1) * 0.001   # peso baixo, não zero
             if self.queue.push(t, w, reason="reconciliacao"):
@@ -298,6 +543,18 @@ class Collector:
             self.stats.parse_errors += 1
             log.error("EA20 fora de contrato em %s: %s", t.url, exc)
             return
+        if self.pular_finalizados:
+            exige = self._exige_gerado_apos.get(t.key)
+            prova = (t.key not in self._exige_gerado_apos or exige is None
+                     or (result.generated_at is not None
+                         and result.generated_at >= exige))
+            if result.andamento == "f" and prova:
+                self.finalizados.add(t.key)
+                self._exige_gerado_apos.pop(t.key, None)
+            else:
+                # Ainda contando, ou a versão nova ainda não saiu: segue
+                # sendo buscado.
+                self.finalizados.discard(t.key)
         if self.on_result:
             self.on_result(result, ref, t)
 
