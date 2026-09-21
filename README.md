@@ -1,16 +1,97 @@
 # Observatório Eleitoral 2026
 
-Acompanhamento da apuração de presidente, governador e senador, com projeção
-dos territórios pendentes e análise territorial e institucional do voto.
+**Apuração de presidente, governador e senador em tempo real, com projeção do
+que ainda falta contar — e registro de cada projeção, para provar depois se
+ela acertou.**
 
-Implementação da [especificação v1.0](docs/fonte/Especificacoes_Observatorio_Eleitoral_2026.md).
-Validado contra os payloads reais do servidor de simulado do TSE em
-20/09/2026.
+Roda numa máquina só: coleta do TSE, banco, painel de operação no notebook e
+telão limpo no projetor. Fora o próprio TSE, nada depende de rede.
 
-> **Ambiente de simulado.** Tudo que este repositório lê hoje vem do ambiente
-> de teste do TSE. Não são resultados eleitorais. A barreira é estrutural: o
-> ambiente entra na chave de unicidade do banco e a coleta recusa iniciar se a
-> fase do payload não bater com o ambiente configurado.
+Implementa a [especificação v1.0](docs/fonte/Especificacoes_Observatorio_Eleitoral_2026.md),
+validado contra o servidor de simulado do TSE.
+
+> **Hoje, tudo vem do simulado do TSE — dados de teste, não resultado
+> eleitoral.** A separação é estrutural: o ambiente faz parte da chave do
+> banco, toda tela exibe a tarja de simulado, e o ambiente oficial recusa
+> iniciar até o TSE publicar os códigos de outubro. Nada é presumido.
+
+---
+
+## A decisão central
+
+**Projetar os territórios que faltam e somar. Nunca extrapolar o percentual
+já contado.**
+
+A apuração não chega em ordem aleatória: capitais, interior e exterior
+totalizam em ritmos diferentes, e cada um vota diferente. O percentual
+nacional às 19h é o retrato de *quem já foi contado*, não do país. Por isso o
+motor projeta cada município pendente — comparecimento, votos válidos e
+preferência estimados separadamente, com choques compartilhados por país, UF
+e localidade — e só então agrega. Todo número projetado sai com intervalo.
+
+---
+
+## O que ele faz
+
+**Coleta.** Lê a divulgação do TSE dentro do limite de 100 req/s por IP, com
+teto interno de 20. Não varre o país a cada ciclo: os arquivos de
+acompanhamento (EA14/EA15) dizem quais municípios mudaram, e só esses são
+buscados. **Totais de Brasil e de cada UF têm nível próprio na fila** — saem
+antes de qualquer município, por maior que seja, a cada 10 s. O que o TSE já
+finalizou sai das buscas e continua vigiado; se houver re-totalização, volta.
+Reiniciado no meio da noite, retoma em um segundo do que já sabia.
+
+**Guarda.** Todo arquivo recebido vai para um arquivo bruto imutável,
+endereçado por hash, com manifesto. O banco é derivado dele e se reconstrói
+inteiro. A carga é contínua e incremental: a cada 5 s, só o que chegou, com
+os totais gravados antes dos municípios.
+
+**Confere.** Onze invariantes contábeis em cada arquivo (`vvc = vv + van +
+vansj`, `tv = vvc + vb + tvn`, `te = est + esnt`…). Divergência crítica
+bloqueia a projeção e mantém a apuração no ar.
+
+**Projeta.** Monte Carlo por município pendente, modelos M0 (baseline
+ingênuo) e M1 (estratificado), Senado com modelo próprio para duas vagas.
+A cada 2 minutos todas as 55 disputas são projetadas e **registradas** num
+diário só de acréscimo.
+
+**Define.** "Matematicamente eleito" e "segundo turno matematicamente
+definido" são aritmética, não modelo: nenhuma distribuição possível dos votos
+restantes muda o resultado. Voto sub judice em jogo suspende qualquer
+definição.
+
+**Presta contas.** O gráfico de convergência mostra, para cada candidato, o
+apurado e o projetado ao longo da noite. Se o modelo presta, a linha
+projetada nasce perto do resultado final e fica lá, enquanto a apurada
+caminha até encontrá-la. Nada é recalculado depois: são os números como
+foram ditos no momento.
+
+---
+
+## A noite da apuração
+
+**Dois monitores.** No notebook, o painel: resultado, mapa com filtro por
+região, estado e município, projeção, convergência, auditoria. No projetor,
+o telão: mapa grande e poucos números, legíveis a quatro metros.
+
+**O telão roda sozinho** um roteiro configurável — "Presidente no Brasil,
+governador no PA, senador em SP, presidente em Belém", com o tempo de cada
+tela. O roteiro se edita e se grava pelo próprio painel. Qualquer pesquisa
+vira tela com um clique; "mostrar agora" põe um recorte no projetor fora da
+sequência.
+
+**O grupo pede "manda aí como está".**
+
+```bash
+python -m obs2026.cli compartilhar
+```
+
+Fotografa as telas do telão, escreve a legenda com os números do mesmo
+instante e deixa tudo na área de transferência. No WhatsApp é Ctrl+V. O envio
+fica com quem opera, de propósito: a API oficial não entrega para grupos, e
+projeção eleitoral não deve circular sem alguém ter olhado. A legenda sempre
+diz que o número não é oficial, e só mostra projeção se o gate estatístico
+tiver passado — encaminhada, a imagem perde o contexto; o texto vai junto.
 
 ---
 
@@ -21,39 +102,72 @@ pip install -e .
 python -m pytest tests/ -q
 ```
 
-90 testes rodando contra payloads reais do TSE. Se quebrarem, o contrato
+127 testes, a maioria contra payloads reais do TSE. Se quebrarem, o contrato
 mudou.
 
+**Antes do dia**, uma vez:
+
 ```bash
-python -m obs2026.cli descobrir      # catálogo oficial, sem inventar nada
-python -m obs2026.cli orcamento      # cabe no limite de requisições?
-python -m obs2026.cli ensaio         # ponta a ponta, com as invariantes
-python -m obs2026.cli coletar        # coleta contínua
-python -m obs2026.cli carregar       # bruto → banco (idempotente)
+python -m obs2026.cli preparar
+```
+
+```bash
+python scripts/criar_atalhos.py
+```
+
+O primeiro baixa para o disco tudo o que não é TSE (perfis, fotos, malha do
+IBGE). O segundo põe na pasta o `Iniciar Observatório 2026.cmd`, que sobe o
+servidor e abre o painel.
+
+**No dia:**
+
+```bash
+python -m obs2026.cli coletar
 ```
 
 ```bash
 python -m uvicorn obs2026.api.app:app --port 8026
 ```
 
-Painel em `http://localhost:8026`, API em `/api/docs`.
+O `coletar` coleta, grava no banco e registra projeções — um comando só.
+Painel em `http://localhost:8026`, telão em `/telao`, API em `/api/docs`.
+A sequência completa, com o que fazer quando algo dá errado, está no
+[runbook](docs/RUNBOOK-SIMULADO.md).
 
-```bash
-python -m obs2026.cli auditar-csv docs/fonte/eleitorado_eleicao_capilaridade.csv.zip
-```
+Os demais comandos:
 
-```bash
-python -m obs2026.cli prever governador --uf al
-```
+| comando | para quê |
+|---|---|
+| `descobrir` | lê o catálogo oficial do TSE e mostra o que existe |
+| `orcamento` | confere se a cadência cabe no limite de requisições |
+| `ensaio` | ponta a ponta com as invariantes, antes de ligar a coleta |
+| `carregar` | bruto → banco, depois de coleta avulsa ou para reconstruir |
+| `prever` | projeta uma disputa e registra o que foi dito |
+| `previsoes` / `auditar-previsoes` | o histórico do que dissemos, contra o resultado |
+| `auditar-csv` | audita a base de eleitorado recebida |
 
-Projeta **e registra** o que foi dito, com a cobertura daquele instante. Não
-há caminho no código que produza projeção sem registro.
+---
 
-```bash
-python -m obs2026.cli previsoes            # histórico do que dissemos
-python -m obs2026.cli auditar-previsoes    # confronta com o resultado final
-python -m obs2026.cli ensaiar-auditoria senador --uf al
-```
+## As regras que o código impõe
+
+1. **Projetar territórios, depois agregar.** Nunca extrapolar o contado.
+2. **Todo percentual declara seu denominador.** Há cinco, e todos diferem. O
+   percentual que o TSE exibe é sobre a soma dos votos dos candidatos; a
+   maioria absoluta é sobre *votos a concorrentes* (válidos + anulados + sub
+   judice). Confundir os dois pode anunciar uma vitória em primeiro turno que
+   não existe.
+3. **Ausência é nulo com motivo, nunca zero.** Município sem voto contado
+   está *aguardando*, não em 0%. Partido sem classificação é desconhecido,
+   não centro.
+4. **Projetado, matematicamente definido e eleito segundo o TSE são três
+   coisas.** Nunca se fundem num rótulo só.
+5. **Liderar um território não é ser eleito por ele.** Presidente se decide
+   no Brasil; governador e senador, na UF. Todo recorte menor diz isso na
+   tela.
+6. **Nada se resolve por adivinhação.** Município se identifica por código,
+   nunca por nome — `PAU D'ARCO` existe no PA e no TO.
+7. **Toda projeção é registrada.** Não há caminho no código que projete sem
+   gravar o que disse.
 
 ---
 
@@ -61,129 +175,100 @@ python -m obs2026.cli ensaiar-auditoria senador --uf al
 
 | | |
 |---|---|
-| **Coletor** | funcionando. 386 capturas do TSE, 0 erros, 0 404, 0 bloqueios |
-| **Parsers** | EA11, EA12, EA14/EA15, EA20 — validados contra payloads reais |
-| **Qualidade** | 11 invariantes contábeis, 0 divergências críticas em 362 arquivos |
-| **Banco** | 14 tabelas, 5.784 geografias, 4.367 resultados carregados |
-| **API** | 8 rotas, envelope completo do §9 |
-| **Painel** | 3 abas × 4 modos, servindo dados reais |
-| **Motor** | M0, M1, Senado, Monte Carlo e backtest funcionando — **não homologado** |
-| **Definição matemática** | funcionando: limite determinístico, sem modelo |
-| **Auditoria de projeções** | funcionando: diário append-only + avaliação |
-| **Históricos** | 2018 e 2022 lidos e conferidos, zero violações de invariante |
-| **Mapa** | malha do IBGE, 4 camadas, junção por código IBGE oficial |
-| **Mapa ideológico** | máquina pronta, **curadoria pendente por desenho** |
-| **Projeção publicada** | **não**, e o sistema diz por quê |
+| **Coleta** | 31.773 capturas do TSE, **zero** erros, 404 ou bloqueios. 20 req/s sustentados |
+| **Banco** | 5.784 territórios, 31.028 snapshots, 440.971 resultados |
+| **Qualidade** | 11 invariantes, zero divergências críticas |
+| **Históricos** | 2018 e 2022 lidos e conferidos, zero violações |
+| **Motor** | M0, M1, Senado, Monte Carlo e backtest funcionando |
+| **Definição matemática** | funcionando, sem modelo |
+| **Auditoria** | diário de projeções e gráfico de convergência funcionando |
+| **Painel e telão** | funcionando, com roteiro gravável e captura para WhatsApp |
+| **Projeção com probabilidade** | **desligada** — o gate não passou |
+| **Mapa ideológico** | **desligado** — curadoria pendente |
 
-Duas coisas estão deliberadamente desligadas, e ligá-las sem o trabalho que
-falta seria pior do que deixá-las desligadas:
+**As duas coisas desligadas estão desligadas de propósito.** Ligá-las sem o
+trabalho que falta seria pior do que deixá-las assim.
 
-**A projeção não publica probabilidade.** O gate do §11.2 exige superar o
-baseline ingênuo M0 e demonstrar cobertura de intervalo compatível com o
-nominal, em backtests sobre eleições encerradas **reais**. Rodando sobre o
-simulado, o M1 não supera o M0 — mas isso diz respeito aos dados sintéticos,
-não ao modelo. Ver [METODOLOGIA.md](docs/METODOLOGIA.md#estado-atual-o-gate-não-passou).
+*Probabilidade de vitória* só sai quando o modelo superar o baseline ingênuo
+e mostrar intervalos com a cobertura que prometem, em eleições encerradas
+**reais**. Sobre o simulado, o M1 não supera o M0 — porque o TSE gera dados
+sintéticos sem estrutura territorial, não por defeito do modelo. Até lá, o
+painel mostra "cenário exploratório" e diz por quê. Ver
+[METODOLOGIA.md](docs/METODOLOGIA.md#estado-atual-o-gate-não-passou).
 
-**O mapa ideológico está desabilitado.** Classificar partidos é ato
-editorial, e o §6 exige fonte, justificativa, autor, data, validade e grau de
-controvérsia por entrada. A máquina está pronta e `config/classificacao_2026.yaml`
-está vazio. Preencher por conta própria seria inventar autoria.
+*Classificar partidos* em esquerda, centro e direita é ato editorial. A
+máquina está pronta e `config/classificacao_2026.yaml` está vazio: cada
+entrada exige fonte, justificativa, autor e data. Preencher por conta própria
+seria inventar autoria.
+
+---
+
+## O que os dados reais ensinaram
+
+Construído contra o que o TSE de fato publica, não contra a documentação.
+Alguns achados mudaram decisões — todos em [ACHADOS.md](docs/ACHADOS.md):
+
+- O percentual do TSE **não** é sobre votos válidos. É sobre a soma dos votos
+  nominais — e a base da maioria absoluta é uma terceira coisa.
+- A cadência proposta na especificação **não cabia** no limite de requisições.
+  A ferramenta de orçamento recusou; a varredura virou rotativa.
+- No Senado com duas vagas, cada eleitor faz em média **menos de 2**
+  escolhas válidas: 1,79 no Acre em 2018, 1,70 no simulado. Supor 2
+  superestimaria o total em cerca de 12%.
+- Um município novo do MT veio com código IBGE da faixa do DF, e sumia com o
+  MT do mapa.
+- O EA14 e o EA20 do Brasil discordam no horário de totalização. A conferir em
+  outubro.
 
 ---
 
 ## Documentação
 
-- **[ACHADOS.md](docs/ACHADOS.md)** — o que os dados reais revelaram, incluindo
-  seis achados que mudam decisões da especificação. Comece por aqui.
-- **[RUNBOOK-SIMULADO.md](docs/RUNBOOK-SIMULADO.md)** — operação nos dias
-  22, 23 e 24/09.
-- **[METODOLOGIA.md](docs/METODOLOGIA.md)** — projeção, Senado, backtest.
-- **[DEFINICAO-E-AUDITORIA.md](docs/DEFINICAO-E-AUDITORIA.md)** — o que já não
-  depende de modelo, e como conferimos o que dissemos antes.
+- **[ACHADOS.md](docs/ACHADOS.md)** — o que os dados reais revelaram. Comece
+  por aqui.
+- **[RUNBOOK-SIMULADO.md](docs/RUNBOOK-SIMULADO.md)** — operação, do preparo
+  ao que fazer quando algo dá errado.
+- **[METODOLOGIA.md](docs/METODOLOGIA.md)** — projeção, Senado, backtest,
+  gate.
+- **[DEFINICAO-E-AUDITORIA.md](docs/DEFINICAO-E-AUDITORIA.md)** — definição
+  matemática e prestação de contas das projeções.
 - **[ARQUITETURA.md](docs/ARQUITETURA.md)** — componentes, orçamento de
   requisições, implantação.
-
----
-
-## As três regras que o código impõe
-
-**1. Projetar territórios, depois agregar.** Nunca extrapolar o percentual
-nacional contado. A ordem de chegada não é aleatória.
-
-**2. Todo percentual declara seu denominador.** O percentual que o TSE exibe
-é sobre a soma dos votos dos candidatos, incluindo anulados e sub judice — e
-não é o percentual que decide o primeiro turno, que é sobre votos válidos. A
-API devolve `null` com motivo quando numerador e denominador não pertencem ao
-mesmo universo.
-
-**3. Ausência é `null` com motivo, nunca zero.** Município sem voto contado
-tem percentual indefinido, não 0%. Partido sem classificação é desconhecido,
-não centro.
-
-**4. Projetado, matematicamente definido e eleito segundo TSE são três
-coisas.** A projeção pode errar e tem intervalo; a definição matemática é
-aritmética que não erra; a proclamação é do TSE. Nunca se fundem numa tela só.
 
 ---
 
 ## Estrutura
 
 ```
-config/          sources, cadência, limiares assinados, classificação
+config/            fontes, cadência, limiares, roteiro do telão, classificação
 obs2026/
-  tse/           urls, client, catalog, collector, parsers/
-  storage/       raw (bruto imutável), models, db, ingest
-  engine/        pending, denominators, simulate, models, backtest,
-                 decided (definição matemática), audit, runner
-  history/       leitura dos resultados históricos do TSE
-  quality/       invariantes contábeis
-  politics/      classificação ideológica versionada
-  api/           FastAPI
-  ingest/        conciliação da base de eleitorado
-web/             painel
-tests/fixtures/  payloads reais do TSE de 20/09/2026
-docs/fonte/      especificação v1.0 e base de eleitorado recebida
-data/raw/        arquivo bruto (fora do git)
+  tse/             urls, cliente com limite de taxa, catálogo, coletor, parsers
+  storage/         arquivo bruto imutável, modelos, carga incremental
+  engine/          pendentes, denominadores, simulação, modelos, backtest,
+                   definição matemática, auditoria, registro contínuo
+  api/             FastAPI: resultado, mapa, projeção, convergência, telão
+  history/         resultados históricos do TSE (2018, 2022)
+  quality/         invariantes contábeis
+  candidates/      perfis e fotos, servidos localmente
+  captura.py       fotografia das telas do telão
+web/               painel, telão, mapa, malha do IBGE
+tests/             127 testes; fixtures com payloads reais do TSE
+docs/              achados, runbook, metodologia, arquitetura, especificação
+data/              arquivo bruto, banco, previsões (fora do git)
 ```
 
 ---
 
-## Próximos passos, em ordem
+## Próximos passos
 
-1. **Capturar as janelas de 22–24/09**, especialmente a fase de transição de
-   0% a 100%. É a única chance antes de outubro de exercitar `A_pendente` com
-   apuração em andamento — os arquivos da 1ª janela já estão todos finais.
-2. **Calibrar com os históricos**, que já estão baixados e conferidos.
-   2018 é o que importa para o Senado: última eleição com duas vagas por UF,
-   `tv/c` = 2,0000 exato e `q` = 1,7926 escolhas válidas por comparecente.
-   Em 2022 o Senado teve uma vaga só (`tv/c` = 1,0000).
-3. **Medir e fixar `max_rps`** a partir do simulado. A folga atual de
-   3,6 req/s não basta para a noite de apuração.
-4. **Corrigir a dependência dos σ com a cobertura.** Aos 5% contados, os
-   intervalos de 80% cobriram 50–75%: estreitos demais.
-5. **Curar a classificação ideológica**, com autoria nominal.
-6. **Medir as metas do §10** — p95, carga útil, 1.000 leitores.
-
----
-
-## Scripts auxiliares
-
-```bash
-python scripts/coletar_uf.py al senador      # coleta uma UF inteira
-python scripts/backtest.py   al senador      # backtest por cortes de cobertura
-```
-
-## Medições de 20/09/2026
-
-| | |
-|---|---|
-| requisições ao TSE | 386 capturas, 0 erros, 0 404, 0 bloqueios |
-| bytes por snapshot | 30.618 em média |
-| arquivo bruto | 2,1 MB para 386 capturas (deduplicado por hash) |
-| req/s efetivo no ensaio | 1,11 (limitado pelo jitter, não pelo teto) |
-| invariantes | 0 divergências críticas em 362 arquivos EA20 |
-
-O dimensionamento de retenção do §10 sai daí, medido: bytes por snapshot ×
-atualizações × unidades. Uma varredura municipal completa dos três cargos
-(16.897 arquivos) custa cerca de **517 MB** por passada sem deduplicação — e
-muito menos com ela, já que a maioria dos arquivos não muda entre passadas.
+1. **Simulados de 22 a 24/09.** Capturar a transição de 0% a 100% — a única
+   chance antes de outubro de exercitar a apuração em andamento; os arquivos
+   disponíveis hoje já estão todos finalizados.
+2. **Calibrar com 2018 e 2022**, já baixados e conferidos. 2018 é a
+   referência do Senado: a última eleição com duas vagas por UF.
+3. **Corrigir os intervalos no começo da apuração.** Com pouco contado, os
+   intervalos de 80% cobrem bem menos que 80% — estreitos demais. A cobertura
+   já é medida a cada rodada; falta corrigir.
+4. **Curar a classificação ideológica**, com autoria nominal.
+5. **Medir as metas de desempenho** da especificação: p95, carga útil,
+   1.000 leitores.
