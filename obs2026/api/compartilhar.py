@@ -5,12 +5,11 @@ e na noite ninguém vai lembrar do comando com o grupo pedindo. Agora é um
 botão: o painel pede, o servidor fotografa as telas com o mesmo código do
 comando, e o navegador recebe imagens e legenda prontas.
 
-A partir daí quem opera escolhe como mandar:
-
-- **Compartilhar…** abre a janela de compartilhamento do Windows, onde o
-  WhatsApp aparece se o aplicativo estiver instalado — imagem e legenda vão
-  juntas, e é só escolher o grupo;
-- **copiar imagem** e **copiar legenda**, para colar no WhatsApp Web.
+O caminho principal é curto: as imagens vão **todas juntas** para a área de
+transferência do Windows (o servidor roda na máquina de quem opera), e no
+WhatsApp um Ctrl+V anexa todas; depois, "copiar legenda" e outro Ctrl+V no
+campo de legenda. Onde o navegador oferece a janela de compartilhar do
+sistema, ela também aparece.
 
 O envio continua sendo de quem opera, pelas mesmas razões de sempre (ver
 `obs2026/captura.py`): a API oficial não entrega para grupos, e projeção
@@ -100,8 +99,20 @@ def register(app) -> None:
             except C.CapturaError as exc:
                 raise HTTPException(422, str(exc)) from exc
 
+        # Todas as imagens de uma vez na área de transferência do Windows —
+        # o servidor roda na máquina de quem opera, então pode. O navegador
+        # só consegue pôr UMA imagem por vez; com cinco telas eram cinco
+        # idas e voltas ao WhatsApp. Assim é um Ctrl+V só, e o WhatsApp
+        # anexa todas.
+        copiadas = False
+        if corpo.get("copiar", True) and pacote.fotos:
+            copiadas = await asyncio.to_thread(
+                C.para_area_de_transferencia,
+                [f.imagem for f in pacote.fotos])
+
         dia = pacote.pasta.name
         return {
+            "na_area_de_transferencia": copiadas,
             "fotos": [{
                 "indice": f.indice,
                 "titulo": f.titulo,

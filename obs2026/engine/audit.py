@@ -146,6 +146,10 @@ class Registro:
                 f"{self.unidade}:{self.modelo}:{self.model_version}")
 
 
+#: Estado da leitura incremental de `Diario.ultimos`, por arquivo.
+_ULTIMOS: dict[str, dict] = {}
+
+
 class Diario:
     """Diário append-only de projeções, em JSONL.
 
@@ -163,6 +167,14 @@ class Diario:
             fh.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
         return r
 
+    @staticmethod
+    def _decodificar(linha: str) -> Registro:
+        d = json.loads(linha)
+        d["candidatos"] = tuple(
+            RegistroCandidato(**c) for c in d["candidatos"])
+        d["avisos"] = tuple(d.get("avisos", ()))
+        return Registro(**d)
+
     def ler(self) -> list[Registro]:
         if not self.caminho.exists():
             return []
@@ -172,12 +184,43 @@ class Diario:
                 linha = linha.strip()
                 if not linha:
                     continue
-                d = json.loads(linha)
-                d["candidatos"] = tuple(
-                    RegistroCandidato(**c) for c in d["candidatos"])
-                d["avisos"] = tuple(d.get("avisos", ()))
-                saida.append(Registro(**d))
+                saida.append(self._decodificar(linha))
         return saida
+
+    def ultimos(self) -> dict[tuple[str, str, str], Registro]:
+        """O registro mais recente de cada disputa, por (cargo, unidade,
+        modelo).
+
+        Incremental: guarda até que byte o diário já foi lido e continua
+        dali. O diário ganha uma linha por disputa a cada 2 minutos a noite
+        toda; relê-lo inteiro a cada vez que o telão pede uma projeção
+        trocaria um gargalo por outro. O estado fica no módulo, não na
+        instância, porque as rotas criam um `Diario` por pedido.
+        """
+        chave = str(self.caminho)
+        est = _ULTIMOS.setdefault(chave, {"pos": 0, "ult": {}})
+        if not self.caminho.exists():
+            return est["ult"]
+        if self.caminho.stat().st_size < est["pos"]:
+            est.update(pos=0, ult={})          # arquivo trocado
+        with open(self.caminho, "rb") as fh:
+            fh.seek(est["pos"])
+            while True:
+                linha = fh.readline()
+                # Linha sem quebra final é a que está sendo escrita agora:
+                # fica para a próxima leitura.
+                if not linha or not linha.endswith(b"\n"):
+                    break
+                est["pos"] += len(linha)
+                texto = linha.strip()
+                if not texto:
+                    continue
+                try:
+                    r = self._decodificar(texto.decode("utf-8"))
+                except (ValueError, TypeError):
+                    continue
+                est["ult"][(r.cargo, r.unidade, r.modelo)] = r
+        return est["ult"]
 
     def series(self) -> dict[str, list[Registro]]:
         out: dict[str, list[Registro]] = {}

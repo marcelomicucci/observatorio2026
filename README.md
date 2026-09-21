@@ -83,9 +83,9 @@ sequência.
 **O grupo pede "manda aí como está".** Botão **📷 WhatsApp** no painel —
 em qualquer pesquisa, ou na aba Telão para o roteiro inteiro. Fotografa as
 telas como aparecem no telão, escreve a legenda com os números do mesmo
-instante e abre a janela de compartilhar do Windows, onde é só escolher o
-grupo. Sem ela, copiar imagem e legenda e colar no WhatsApp Web. Também pelo
-terminal: `python -m obs2026.cli compartilhar`. O envio
+instante e deixa todas as imagens na área de transferência: no WhatsApp, um
+Ctrl+V anexa todas, e "copiar legenda" mais um Ctrl+V completa. Uns 3 segundos
+por tela. Também pelo terminal: `python -m obs2026.cli compartilhar`. O envio
 fica com quem opera, de propósito: a API oficial não entrega para grupos, e
 projeção eleitoral não deve circular sem alguém ter olhado. A legenda sempre
 diz que o número não é oficial, e só mostra projeção se o gate estatístico

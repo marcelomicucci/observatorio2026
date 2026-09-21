@@ -205,11 +205,14 @@ telão roda sozinho pelo roteiro do arquivo, sem controle ao vivo.
 - **📷 WhatsApp: roteiro inteiro**, na aba Telão — fotografa cada tela do
   roteiro gravado.
 
-Abre um painel com as imagens e a legenda. **Compartilhar…** abre a janela de
-compartilhamento do Windows, onde o WhatsApp aparece se o aplicativo estiver
-instalado: escolher o grupo e enviar. Sem essa janela, **copiar imagem** e
-**copiar legenda**, e colar no WhatsApp Web com Ctrl+V. Leva alguns segundos
-por tela, e uma captura por vez.
+Uns 3 segundos por tela (o roteiro de cinco sai em cerca de 12). Quando
+termina, **todas as imagens já estão na área de transferência do Windows**:
+
+1. no WhatsApp, abrir o grupo e **Ctrl+V** — as imagens entram juntas;
+2. **Copiar legenda** no painel, e **Ctrl+V** no campo de legenda.
+
+Nessa ordem: copiar a legenda substitui as imagens na área de
+transferência.
 
 **Pelo terminal**, o mesmo:
 

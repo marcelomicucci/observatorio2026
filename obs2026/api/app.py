@@ -144,30 +144,26 @@ def envelope(dados: Any, *, snapshots: list[SourceSnapshot],
 
 def _latest_snapshot_ids(s: Session, contest_id: int,
                          geography_ids: list[int] | None = None):
-    """Último snapshot por (contest, geography). Nunca mistura horários."""
-    q = (select(UnitTotals.geography_id,
-                func.max(SourceSnapshot.captured_at).label("cap"))
-         .join(SourceSnapshot, SourceSnapshot.id == UnitTotals.snapshot_id)
-         .where(UnitTotals.contest_id == contest_id)
-         .group_by(UnitTotals.geography_id))
-    if geography_ids:
-        q = q.where(UnitTotals.geography_id.in_(geography_ids))
-    pares = s.execute(q).all()
-    if not pares:
-        return []
-    out = []
-    for geo_id, cap in pares:
-        row = s.execute(
-            select(UnitTotals)
+    """Último snapshot por (contest, geography). Nunca mistura horários.
+
+    Uma consulta só, com janela. A versão anterior fazia uma consulta por
+    território — 645 para o mapa de São Paulo, 5.755 para o do Brasil —, e
+    o custo não estava no banco, estava em montar cada consulta e cada
+    objeto. `ROW_NUMBER` existe no SQLite (3.25+) e no PostgreSQL.
+    """
+    ordem = func.row_number().over(
+        partition_by=UnitTotals.geography_id,
+        order_by=(SourceSnapshot.captured_at.desc(), UnitTotals.id.desc()),
+    ).label("ordem")
+    base = (select(UnitTotals.id, ordem)
             .join(SourceSnapshot, SourceSnapshot.id == UnitTotals.snapshot_id)
-            .where(UnitTotals.contest_id == contest_id,
-                   UnitTotals.geography_id == geo_id,
-                   SourceSnapshot.captured_at == cap)
-            .limit(1)
-        ).scalar_one_or_none()
-        if row:
-            out.append(row)
-    return out
+            .where(UnitTotals.contest_id == contest_id))
+    if geography_ids:
+        base = base.where(UnitTotals.geography_id.in_(geography_ids))
+    sub = base.subquery()
+    ids = select(sub.c.id).where(sub.c.ordem == 1)
+    return list(s.execute(
+        select(UnitTotals).where(UnitTotals.id.in_(ids))).scalars().all())
 
 
 #: Bases cujo denominador contém apenas votos com destinação 'Válido'.

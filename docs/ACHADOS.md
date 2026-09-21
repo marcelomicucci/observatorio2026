@@ -407,3 +407,33 @@ Os 57 arquivos EA14/EA15 eram buscados um de cada vez, uns 30 s só de
 latência. Como o controle e a fila só andam entre um acompanhamento e outro,
 o total do estado, configurado para a cada 10 s, saía na prática a cada 30.
 Medido: **1 volta do laço em 30 s antes, 47 depois**.
+
+### `localhost` custava 2,2 s por pedido no Windows
+
+Dentro do Python, cada chamada a `http://localhost:8026` levava 2,5 s; a
+mesma chamada a `http://127.0.0.1:8026`, 0,31 s. No Windows, `localhost`
+resolve primeiro para o IPv6 `::1`, o servidor escuta só em IPv4, e o
+cliente HTTP espera a tentativa falhar antes de cair para o IPv4. O
+navegador não sofre disso (tenta os dois ao mesmo tempo); o Python sim.
+
+A captura para o WhatsApp faz três chamadas por tela para a legenda — era a
+maior parte dos 10 s de cada tela. Toda chamada interna agora usa
+`127.0.0.1`.
+
+### O mapa e a projeção eram recalculados a cada pedido
+
+Medido antes de otimizar:
+
+| | antes | depois |
+|---|---:|---:|
+| mapa municipal de SP | 1,2 s | 0,13 s |
+| mapa municipal do Brasil | 6,9 s | 0,6 s |
+| projeção de presidente (exibição) | 5,9 s | 0,02 s |
+| roteiro de 5 telas para o WhatsApp | 85 s | 12 s |
+
+O desenho no navegador nunca foi o gargalo (12–15 ms). O mapa fazia uma
+consulta por território e refazia a definição matemática de todos a cada
+pedido; agora é uma consulta só, e cada linha fica guardada pelo snapshot de
+onde saiu — snapshot é imutável, então a linha também é. A projeção exibida
+passou a ser a última registrada no diário, e não um cálculo paralelo que
+ninguém gravava.

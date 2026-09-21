@@ -15,10 +15,11 @@ porque a curadoria da classificação está pendente por desenho.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,10 @@ UF_EXTENSO = {
 }
 
 _WEB = Path(__file__).resolve().parent.parent.parent / "web"
+
+#: Linhas do mapa já calculadas, por (disputa, nível, snapshot). O snapshot é
+#: imutável, então a linha também é; a memória só é limpa por tamanho.
+_LINHAS: dict[tuple[int, str, int], dict] = {}
 
 
 def register(app) -> None:
@@ -132,11 +137,13 @@ def register(app) -> None:
         from collections import Counter
         prefixos: dict[str, Counter] = {}
         anomalias: list[str] = []
-        for g in s.execute(select(Geography).where(
-                Geography.environment == M._ENV_NAME,
-                Geography.tipo == "mu",
-                Geography.cd_ibge.is_not(None))).scalars().all():
-            prefixos.setdefault(g.uf, Counter())[g.cd_ibge[:2]] += 1
+        # Só as duas colunas: montar 5.570 objetos para ler dois campos era
+        # parte do custo de cada pedido de mapa.
+        for g_uf, g_ibge in s.execute(select(Geography.uf, Geography.cd_ibge)
+                                      .where(Geography.environment == M._ENV_NAME,
+                                             Geography.tipo == "mu",
+                                             Geography.cd_ibge.is_not(None))):
+            prefixos.setdefault(g_uf, Counter())[g_ibge[:2]] += 1
         # `sigla` e nao `uf`: reusar o nome do parametro aqui o sobrescreve,
         # e `recorte_ibge` passa a devolver a ultima UF do laco em vez da
         # pedida — o mapa desenhava o Brasil inteiro para mostrar Alagoas.
@@ -150,13 +157,34 @@ def register(app) -> None:
                         f"{pref}, divergente do prefixo da UF "
                         f"({cod_uf[sigla]})")
 
+        # Linhas já calculadas vêm da memória; as que faltam, de UMA consulta.
+        # Antes era uma consulta por território, e a definição matemática
+        # refeita para os 645 municípios de SP a cada pedido — mesmo os que
+        # não tinham mudado. Snapshot do TSE é imutável, então a linha que
+        # sai dele também é: guardá-la por snapshot é exato, e o custo de um
+        # pedido passa a acompanhar o que mudou desde o anterior.
+        faltam = [t.snapshot_id for t in totais
+                  if (ct.id, tipo, t.snapshot_id) not in _LINHAS]
+        por_snap: dict[tuple[int, int], list] = {}
+        for i in range(0, len(faltam), 900):
+            for r in s.execute(select(
+                    ObservedResult.snapshot_id, ObservedResult.geography_id,
+                    ObservedResult.candidate_id, ObservedResult.votos,
+                    ObservedResult.dvt).where(
+                    ObservedResult.snapshot_id.in_(faltam[i:i + 900]))):
+                por_snap.setdefault((r.snapshot_id, r.geography_id),
+                                    []).append(r)
+        if len(_LINHAS) > 200_000:
+            _LINHAS.clear()
+
         linhas = []
         for t in totais:
+            chave_memo = (ct.id, tipo, t.snapshot_id)
+            if chave_memo in _LINHAS:
+                linhas.append(_LINHAS[chave_memo])
+                continue
             g = geos[t.geography_id]
-            rows = s.execute(select(ObservedResult).where(
-                ObservedResult.snapshot_id == t.snapshot_id,
-                ObservedResult.geography_id == t.geography_id,
-            )).scalars().all()
+            rows = por_snap.get((t.snapshot_id, t.geography_id), [])
             validos = [r for r in rows if r.dvt == "Válido"]
             validos.sort(key=lambda r: -r.votos)
 
@@ -242,6 +270,8 @@ def register(app) -> None:
                             and dfn.disputa_definida],
             })
 
+            _LINHAS[chave_memo] = linhas[-1]
+
         # Territórios sem resultado. Entram com tudo nulo e marcados:
         #
         # `aguardando` e não "0% apurado". As duas coisas coincidem no começo
@@ -280,7 +310,7 @@ def register(app) -> None:
         # Paleta categórica dos líderes, estável por candidato.
         lideres = sorted({x["lider_sqcand"] for x in linhas
                           if x["lider_sqcand"]})
-        return M.envelope(
+        corpo = M.envelope(
             linhas, snapshots=snaps,
             estado="observado" if totais else "aguardando",
             denominador=DenBase.VALIDOS_COMPUTADOS,
@@ -308,3 +338,8 @@ def register(app) -> None:
                     "nunca significa eleição por ele."
                     if tipo == "mu" else None),
             })
+        # Pré-serializado. O mapa municipal do Brasil tem 5.755 linhas e 3,5 MB;
+        # o codificador genérico do FastAPI levava 0,54 s para percorrê-lo,
+        # `json.dumps` leva 0,10 s. Tudo aqui já é tipo nativo do JSON.
+        return Response(json.dumps(corpo, ensure_ascii=False, default=str),
+                        media_type="application/json")

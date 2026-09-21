@@ -309,7 +309,7 @@ async function prepararWhatsApp(pedido, rotulo) {
      caixa));
   document.body.append(fundo);
   poe(caixa, el('div', {cls: 'estado'},
-    'Fotografando o telão… leva alguns segundos por tela.'));
+    'Fotografando o telão… uns 3 segundos por tela.'));
 
   let r;
   try {
@@ -346,57 +346,80 @@ async function prepararWhatsApp(pedido, rotulo) {
     onclick: acao,
   }, txt);
   const aviso = el('div', {style: 'font-size:12.5px;color:var(--muted);'
-                                + 'min-height:18px;margin-top:8px'});
+                                + 'min-height:18px;margin-top:6px'});
   const avisar = t => { aviso.textContent = t; };
+  const n = r.fotos.length;
+  const plural = n > 1 ? `as ${n} imagens` : 'a imagem';
+
+  const passo = (num, ...conteudo) => el('div', {
+    style: 'display:flex;gap:12px;align-items:flex-start;margin:10px 0'},
+    el('div', {style: 'flex:0 0 26px;height:26px;border-radius:50%;'
+      + 'background:#25d366;color:#08140c;font-weight:700;display:flex;'
+      + 'align-items:center;justify-content:center'}, String(num)),
+    el('div', {style: 'flex:1;font-size:14px;line-height:1.45'},
+       ...conteudo));
+
+  /* O caminho curto primeiro. Com tudo na área de transferência do
+   * Windows, mandar vira dois Ctrl+V: um para as imagens, um para a
+   * legenda. O resto fica embaixo, para quando esse caminho não servir. */
+  const principal = r.na_area_de_transferencia
+    ? el('div', {},
+        passo(1, el('b', {}, `${plural[0].toUpperCase()}${plural.slice(1)} `
+                             + `já ${n > 1 ? 'estão' : 'está'} copiada${n > 1 ? 's' : ''}.`),
+          ' No WhatsApp, abra o grupo e aperte ', el('b', {}, 'Ctrl+V'),
+          n > 1 ? ' — entram todas juntas.' : '.'),
+        passo(2, botao('Copiar legenda', async () => {
+            try {
+              await navigator.clipboard.writeText(r.legenda);
+              avisar('Legenda copiada. Cole no campo de legenda do '
+                   + 'WhatsApp (Ctrl+V) e envie.');
+            } catch (e) { avisar('Não consegui copiar: ' + e.message); }
+          }, true),
+          el('div', {style: 'font-size:12.5px;color:var(--muted);'
+                          + 'margin-top:4px'},
+            'Depois de colar as imagens — copiar a legenda substitui as '
+            + 'imagens na área de transferência.')),
+        aviso)
+    : el('div', {cls: 'nota aten'},
+        'Não consegui pôr as imagens na área de transferência do Windows. '
+        + 'Use as opções abaixo.');
 
   const podeCompartilhar = !!(navigator.canShare
     && navigator.canShare({files: arquivos}));
 
-  const acoes = el('div', {style: 'display:flex;gap:8px;flex-wrap:wrap'},
-    podeCompartilhar ? botao('Compartilhar… (escolher o WhatsApp)',
-      async () => {
+  poe(caixa,
+    principal,
+    podeCompartilhar ? el('div', {style: 'margin-top:8px'},
+      botao('Ou: janela de compartilhar do Windows', async () => {
         try {
           await navigator.share({files: arquivos, text: r.legenda});
-          avisar('Enviado para a janela de compartilhamento.');
         } catch (e) {
           if (e.name !== 'AbortError') avisar('Não abriu: ' + e.message);
         }
-      }, true) : null,
-    botao('Copiar legenda', async () => {
-      try {
-        await navigator.clipboard.writeText(r.legenda);
-        avisar('Legenda copiada. No WhatsApp: Ctrl+V.');
-      } catch (e) { avisar('Não consegui copiar: ' + e.message); }
-    }));
-
-  poe(caixa,
-    acoes, aviso,
-    podeCompartilhar ? null : el('div', {cls: 'nota'},
-      'Este navegador não oferece a janela de compartilhamento. Use '
-      + '"copiar imagem" em cada tela e cole no WhatsApp Web (Ctrl+V), e '
-      + 'depois "copiar legenda".'),
-    ...r.fotos.map((f, i) => el('div', {
-      style: 'margin-top:14px;border:1px solid var(--line);border-radius:8px;'
-           + 'overflow:hidden'},
-      el('img', {src: URL.createObjectURL(blobs[i]), alt: f.titulo,
-                 style: 'display:block;width:100%'}),
-      el('div', {style: 'display:flex;gap:8px;align-items:center;'
-                      + 'padding:8px 10px;flex-wrap:wrap'},
-        el('b', {style: 'font-size:13px'}, f.titulo),
-        el('span', {style: 'margin-left:auto'}),
-        botao('Copiar imagem', async () => {
-          try {
-            await navigator.clipboard.write(
-              [new ClipboardItem({'image/png': blobs[i]})]);
-            avisar(`Imagem "${f.titulo}" copiada. No WhatsApp: Ctrl+V.`);
-          } catch (e) { avisar('Não consegui copiar: ' + e.message); }
-        }),
-        el('a', {href: f.url, download: f.arquivo,
-                 style: 'font-size:13px;color:var(--muted)'}, 'baixar')))),
+      })) : null,
     r.puladas.length ? el('div', {cls: 'nota aten'},
       el('b', {}, 'Telas que não saíram. '),
       ...r.puladas.map(p => el('div', {}, `· ${p.titulo}: ${p.motivo}`)))
       : null,
+    ...r.fotos.map((f, i) => el('div', {
+      style: 'margin-top:12px;border:1px solid var(--line);border-radius:8px;'
+           + 'overflow:hidden'},
+      el('img', {src: URL.createObjectURL(blobs[i]), alt: f.titulo,
+                 style: 'display:block;width:100%'}),
+      el('div', {style: 'display:flex;gap:8px;align-items:center;'
+                      + 'padding:6px 10px;flex-wrap:wrap;font-size:13px'},
+        el('b', {}, f.titulo),
+        el('span', {style: 'margin-left:auto'}),
+        el('a', {href: '#', style: 'color:var(--muted)', onclick: async e => {
+          e.preventDefault();
+          try {
+            await navigator.clipboard.write(
+              [new ClipboardItem({'image/png': blobs[i]})]);
+            avisar(`Só "${f.titulo}" copiada.`);
+          } catch (x) { avisar('Não consegui copiar: ' + x.message); }
+        }}, 'copiar só esta'),
+        el('a', {href: f.url, download: f.arquivo,
+                 style: 'color:var(--muted)'}, 'baixar')))),
     el('details', {style: 'margin-top:12px'},
       el('summary', {}, 'ver a legenda'),
       el('pre', {style: 'white-space:pre-wrap;font-size:12.5px'},

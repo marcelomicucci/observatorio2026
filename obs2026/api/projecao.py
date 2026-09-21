@@ -20,8 +20,15 @@ existe caminho que produza número de projeção sem deixar rastro (§7).
 
 from __future__ import annotations
 
+import threading
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
+
+
+#: Uma trava por disputa para o cálculo de exibição.
+_TRAVAS: dict[tuple, threading.Lock] = {}
 
 
 def register(app) -> None:
@@ -33,9 +40,65 @@ def register(app) -> None:
     from ..engine.denominators import Base as DenBase
     from ..storage.raw import RawArchive
 
+    def _de_registro(r, ct, idade: float) -> dict:
+        """Monta a resposta a partir de um registro do diário, no mesmo
+        formato do cálculo ao vivo — quem consome não precisa saber."""
+        publicavel = r.estado_publicacao == "projecao_disponivel"
+        linhas = [{
+            "sqcand": c.sqcand,
+            "nome": c.nome,
+            "votos_observados": c.votos_observados,
+            "projecao": {
+                "votos_mediana": c.votos_q500,
+                "pct_mediana": c.pct_concorrentes_q500,
+                "pct_q100": c.pct_concorrentes_q100,
+                "pct_q900": c.pct_concorrentes_q900,
+                "base": DenBase.VALIDOS_COMPUTADOS.value,
+            },
+            "probabilidades": ({
+                "lideranca": c.prob_lideranca,
+                "dentro_das_vagas": c.prob_dentro_vagas,
+                "maioria_absoluta": c.prob_maioria_absoluta,
+            } if publicavel else None),
+            "estado_matematico": c.estado_matematico,
+        } for c in r.candidatos]
+        linhas.sort(key=lambda x: -x["projecao"]["votos_mediana"])
+        return M.envelope(
+            linhas, snapshots=[], estado=r.estado_publicacao,
+            denominador=DenBase.VALIDOS_COMPUTADOS,
+            motivo=(None if publicavel else
+                    "config/thresholds.yaml não homologado: os intervalos "
+                    "abaixo são cenário identificado, não previsão "
+                    "publicada, e nenhuma probabilidade de vitória é "
+                    "divulgada (§4.7)."),
+            extra={
+                "publicavel": publicavel,
+                "origem": "registro",
+                "registrado_em": r.momento,
+                "idade_s": round(idade, 1),
+                "disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas,
+                            "unidade": r.unidade},
+                "modelo": r.modelo,
+                "semente": r.semente,
+                "n_sims": r.n_sims,
+                "erro_monte_carlo_pp": r.erro_monte_carlo_pp,
+                "cobertura_pct": (100.0 * r.eleitorado_apurado
+                                  / r.eleitorado_total
+                                  if r.eleitorado_total else None),
+                "pendente_min": r.pendente_min,
+                "pendente_max": r.pendente_max,
+                "registro_id": r.registro_id,
+                "definicao": {
+                    "disputa_definida": r.disputa_matematicamente_definida,
+                    "segundo_turno_definido":
+                        r.segundo_turno_matematicamente_definido,
+                },
+            })
+
     @app.get("/api/v1/projection")
     def projecao(cargo: str, uf: str | None = None, modelo: str = "m1",
                  sims: int | None = None, registrar: bool = True,
+                 max_idade_s: int = 300,
                  s: Session = Depends(M.get_session)):
         """Roda a projeção da disputa e devolve quantis por candidato."""
         env = load_environment(M._ENV_NAME)
@@ -45,6 +108,37 @@ def register(app) -> None:
             raise HTTPException(
                 400, f"{ct.cargo_nome} é decidido por UF; informe uf=")
 
+        # Exibição (telão, legenda do WhatsApp) — `registrar=false`.
+        #
+        # Serve a última projeção REGISTRADA, se for recente. Calcular na
+        # hora custava 5,9 s por pedido para presidente, e o telão e a
+        # legenda pediam de novo a cada tela, enquanto o coletor já registra
+        # todas as disputas a cada 2 minutos.
+        #
+        # Sem registro recente (o coletor parado, por exemplo), calcula E
+        # REGISTRA. Antes, o modo exibição calculava sem registrar — um
+        # número mostrado na sala que não ficava no diário, contra a regra de
+        # que toda projeção exibida é gravada. Agora não existe esse caminho:
+        # o que a sala vê é sempre um registro. A trava por disputa impede
+        # que o telão e a legenda, pedindo juntos, calculem duas vezes.
+        if not registrar and max_idade_s > 0:
+            unidade = uf.lower() if uf else "br"
+            chave = (ct.cargo_cd, unidade, modelo)
+            trava = _TRAVAS.setdefault(chave, threading.Lock())
+            with trava:
+                r = A.Diario(DATA_DIR / "previsoes",
+                             env.name).ultimos().get(chave)
+                if r is not None:
+                    idade = (datetime.now(timezone.utc)
+                             - datetime.fromisoformat(r.momento)
+                             ).total_seconds()
+                    if idade <= max_idade_s:
+                        return _de_registro(r, ct, idade)
+                return _calcular(env, thr, ct, uf, modelo, sims,
+                                 registrar=True)
+        return _calcular(env, thr, ct, uf, modelo, sims, registrar=registrar)
+
+    def _calcular(env, thr, ct, uf, modelo, sims, *, registrar: bool):
         try:
             fc, dfn, ctx, reg = R.executar(
                 env, thr, cargo=ct.cargo_cd,

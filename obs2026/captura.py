@@ -83,6 +83,8 @@ TIMEOUT_S = 90.0
 #: relógio virtual fica parado, então isto não é "espere 25 s": é "deixe a
 #: página avançar o equivalente a 25 s de temporizadores".
 TEMPO_VIRTUAL_MS = 25_000
+#: Telas fotografadas ao mesmo tempo.
+PARALELO = 3
 
 
 class CapturaError(RuntimeError):
@@ -291,6 +293,18 @@ def _legenda(api: str, tela: dict, quantos: int = 5) -> str:
     return "\n".join(linhas)
 
 
+def _ipv4(api: str) -> str:
+    """`localhost` → `127.0.0.1`.
+
+    No Windows, `localhost` resolve primeiro para o IPv6 `::1`, o servidor
+    escuta só em IPv4, e o cliente HTTP espera a tentativa falhar antes de
+    cair para o IPv4: 2,5 s por pedido, contra 0,3 s direto. A legenda faz
+    três pedidos por tela, e o telão fotografado outros tantos — era a maior
+    parte da espera do botão de WhatsApp.
+    """
+    return re.sub(r"//localhost(?=[:/]|$)", "//127.0.0.1", api)
+
+
 def roteiro(api: str) -> list[dict]:
     """As telas do projetor, como a API as resolve."""
     try:
@@ -352,6 +366,7 @@ def capturar(*, api: str = "http://localhost:8026",
              navegador: str | None = None,
              com_legenda: bool = True) -> Pacote:
     """Fotografa as telas pedidas do roteiro e monta o pacote."""
+    api = _ipv4(api)
     nav = encontrar_navegador(navegador)
 
     if recorte is not None:
@@ -384,10 +399,12 @@ def capturar(*, api: str = "http://localhost:8026",
     carimbo = agora.strftime("%H%M%S")
 
     pacote = Pacote(pasta=pasta)
-    for t in alvos:
+
+    def uma(t: dict):
+        """Fotografa e legenda uma tela. Devolve Foto ou (indice, titulo,
+        motivo) — nunca levanta: uma tela quebrada não derruba as outras."""
         if t["erro"]:
-            pacote.puladas.append((t["indice"], t["titulo"], t["erro"]))
-            continue
+            return (t["indice"], t["titulo"], t["erro"])
         arq = pasta / f"{carimbo}-{max(t['indice'], 0)}-{_slug(t['titulo'])}.png"
         base = f"{api.rstrip('/')}/telao?estatico=1"
         if t["indice"] >= 0:
@@ -399,10 +416,22 @@ def capturar(*, api: str = "http://localhost:8026",
         try:
             _disparar(nav, url, arq, largura, altura)
         except CapturaError as exc:
-            pacote.puladas.append((t["indice"], t["titulo"], str(exc)))
-            continue
+            return (t["indice"], t["titulo"], str(exc))
         legenda = _legenda(api, t) if com_legenda else t["titulo"]
-        pacote.fotos.append(Foto(t["indice"], t["titulo"], arq, legenda))
+        return Foto(t["indice"], t["titulo"], arq, legenda)
+
+    # Em paralelo, até PARALELO telas ao mesmo tempo. Uma de cada vez, o
+    # roteiro de cinco telas levava mais de um minuto: cada tela abre seu
+    # próprio Chrome, e o tempo de abrir não depende do tamanho da tela.
+    # Mais que três disputaria processador com a coleta, no pico da noite.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(PARALELO, len(alvos))) as ex:
+        resultados = list(ex.map(uma, alvos))      # mantém a ordem do roteiro
+    for r in resultados:
+        if isinstance(r, Foto):
+            pacote.fotos.append(r)
+        else:
+            pacote.puladas.append(r)
 
     if pacote.fotos and com_legenda:
         alvo = pasta / f"{carimbo}-legendas.txt"
