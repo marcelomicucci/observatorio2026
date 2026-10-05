@@ -119,8 +119,42 @@ def register(app) -> None:
             "homologacao": {"thresholds": thr.homologated,
                             "assinado_por": thr.signed_by,
                             "assinado_em": thr.signed_at,
+                            # A assinatura é de um modelo. `vale` diz se
+                            # ela cobre o que está em produção agora.
+                            "modelo_assinado": thr.modelo_homologado,
+                            "modelo_producao": op["modelo_projecao"],
+                            "vale": thr.vale_para(op["modelo_projecao"]),
+                            # O gate de CADA modelo, para a tela dizer, antes
+                            # da troca, o que acontece com a probabilidade.
+                            "gates": _gates(),
                             "gate": _gate()},
         }
+
+    _memo_gates: dict = {}
+
+    def _gates() -> dict:
+        """{modelo: passou no gate?} para todos os modelos da aba. Lido uma
+        vez por versão do arquivo de evidência: ele tem centenas de KB e a
+        aba é relida a cada poucos segundos."""
+        from .. import homologacao as H
+        try:
+            mt = H.EVIDENCIA.stat().st_mtime
+        except OSError:
+            mt = None
+        if _memo_gates.get("mt") == mt and "d" in _memo_gates:
+            return _memo_gates["d"]
+        out = {}
+        for m in OP.MODELOS:
+            try:
+                ev = H.ler_evidencia(modelo=m)
+                out[m] = {"disponivel": True, "passou": bool(ev.get("passou")),
+                          "cobertura": ev.get("cobertura80_m2_pct"),
+                          "recusa": H.motivos_de_recusa(ev)}
+            except H.HomologacaoError as exc:
+                out[m] = {"disponivel": False, "passou": False,
+                          "motivo": str(exc)}
+        _memo_gates.update(mt=mt, d=out)
+        return out
 
     def _gate() -> dict:
         """Resumo da evidência do gate (scripts/gate2022.py), sem o

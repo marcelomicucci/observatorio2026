@@ -230,7 +230,10 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
     # jeito e fica registrada, mas não vira probabilidade publicada.
     if ctx.encerrada:
         estado = "resultado_oficial"
-    elif not thr.homologated:
+    elif not thr.vale_para(modelo):
+        # Sem homologação — ou com a homologação de OUTRO modelo: a
+        # assinatura é da evidência de um modelo (05/10/2026: a produção
+        # passou ao M3.3 e a assinatura ainda era a do M3).
         estado = "cenario_exploratorio"
     else:
         estado = "projecao_disponivel"

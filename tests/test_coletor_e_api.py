@@ -606,3 +606,16 @@ def test_coletor_para_com_brasil_completo_sem_a_marca_de_finalizado():
     col, C = _coletor_para_fim({**tot, "6259:uf:am": "p"},
                                {"6257:br": True, "6259:uf:am": True})
     assert not col.verificar_fim(0.0) and not col.verificar_fim(1e6)
+
+
+def test_homologacao_vale_so_para_o_modelo_assinado():
+    """A assinatura é da evidência de um modelo. Em 05/10/2026 a produção
+    passou ao M3.3 com a assinatura do M3 ainda no arquivo: a probabilidade
+    seguia no ar sob uma homologação que não era a dele."""
+    from dataclasses import replace
+    from obs2026.config import load_thresholds
+    t = replace(load_thresholds(), homologated=True, modelo_homologado="m3")
+    assert t.vale_para("m3") and not t.vale_para("m33")
+    assert not replace(t, homologated=False).vale_para("m3")
+    # arquivo antigo, sem o modelo registrado: vale como antes
+    assert replace(t, modelo_homologado=None).vale_para("m33")

@@ -177,6 +177,16 @@ class Thresholds:
     gates: dict
     monte_carlo: dict
     config_hash: str
+    #: Modelo cuja evidência foi assinada (`evidencia.modelo`). A assinatura
+    #: é de UM modelo: trocar o modelo em produção sem assinar de novo não
+    #: leva a homologação junto. `None` em arquivo antigo, sem o registro.
+    modelo_homologado: str | None = None
+
+    def vale_para(self, modelo: str | None) -> bool:
+        """A homologação cobre este modelo?"""
+        return self.homologated and (
+            self.modelo_homologado is None or modelo is None
+            or self.modelo_homologado == modelo)
 
     def require_homologated(self) -> None:
         if not self.homologated:
@@ -289,4 +299,5 @@ def load_thresholds(config_dir: Path = CONFIG_DIR) -> Thresholds:
         gates=t.get("release_gates") or {},
         monte_carlo=t.get("monte_carlo") or {},
         config_hash=file_hash(p),
+        modelo_homologado=((t.get("evidencia") or {}).get("modelo") or None),
     )

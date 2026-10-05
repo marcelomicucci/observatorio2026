@@ -2390,10 +2390,52 @@ async function viewConfig() {
               if (m.id === 'm0' && !confirm('M0 é só a referência do gate '
                   + 'estatístico, não um modelo de produção. Usar mesmo '
                   + 'assim?')) { desenhar(); return; }
-              tenta(() => postConfig('operacao', {modelo_projecao: m.id}),
-                `Modelo em produção: ${m.nome}. Vale da próxima projeção `
-                + 'em diante (o coletor registra a cada 2 min; o telão '
-                + 'guarda 60 s).');
+              // Trocar o modelo e assinar são um ato só (05/10/2026): a
+              // homologação é de cada modelo, e trocar sem assinar deixava
+              // a tela dizendo "homologado" com a assinatura do anterior.
+              const gm = ((c.homologacao || {}).gates || {})[m.id] || {};
+              const f = v => String(v).replace('.', ',');
+              let assinante = null;
+              if (gm.passou) {
+                const cob = gm.cobertura ? ` (cobertura do intervalo de 80%: `
+                  + `${f(gm.cobertura.real)}% na ordem real, `
+                  + `${f(gm.cobertura.aleatoria)}% na aleatória)` : '';
+                const r = prompt('TROCAR O MODELO EM PRODUÇÃO PARA\n'
+                  + m.nome + '\n\nGate de 2022: passou' + cob + '.\n\n'
+                  + 'A homologação é de cada modelo. Para as probabilidades '
+                  + 'de vitória seguirem no ar com este, assine com o seu '
+                  + 'nome.\n\n(Em branco: troca sem assinar — o modelo '
+                  + 'fica em cenário exploratório, sem probabilidade.)',
+                  c.homologacao.assinado_por || '');
+                if (r === null) { desenhar(); return; }
+                assinante = r.trim();
+                if (assinante && assinante.length < 3) {
+                  aviso('Nome curto demais para assinar. Nada foi trocado.',
+                        true);
+                  desenhar();
+                  return;
+                }
+              } else if (!confirm('TROCAR O MODELO EM PRODUÇÃO PARA\n'
+                  + m.nome + '\n\nEste modelo NÃO tem gate aprovado'
+                  + (gm.motivo ? ': ' + gm.motivo
+                     : gm.recusa && gm.recusa.length
+                       ? ': ' + gm.recusa.join('; ') : '')
+                  + '.\n\nEm produção ele fica em cenário exploratório: '
+                  + 'os intervalos continuam no ar, sem probabilidade de '
+                  + 'vitória e sem selo de vencedor projetado.\n\nTrocar '
+                  + 'mesmo assim?')) { desenhar(); return; }
+              tenta(async () => {
+                let r = await postConfig('operacao', {modelo_projecao: m.id});
+                if (assinante) {
+                  r = await postConfig('homologar', {assinante});
+                }
+                return r;
+              }, `Modelo em produção: ${m.nome}`
+                + (assinante ? `, homologado por ${assinante}`
+                   : gm.passou ? ', SEM assinatura: sem probabilidade até '
+                     + 'homologar' : ', em cenário exploratório')
+                + '. Vale da próxima projeção em diante (o coletor registra '
+                + 'a cada 2 min; o telão guarda 60 s).');
             }}),
           el('div', {},
             el('b', {}, m.nome),
@@ -2401,6 +2443,8 @@ async function viewConfig() {
                                      'recomendado')] : null,
             m.id === atual ? [' ', el('span', {cls: 'tag info'},
                                       'em produção')] : null,
+            (((c.homologacao || {}).gates || {})[m.id] || {}).passou
+              ? [' ', el('span', {cls: 'tag'}, 'gate aprovado')] : null,
             el('div', {style: 'color:var(--muted);font-size:12.5px;'
                             + 'margin-top:2px'}, m.descricao))))),
       el('div', {cls: 'nota'}, 'A troca vale para projeções novas. As já '
@@ -2694,11 +2738,21 @@ async function viewConfig() {
            + 'var(--line);border-radius:6px;padding:6px 9px;font:inherit;'
            + 'font-size:13.5px;min-width:220px'});
     const f = v => v == null ? '—' : String(v).replace('.', ',');
+    // A assinatura é de UM modelo. Quando a produção troca de modelo, a
+    // homologação antiga não vale para o novo: a tela diz isso e oferece
+    // assinar — sem passar por "Revogar", que é o contrário.
+    const nomeModelo = id => {
+      const m = (c.modelos || []).find(x => x.id === id);
+      return m ? m.nome.split(' — ')[0] : String(id || '').toUpperCase();
+    };
+    const MOD = nomeModelo(h.modelo_producao);
+    const outro = h.thresholds && h.vale === false;
     const tabela = g.disponivel && g.por_rodada ? el('details', {},
-      el('summary', {}, 'Erro mediano rodada a rodada (M0 × M2)'),
+      el('summary', {}, `Erro mediano rodada a rodada (M0 × ${MOD})`),
       el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Ordem'),
         el('th', {cls: 'num'}, 'Rodada'), el('th', {cls: 'num'}, 'M0 (pp)'),
-        el('th', {cls: 'num'}, 'M2 (pp)'), el('th', {}, 'M2 melhor'))),
+        el('th', {cls: 'num'}, `${MOD} (pp)`),
+        el('th', {}, `${MOD} melhor`))),
         el('tbody', {}, ...g.por_rodada.map(r => el('tr', {},
           el('td', {}, r.ordem), el('td', {cls: 'num'}, String(r.rodada)),
           el('td', {cls: 'num'}, f(r.erro_m0)),
@@ -2708,17 +2762,22 @@ async function viewConfig() {
       : null;
     return secao('Gate estatístico (probabilidade de vitória)',
       el('div', {cls: 'resumo'},
-        el('div', {cls: 'kpi', style: h.thresholds
+        el('div', {cls: 'kpi', style: h.thresholds && !outro
             ? 'border-color:var(--ok)' : 'border-color:var(--alerta)'},
-          el('div', {cls: 'k'}, 'Situação'),
+          el('div', {cls: 'k'}, `Situação — ${MOD} em produção`),
           el('div', {cls: 'v', style: 'font-size:17px'},
-             h.thresholds ? 'homologado' : 'não homologado'),
-          el('div', {cls: 'n'}, h.thresholds
+             outro ? `falta homologar o ${MOD}`
+             : h.thresholds ? 'homologado' : 'não homologado'),
+          el('div', {cls: 'n'}, outro
+            ? `a assinatura de ${dataBR(h.assinado_em)} é do `
+              + `${nomeModelo(h.modelo_assinado)} · sem probabilidade até `
+              + 'assinar'
+            : h.thresholds
             ? `${h.assinado_por} · ${dataBR(h.assinado_em)}`
             : 'cenário exploratório, sem probabilidade')),
         el('div', {cls: 'kpi', style: g.disponivel ? (g.passou
             ? 'border-color:var(--ok)' : 'border-color:var(--erro)') : null},
-          el('div', {cls: 'k'}, 'Evidência 2022'),
+          el('div', {cls: 'k'}, `Evidência 2022 — ${MOD}`),
           el('div', {cls: 'v', style: 'font-size:17px'},
              !g.disponivel ? 'não rodada' : g.passou ? 'passou' : 'não passou'),
           el('div', {cls: 'n'}, g.disponivel
@@ -2744,10 +2803,10 @@ async function viewConfig() {
       tabela,
       el('div', {style: 'display:flex;gap:10px;align-items:center;'
                       + 'flex-wrap:wrap;margin:10px 0'},
-        !h.thresholds && g.passou ? [
+        (!h.thresholds || outro) && g.passou ? [
           el('span', {style: 'font-size:12.5px;color:var(--muted)'},
              'Assinar como'), nome,
-          botao('✍ Homologar e liberar probabilidades', () => {
+          botao(`✍ Homologar o ${MOD} e liberar probabilidades`, () => {
             const quem = nome.value.trim();
             if (quem.length < 3) { aviso('Informe o seu nome.', true); return; }
             if (!confirm(`Homologar como "${quem}"? Probabilidades de vitória `
@@ -2756,7 +2815,8 @@ async function viewConfig() {
             tenta(() => postConfig('homologar', {assinante: quem}),
                   'Homologado. Probabilidades a partir da próxima rodada.');
           }, 'border-color:var(--ok)')] : null,
-        h.thresholds ? botao('Revogar (voltar ao cenário exploratório)', () => {
+        h.thresholds && !outro ? botao(
+            'Revogar (desligar as probabilidades)', () => {
           const motivo = prompt('Motivo da revogação (fica registrado):');
           if (motivo === null) return;
           tenta(() => postConfig('revogar', {motivo}),

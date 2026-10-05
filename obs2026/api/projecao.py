@@ -257,7 +257,7 @@ def register(app) -> None:
                               motivo=str(exc))
 
         publicavel = (reg.estado_publicacao == "projecao_disponivel"
-                      if reg else thr.homologated)
+                      if reg else thr.vale_para(modelo))
         q = fc.quantis((0.025, 0.05, 0.10, 0.50, 0.90, 0.95, 0.975))
         nivel, rotulo = NV.nivel_por_apurado(
             100.0 * ctx.secoes_totalizadas / ctx.secoes_total

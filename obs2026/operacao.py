@@ -61,8 +61,9 @@ MODELOS = {
             "(fatia do PT no 2º turno presidencial de 2022). Ataca o viés de "
             "ordem de chegada: se o primeiro a chegar pende para um lado, o "
             "modelo sabe que o que falta pende para o outro. Passou no gate "
-            "de 2022 (22/09): vence o M0 nas 18 rodadas, cobertura 81%."),
-        "recomendado": True,
+            "de 2022 (22/09): vence o M0 nas 18 rodadas, cobertura 81%. Foi "
+            "o modelo da noite do 1º turno de 2026."),
+        "recomendado": False,
     },
     "m33": {
         "nome": "M3.3 — M3 com a faixa 20% mais estreita",
@@ -72,9 +73,10 @@ MODELOS = {
             "80% do M3 conteve o resultado em 96–100% dos casos: larga "
             "demais. Com 0,8 ficou em 92–100% em 2026, 76% em 2022 e "
             "74–76% em 2018 — o maior estreitamento que passa nas três. "
-            "Faixas menores decidem as probabilidades mais cedo. A rever "
-            "depois do 2º turno."),
-        "recomendado": False,
+            "Faixas menores decidem as probabilidades mais cedo. Passou no "
+            "gate de 2022 em 05/10 (75,9% / 75,8%, com tolerância até 75%: "
+            "margem pequena). A rever depois do 2º turno."),
+        "recomendado": True,
     },
     "m31": {
         "nome": "M3.1 — M3 + resposta à inclinação por bloco (em teste)",
