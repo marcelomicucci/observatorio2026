@@ -10,7 +10,7 @@
 
 homologated: true
 signed_by: "Marcelo Micucci"
-signed_at: "2026-09-22T11:41:34.183327-03:00"
+signed_at: "2026-10-05T17:53:19.641451-03:00"
 
 release_gates:
   # Nenhuma projeção antes de o eleitorado estar conciliado.
@@ -41,11 +41,11 @@ monte_carlo:
 # --- evidência da homologação (gerado por `obs2026 homologar`) ---
 evidencia:
   relatorio: data/exports/ensaio2022/gate2022.md
-  gerado_em: "2026-09-22T11:38:29.652565"
+  gerado_em: "2026-10-05T16:46:50.110293"
   disputas: 55
-  modelo: m3
+  modelo: m33
   erro_mediano_vence_m0_em_todas_as_rodadas: true
-  cobertura80_ordem_real_pct: 81.6
-  cobertura80_ordem_aleatoria_pct: 81.2
+  cobertura80_ordem_real_pct: 75.9
+  cobertura80_ordem_aleatoria_pct: 75.8
   assinado_por: "Marcelo Micucci"
-  assinado_em: "2026-09-22T11:41:34.183327-03:00"
+  assinado_em: "2026-10-05T17:53:19.641451-03:00"
