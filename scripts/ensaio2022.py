@@ -104,16 +104,60 @@ def _m32(obs, cands, seats=1, **kw):
                        **kw)
 
 
+def _m33(obs, cands, seats=1, **kw):
+    return M.build_m33(obs, cands, seats=seats, ano_referencia=ANO_ALVO - 4,
+                       **kw)
+
+
+def _m3a(obs, cands, seats=1, **kw):
+    """M3 com o agro, sem mexer na faixa: isola o efeito da covariável."""
+    return M.build_m3(obs, cands, seats=seats, ano_referencia=ANO_ALVO - 4,
+                      agro=M.agro_por_municipio(), **kw)
+
+
+def _m34(obs, cands, seats=1, **kw):
+    return M.build_m34(obs, cands, seats=seats, ano_referencia=ANO_ALVO - 4,
+                       **kw)
+
+
 MODELOS = {"m0": M.build_m0, "m1": M.build_m1, "m2": M.build_m2,
-           "m3": _m3, "m31": _m31, "m32": _m32}
+           "m3": _m3, "m31": _m31, "m32": _m32, "m33": _m33,
+           "m3a": _m3a, "m34": _m34}
+
+
+def fator_largura(nome: str) -> float:
+    """`m3x0.65`: os choques de preferência do simulador × 0,65 (a mesma
+    variante `k0.65` de `ensaio2026.py`). Sem o sufixo, 1."""
+    if nome in ("m33", "m34"):
+        return M.FATOR_M33
+    _, _, k = nome.partition("x")
+    return float(k) if k else 1.0
+
+
+def config_sim(nome: str, sims: int) -> "S.SimConfig":
+    from dataclasses import replace
+    k = fator_largura(nome)
+    p = S.SimConfig(n_sims=sims, seed=20261004)
+    return p if k == 1.0 else replace(
+        p, sigma_pref_nacional=p.sigma_pref_nacional * k,
+        sigma_pref_uf=p.sigma_pref_uf * k,
+        sigma_pref_local=p.sigma_pref_local * k)
 
 
 def modelo(nome: str):
     """`m1`, `m2`, `m3`, ou uma variante para calibrar: `m2@0.3` ou
-    `m3@0.3` (sigma do grupo vazio), `m2@0.3^1` (expoente da curva) e
-    `m3@0.2k20000` (sigma e K_INCLINACAO)."""
+    `m3@0.3` (sigma do grupo vazio), `m2@0.3^1` (expoente da curva),
+    `m3@0.2k20000` (sigma e K_INCLINACAO) e `m3x0.65` (todos os choques de
+    preferência × 0,65; combina com `i`: `m3x0.65i10000` troca também o
+    K_INCLINACAO)."""
     if nome in MODELOS:
         return MODELOS[nome]
+    if nome.startswith("m3x"):
+        resto, _, kinc = nome[3:].partition("i")
+        kw = {"sigma_grupo_vazio": M.SIGMA_GRUPO_VAZIO * float(resto)}
+        if kinc:
+            kw["k_inclinacao"] = float(kinc)
+        return lambda obs, cands, seats=1: _m3(obs, cands, seats=seats, **kw)
     base, _, resto = nome.partition("@")
     if base == "m32":
         # m32@30 = M0_CONFORMAL; m32@30g0.5 acrescenta GAMMA_CONFORMAL.
@@ -406,7 +450,7 @@ def rodar(muns, vagas, eleicao, horas, *, ordem, rodadas, sims, seed, cargo,
                                 unidade=unidade)
         for mod in modelos:
             units = modelo(mod)(obs, cands, seats=vagas)
-            fc = S.run(units, cands, S.SimConfig(n_sims=sims, seed=20261004),
+            fc = S.run(units, cands, config_sim(mod.partition("i")[0], sims),
                        seats=vagas, senado=vagas > 1)
             linhas[mod].append(_medir(fc, cands, real, nomes, mostrar,
                                       eleitos, vagas))

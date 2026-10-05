@@ -122,3 +122,31 @@ def test_m2_nao_se_diz_seguro_sobre_a_capital_que_nao_chegou():
     # Com SIGMA_GRUPO_VAZIO calibrado em 2018 (0,25), o intervalo do M2 aqui
     # é ~1,35x o do M1; o M1 já alarga um pouco unidade sem dado nenhum.
     assert (l2["q900"] - l2["q100"]) > 1.25 * (l1["q900"] - l1["q100"])
+
+
+def test_m3_sem_agro_nao_muda_e_com_agro_colinear_desiste():
+    """A covariável do agro (05/10/2026) é opcional: sem ela o M3 é o de
+    sempre, e quando não dá para separá-la da inclinação a regressão
+    conjunta não é usada."""
+    from obs2026.engine import models as M
+    pts = []
+
+    class O:                                   # o mínimo que a função lê
+        def __init__(self, x, a, n, v):
+            self.x, self.a = x, a
+            self.obs = type("B", (), {"validos": n,
+                                      "votos_por_candidato": v})()
+    for i in range(12):
+        x = -1 + i * 0.2
+        pts.append(O(x, 0.1 + 0.03 * i, 1000, {"a": 400 + 20 * i,
+                                               "b": 600 - 20 * i}))
+    # agro = função linear exata da inclinação: colineares → sem resposta
+    assert M._respostas_duas(pts, ["a", "b"], lambda o: o.x, lambda o: o.a,
+                             50_000.0) == {}
+    # agro com variação própria: sai um par de respostas por candidato
+    for i, o in enumerate(pts):
+        o.a = 0.1 + 0.05 * ((i * 7) % 5)
+    r = M._respostas_duas(pts, ["a", "b"], lambda o: o.x, lambda o: o.a,
+                          50_000.0)
+    assert set(r) == {"a", "b"} and all(len(v) == 2 for v in r.values())
+    assert r["a"][0] > 0 > r["b"][0]           # "a" cresce com a inclinação

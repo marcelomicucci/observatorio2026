@@ -390,6 +390,206 @@ const TELAS = (() => {
         `e mais ${nomes.length - n} — os ${n} mais votados`) : null);
   }
 
+
+  /* --------------------------------------------------------- assembleias
+   * As 27 assembleias legislativas numa tela: a soma do país por bloco e,
+   * em cada estado, quantas cadeiras tem cada bloco e se algum tem maioria
+   * sozinho. `d` é a rota /composicao?casa=assembleia; sem a classificação
+   * assinada (`comIdeo` falso) sai só a maior bancada de cada casa. */
+  const COR_BLOCO = {esquerda: '#C62828', centro: '#F2C94C',
+                     direita: '#1565C0', sem_classificacao: '#59636e'};
+  const NOME_BLOCO = {esquerda: 'Esquerda', centro: 'Centro',
+                      direita: 'Direita', sem_classificacao: 'Sem classif.'};
+  const ORDEM_BLOCO = ['esquerda', 'centro', 'direita', 'sem_classificacao'];
+
+  function barraBloco(por, total, altura, marca) {
+    const b = h('div', `position:relative;display:flex;height:${altura};`
+      + `border-radius:${U(.2)};overflow:hidden;background:#2a313d`);
+    for (const k of ORDEM_BLOCO) {
+      const n = (por[k] || {}).total || 0;
+      if (n) b.append(h('i', `display:block;width:${100 * n / total}%;`
+        + `background:${COR_BLOCO[k]}`));
+    }
+    if (marca) {
+      b.append(h('i', `position:absolute;left:${100 * marca / total}%;top:0;`
+        + 'bottom:0;width:2px;background:#f2f5f9;opacity:.85'));
+    }
+    return b;
+  }
+
+  function assembleias(d, comIdeo) {
+    const por = Object.fromEntries(d.ufs.map(u => [u.uf, u]));
+    const tot = d.total || 1;
+    const conta = {esquerda: 0, centro: 0, direita: 0, nenhum: 0};
+    for (const u of d.ufs) conta[u.bloco_com_maioria || 'nenhum']++;
+
+    const topo = h('div', `display:grid;grid-template-columns:auto 1fr;`
+      + `gap:${U(1)};align-items:center`,
+      h('div', `display:flex;gap:${U(.8)}`,
+        kpi('cadeiras', fmt(d.total), `em ${d.ufs.length} casas`),
+        d.provisorios ? kpi('provisórias', fmt(d.provisorios), null,
+                            COR.aberto) : null),
+      comIdeo ? h('div', '',
+        barraBloco(d.por_bloco, tot, U(1.5)),
+        h('div', `display:flex;gap:${U(1.6)};margin-top:${U(.3)};`
+          + `font-size:${U(.95)}`,
+          ...['esquerda', 'centro', 'direita'].map(k => h('span', '',
+            h('b', `color:${COR_BLOCO[k]}`, NOME_BLOCO[k] + ' '),
+            `${fmt(d.por_bloco[k].total)} `
+            + `(${pct(100 * d.por_bloco[k].total / tot, 1)})`,
+            h('span', `color:${COR.fraco};font-size:${U(.78)}`,
+              ` · maioria sozinho em ${conta[k]} casas`))),
+          h('span', `color:${COR.fraco}`,
+            `${conta.nenhum} sem maioria de um bloco`)))
+        : h('div', `font-size:${U(.9)};color:#f0dfa8`,
+            'Blocos ideológicos desligados: a classificação dos partidos '
+            + 'aguarda curadoria assinada (§6).'));
+
+    const cartao = uf => {
+      const u = por[uf];
+      if (!u) {
+        return h('div', caixa + `;padding:${U(.45)} ${U(.65)};`
+          + `color:${COR.fraco};font-size:${U(.85)}`,
+          h('b', `font-size:${U(1.2)};color:${COR.texto}`, uf.toUpperCase()),
+          ' sem dado');
+      }
+      const m = u.bloco_com_maioria;
+      const mb = u.maior_bancada;
+      const v = u.vagas || 1;
+      return h('div', caixa + `;padding:${U(.45)} ${U(.65)};display:flex;`
+        + `flex-direction:column;justify-content:center;gap:${U(.22)};`
+        + `min-width:0;min-height:0;border-left:${U(.3)} solid `
+        + (comIdeo && m ? COR_BLOCO[m] : COR.linha),
+        h('div', `display:flex;align-items:baseline;gap:${U(.4)}`,
+          h('span', `font-size:${U(1.2)};font-weight:800`, uf.toUpperCase()),
+          h('span', `flex:1;font-size:${U(.66)};color:${COR.fraco};${elipse}`,
+            `${NOME_UF[uf] || ''} · ${u.vagas} cadeiras`),
+          u.provisorios ? chip('provisório', COR.aberto) : null),
+        comIdeo ? barraBloco(u.por_bloco, v, U(.75), u.maioria) : null,
+        comIdeo ? h('div', `display:flex;justify-content:space-between;`
+          + `font-size:${U(.82)};font-variant-numeric:tabular-nums`,
+          ...['esquerda', 'centro', 'direita'].map(k => h('span',
+            `color:${COR_BLOCO[k]};font-weight:700`,
+            String(u.por_bloco[k].total)))) : null,
+        h('div', `display:flex;align-items:center;gap:${U(.3)};`
+          + `font-size:${U(.72)};color:${COR.fraco};min-width:0`,
+          comIdeo ? h('span', `flex:1;${elipse};`
+            + (m ? `color:${COR.texto}` : ''),
+            m ? `maioria: ${NOME_BLOCO[m].toLowerCase()}`
+              : 'sem maioria de bloco') : null,
+          mb ? bola(mb.partido.cor) : null,
+          mb ? h('span', `white-space:nowrap`,
+                 `${mb.partido.sigla} ${mb.total}`) : null));
+    };
+    const grade = h('div', `flex:1;min-height:0;display:grid;gap:${U(.5)};`
+      + 'grid-template-columns:repeat(7,minmax(0,1fr));'
+      + 'grid-template-rows:repeat(4,minmax(0,1fr))');
+    for (const [, lista] of REGIOES)
+      for (const uf of lista) grade.append(cartao(uf));
+    return h('div', `display:flex;flex-direction:column;gap:${U(.8)};`
+      + 'height:100%', topo, grade);
+  }
+
+
+  /* ---------------------------------------------------------------- blocos
+   * Os blocos ideológicos em todas as esferas, uma linha por esfera. `d` é a
+   * rota /blocos: nas disputas majoritárias a barra é de VOTOS; nas casas,
+   * de CADEIRAS; no quadro do país o governo dos estados conta ESTADOS, e o
+   * cinza é o que ainda está em disputa (2º turno). O traço branco marca a
+   * maioria onde ela existe. */
+  function blocos(d) {
+    const linha = l => {
+      const tot = l.total || 1;
+      const por = Object.fromEntries(ORDEM_BLOCO.map(
+        k => [k, {total: l.por_bloco[k] || 0}]));
+      const barra = barraBloco(por, tot, U(2.1), l.maioria || null);
+      if (l.em_disputa) {
+        barra.append(h('i', `display:block;width:${100 * l.em_disputa / tot}%;`
+          + 'background:repeating-linear-gradient(45deg,#4a5566 0 6px,'
+          + '#39414e 6px 12px)'));
+      }
+      const num = k => l.unidade === 'votos'
+        ? pct(100 * (l.por_bloco[k] || 0) / tot, 1)
+        : String(l.por_bloco[k] || 0);
+      const sit = l.situacao === 'eleito' || l.situacao === 'definido'
+        ? (l.quem.length > 1 ? 'eleitos' : 'eleito')
+        : l.situacao === 'segundo_turno' ? '2º turno'
+        : l.situacao === 'liderando' ? 'liderando' : null;
+      return h('div', caixa + `;padding:${U(.7)} ${U(1.1)};display:grid;`
+        + `grid-template-columns:${U(17)} 1fr;gap:${U(.3)} ${U(1.4)};`
+        + 'align-items:center;min-height:0',
+        h('div', 'min-width:0',
+          h('div', `font-size:${U(1.35)};font-weight:750;${elipse}`,
+            l.rotulo),
+          h('div', `font-size:${U(.72)};color:${COR.fraco};line-height:1.25`,
+            l.nota || ''),
+          sit && l.quem && l.quem.length ? h('div',
+            `display:flex;flex-wrap:wrap;align-items:center;gap:${U(.3)};`
+            + `margin-top:${U(.25)};font-size:${U(.8)}`,
+            chip(sit, l.situacao === 'segundo_turno' ? COR.turno
+                 : l.situacao === 'liderando' ? COR.aberto : COR.ok),
+            ...l.quem.map(q => h('span', `display:inline-flex;`
+              + `align-items:center;gap:${U(.25)}`,
+              bola(COR_BLOCO[q.bloco]), nomeProprio(q.nome),
+              h('span', `color:${COR.fraco};font-size:${U(.68)}`,
+                q.partido)))) : null),
+        h('div', 'min-width:0',
+          barra,
+          h('div', `display:flex;gap:${U(1.6)};margin-top:${U(.3)};`
+            + `font-size:${U(1.05)};align-items:baseline`,
+            ...['esquerda', 'centro', 'direita'].map(k => h('span', '',
+              h('b', `color:${COR_BLOCO[k]}`, NOME_BLOCO[k] + ' '),
+              h('b', `font-size:${U(1.25)};`
+                + 'font-variant-numeric:tabular-nums', num(k)),
+              l.unidade === 'votos' ? null : h('span',
+                `color:${COR.fraco};font-size:${U(.8)}`,
+                ` ${pct(100 * (l.por_bloco[k] || 0) / tot, 0)}`))),
+            l.em_disputa ? h('span', `color:${COR.fraco}`,
+              `em disputa ${l.em_disputa}`) : null,
+            l.por_bloco.sem_classificacao ? h('span', `color:${COR.fraco}`,
+              'sem classificação ' + (l.unidade === 'votos'
+                ? pct(100 * l.por_bloco.sem_classificacao / tot, 1)
+                : l.por_bloco.sem_classificacao)) : null,
+            h('span', `margin-left:auto;color:${COR.fraco};`
+              + `font-size:${U(.8)}`,
+              l.unidade === 'votos' ? `${fmt(l.total)} votos válidos`
+              : `${fmt(l.total)} ${l.unidade}`
+                + (l.maioria ? ` · maioria ${l.maioria}` : '')))));
+    };
+    return h('div', `display:grid;gap:${U(.7)};height:100%;`
+      + `grid-template-rows:repeat(${d.linhas.length},minmax(0,1fr))`,
+      d.linhas.map(linha));
+  }
+
+  /* Caixa da assembleia no resumo do estado: blocos e maiores bancadas. */
+  function caixaAssembleia(a, comIdeo) {
+    if (!a || !a.vagas) return null;
+    const ocup = a.eleitos + a.provisorios;
+    return h('div', caixa + `;padding:${U(.8)} ${U(1)};display:flex;`
+      + `flex-direction:column;gap:${U(.4)}`,
+      h('div', 'display:flex;justify-content:space-between;'
+        + 'align-items:baseline',
+        h('span', `font-size:${U(1.15)};font-weight:750`,
+          a.uf === 'df' ? 'Câmara Legislativa' : 'Assembleia'),
+        h('span', `font-size:${U(.85)};color:${COR.fraco}`,
+          `${a.eleitos} de ${a.vagas} eleitos`
+          + (a.provisorios ? ` · ${a.provisorios} provisórios` : '')
+          + ` · maioria ${a.maioria}`)),
+      comIdeo && ocup ? barraBloco(a.por_bloco, a.vagas, U(1), a.maioria)
+                      : null,
+      comIdeo && ocup ? h('div', `display:flex;gap:${U(1)};`
+        + `font-size:${U(.85)}`,
+        ...['esquerda', 'centro', 'direita'].map(k => h('span', '',
+          h('b', `color:${COR_BLOCO[k]}`, NOME_BLOCO[k] + ' '),
+          String(a.por_bloco[k].total)))) : null,
+      h('div', `display:flex;flex-wrap:wrap;gap:${U(.2)} ${U(.9)};`
+        + `font-size:${U(.85)}`,
+        ...a.partidos.slice(0, 6).map(p => h('span',
+          `display:inline-flex;align-items:center;gap:${U(.3)}`,
+          bola(p.partido.cor), p.partido.sigla,
+          h('b', '', String(p.total))))));
+  }
+
   function estado(d) {
     const votos = d.governador.votos;
     const total = votos ? votos.total : 0;
@@ -417,8 +617,11 @@ const TELAS = (() => {
       bloco('Governador', d.governador.apurado, d.governador.cands, {
         n: 4, grande: true, cores: d.cores, estados: d.governador.estados,
         turnoCerto: d.governador.turnoCerto, rodape: linhaVotos}),
-      deputados(d.camara, 14));
+      h('div', `display:flex;flex-direction:column;gap:${U(1.1)};`
+        + 'min-height:0',
+        deputados(d.camara, d.assembleia && d.assembleia.vagas ? 8 : 14),
+        caixaAssembleia(d.assembleia, d.comIdeo)));
   }
 
-  return {panorama, duelo, participacao, estado};
+  return {panorama, duelo, participacao, estado, assembleias, blocos};
 })();

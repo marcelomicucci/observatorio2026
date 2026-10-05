@@ -8,6 +8,7 @@ sozinho num reinício do coletor.
 
 from __future__ import annotations
 
+import collections
 import json
 import shutil
 from datetime import datetime, timezone
@@ -704,3 +705,65 @@ def test_roteiro_aceita_as_telas_de_resumo(cliente):
     r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [
         {"tipo": "estado"}]})
     assert r.status_code == 422
+
+
+def _uf_assembleia(uf, vagas, eleitos):
+    """`eleitos`: [(nome, votos, numero_do_partido, sigla)]."""
+    return {"uf": uf, "vagas": vagas, "andamento": "f",
+            "totalizacao_final": True, "apurado_pct": 100.0,
+            "gerado_em": "2026-10-05T11:48:53-03:00", "listas": [],
+            "eleitos": [{"nome": n, "numero": "1", "votos": v,
+                         "partido_numero": num, "partido_sigla": sg,
+                         "situacao": "Eleito por QP"}
+                        for n, v, num, sg in eleitos]}
+
+
+def test_assembleia_conta_cadeiras_por_partido_e_bloco():
+    """Deputado estadual (05/10/2026): o plenário de uma casa e o quadro
+    das 27, com o bloco ideológico de cada partido."""
+    from obs2026.politics import camara as CAM
+    blocos = {"13": "esquerda", "22": "direita", "15": "centro"}
+    ideo = lambda p: ({"bloco": blocos[p.numero], "cor": "#000"}  # noqa: E731
+                      if p.numero in blocos else None)
+    sp = _uf_assembleia("sp", 5, [("A", 90, "22", "PL"), ("B", 80, "22", "PL"),
+                                  ("C", 70, "22", "PL"), ("D", 60, "13", "PT"),
+                                  ("E", 50, "15", "MDB")])
+    a = CAM.assembleia(sp, PA.resolver, ideo)
+    assert a["vagas"] == 5 and a["maioria"] == 3 and a["eleitos"] == 5
+    assert [c["nome"] for c in a["cadeiras"]] == ["A", "B", "C", "D", "E"]
+    assert {b: v["total"] for b, v in a["por_bloco"].items()} == {
+        "esquerda": 1, "centro": 1, "direita": 3, "sem_classificacao": 0}
+    assert a["partidos"][0]["partido"]["sigla"] == "PL"
+    # casa incompleta: cadeira sem ocupante fica "aguardando"
+    rr = _uf_assembleia("rr", 3, [("X", 9, "13", "PT")])
+    b = CAM.assembleia(rr, PA.resolver, ideo)
+    assert [c["estado"] for c in b["cadeiras"]] == ["eleito", "aguardando",
+                                                    "aguardando"]
+    pais = CAM.assembleias({"sp": sp, "rr": rr}, PA.resolver, ideo)
+    assert pais["total"] == 8 and pais["eleitos"] == 6
+    por = {u["uf"]: u for u in pais["ufs"]}
+    assert por["sp"]["bloco_com_maioria"] == "direita"
+    assert por["rr"]["bloco_com_maioria"] is None      # 1 de 3 não é maioria
+    assert pais["por_bloco"]["direita"]["total"] == 3
+
+
+def test_deputado_distrital_so_no_df_e_estadual_fora_dele():
+    """O arquivo do cargo 7 do DF não existe (404): lá o cargo é o 8. Sem o
+    filtro por UF o coletor pediria 27 arquivos inexistentes a cada volta."""
+    from types import SimpleNamespace as NS
+    from obs2026.config import load_environment
+    from obs2026.tse.catalog import Catalog
+    from obs2026.tse.urls import UrlBuilder
+    env = load_environment("oficial2026")
+    urls = UrlBuilder(env.base, env.ambiente, env.ciclo, env.allowed_hosts)
+    ele = NS(cd="6259", turno="1", tem_cargo=lambda cd: cd in "35678")
+    cat = Catalog(env=env, urls=urls,
+                  ea11=NS(pleitos=[NS(eleicoes=[ele])]),
+                  ea12_por_eleicao={"6259": object()}, contests=())
+    alvos = collections.defaultdict(set)
+    for chave, _iv, t in cat.proporcional_targets():
+        alvos[chave].add(t.uf)
+    assert len(alvos["deputado_federal"]) == 27
+    assert alvos["deputado_distrital"] == {"df"}
+    assert len(alvos["deputado_estadual"]) == 26
+    assert "df" not in alvos["deputado_estadual"]

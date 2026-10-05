@@ -57,3 +57,24 @@ def chave(unit: str) -> str:
 def ano_de_referencia(ano_eleicao: int) -> int:
     """A eleição geral anterior: 2026 usa 2022; o teste de 2022 usa 2018."""
     return ano_eleicao - 4
+
+
+@lru_cache(maxsize=4)
+def economia(ano: int | None = None) -> dict[str, dict]:
+    """{"uf:mun": {"agro", "ind", "serv", "adm", "pib_mil"}} — a fatia de
+    cada setor no valor adicionado do município (IBGE, PIB dos Municípios;
+    `scripts/economia_ibge.py`). `agro` mede o peso da agropecuária; `adm`,
+    o da administração pública, que é quanto a economia local depende do
+    Estado. Sem `ano`, o mais recente em disco."""
+    if ano is None:
+        achados = sorted(PASTA.glob("economia_*.json"))
+        if not achados:
+            raise HistoricoAusente(
+                "sem perfil econômico; rode `python scripts/economia_ibge.py`")
+        p = achados[-1]
+    else:
+        p = PASTA / f"economia_{ano}.json"
+    if not p.exists():
+        raise HistoricoAusente(
+            f"{p} não existe; rode `python scripts/economia_ibge.py`")
+    return json.loads(p.read_text(encoding="utf-8"))["municipios"]

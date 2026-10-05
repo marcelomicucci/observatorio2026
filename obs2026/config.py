@@ -225,7 +225,12 @@ def load_environment(name: str, config_dir: Path = CONFIG_DIR) -> Environment:
         cargos=cargos,
         proporcionais={
             k: {"cd": str(v["cd"]),
-                "intervalo_s": float(v.get("intervalo_s", 120))}
+                "intervalo_s": float(v.get("intervalo_s", 120)),
+                # Onde o cargo existe: só nestas UFs, ou em todas menos
+                # aquelas. Vazio = as 27.
+                "ufs": tuple(str(u).lower() for u in v.get("ufs") or ()),
+                "exceto_ufs": tuple(str(u).lower()
+                                    for u in v.get("exceto_ufs") or ())}
             for k, v in (src.get("proporcionais") or {}).items()
         },
         aviso=e.get("aviso"),

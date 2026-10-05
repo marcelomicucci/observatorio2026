@@ -70,6 +70,8 @@ VARIANTES = {
     "base": (1.0, None), "k0.8": (0.8, None), "k0.65": (0.65, None),
     "k0.5": (0.5, None), "k0.4": (0.4, None),
     "inc10k": (1.0, 10_000.0), "inc10k+k0.65": (0.65, 10_000.0),
+    # Com o agro como segunda covariável do nível (terceiro campo).
+    "agro": (1.0, None, True), "agro+k0.8": (0.8, None, True),
 }
 
 
@@ -175,10 +177,12 @@ def _disputa(chave, munis, momentos, variantes):
         vo = validos(obs)
         to = sum(vo.values()) or 1
         for nome in variantes:
-            k, kinc = VARIANTES[nome]
+            k, kinc, *resto = VARIANTES[nome]
             kw = {"sigma_grupo_vazio": M.SIGMA_GRUPO_VAZIO * k}
             if kinc:
                 kw["k_inclinacao"] = kinc
+            if resto and resto[0]:
+                kw["agro"] = M.agro_por_municipio()
             units = M.build_m3(obs, cands, seats=vagas, **kw)
             p = S.SimConfig(n_sims=N_SIMS, seed=SEMENTE)
             cfg = replace(p, sigma_pref_nacional=p.sigma_pref_nacional * k,

@@ -253,6 +253,18 @@ def _alocar_inteiros(reais: np.ndarray, total: np.ndarray) -> np.ndarray:
     return base
 
 
+def estreitar(cfg: SimConfig, k: float) -> SimConfig:
+    """`cfg` com os choques de PREFERÊNCIA × `k` (nacional, UF e local).
+    Comparecimento e taxa de válidos não mudam: a folga medida em 2026 é da
+    fatia de cada candidato, não do volume de votos — esse o modelo acerta
+    (erro de +0,6% no voto que faltava)."""
+    from dataclasses import replace
+    return cfg if k == 1.0 else replace(
+        cfg, sigma_pref_nacional=cfg.sigma_pref_nacional * k,
+        sigma_pref_uf=cfg.sigma_pref_uf * k,
+        sigma_pref_local=cfg.sigma_pref_local * k)
+
+
 def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
         *, seats: int = 1, senado: bool = False,
         comparecentes_pendentes_cap: bool = True) -> Forecast:

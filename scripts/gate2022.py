@@ -138,6 +138,10 @@ def main() -> None:
                     help="sempre inclui m0 (a referência)")
     ap.add_argument("--so-uf", action="append",
                     help="só estas UFs (teste rápido); sem presidente")
+    ap.add_argument("--nome", default=None,
+                    help="nome da saída. Rodada exploratória (variantes de "
+                         "largura, por exemplo) NÃO pode gravar em "
+                         "`gate2022`: é a evidência que a homologação lê.")
     a = ap.parse_args()
     t0 = time.time()
     modelos = tuple(dict.fromkeys(["m0"] + [m.strip() for m in
@@ -168,7 +172,7 @@ def main() -> None:
     # Topo do arquivo = M2 (compatível com a leitura antiga); cada modelo
     # tem o seu em `por_modelo`, e a homologação lê o do modelo em produção.
     topo = por_modelo.get("m2") or next(iter(por_modelo.values()))
-    nome = "gate2022" + ("-teste" if a.so_uf else "")
+    nome = a.nome or ("gate2022" + ("-teste" if a.so_uf else ""))
     E.SAIDA.mkdir(parents=True, exist_ok=True)
     (E.SAIDA / f"{nome}.json").write_text(json.dumps(
         {**topo, "por_modelo": por_modelo, "detalhe": disputas},

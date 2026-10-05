@@ -33,7 +33,7 @@ from . import territorio
 #: (`operacao.modelo_ativo()`), relido a cada projeção.
 MODELO_PADRAO = "m2"
 VERSOES = {"m0": "m0-0.1", "m1": "m1-0.1", "m2": "m2-0.1", "m3": "m3-0.1",
-           "m31": "m31-0.1", "m32": "m32-0.1"}
+           "m31": "m31-0.1", "m32": "m32-0.1", "m33": "m33-0.1"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,12 +206,14 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
     model_version = model_version or VERSOES[modelo]
     build = {"m0": M.build_m0, "m1": M.build_m1, "m2": M.build_m2,
              "m3": M.build_m3, "m31": M.build_m31,
-             "m32": M.build_m32}[modelo]
+             "m32": M.build_m32, "m33": M.build_m33}[modelo]
     units = build(obs, candidatos, seats=ctx.vagas)
     cfg = S.SimConfig(
         n_sims=n_sims or int(thr.monte_carlo.get("n_sims", 5000)),
         seed=int(thr.monte_carlo.get("seed", 20261004)),
     )
+    if modelo == "m33":
+        cfg = S.estreitar(cfg, M.FATOR_M33)
     fc = S.run(units, candidatos, cfg, seats=ctx.vagas,
                senado=ctx.vagas > 1)
 

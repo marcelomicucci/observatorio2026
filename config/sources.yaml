@@ -129,10 +129,23 @@ allowed_hosts:
 # nenhum arquivo municipal. Não viram disputa no banco nem no motor: vão para
 # o arquivo bruto e a composição da Câmara é lida de lá (politics/camara.py).
 # Custo: 27 arquivos / 120 s = 0,23 req/s.
+#
+# Deputado estadual entrou em 05/10/2026, para a composição das 27
+# assembleias. No DF o cargo é outro: 8 (Deputado Distrital) — o arquivo do
+# cargo 7 do DF não existe e responde 404. Por isso `ufs` / `exceto_ufs`:
+# sem o filtro, cada volta pediria 27 arquivos que não existem.
 proporcionais:
   deputado_federal:
     cd: "6"
     intervalo_s: 120
+  deputado_estadual:
+    cd: "7"
+    intervalo_s: 120
+    exceto_ufs: ["df"]
+  deputado_distrital:
+    cd: "8"
+    intervalo_s: 120
+    ufs: ["df"]
 
 # Cargos de interesse do produto. `cd` vem do EA11 (carg/cp), não é inventado.
 # nv (vagas) é lido do payload EA20 e confrontado com `expected_seats`.

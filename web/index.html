@@ -222,6 +222,10 @@ const CARGOS = [
   // Proporcional: sem projeção, sem disputa no banco — visão própria.
   {cd: '6', nome: 'Deputado federal', abr: 'uf', vagas: null,
    proporcional: true},
+  // As 27 assembleias: visão própria, como a da Câmara. `estadual` e não
+  // `proporcional`, que no resto do painel quer dizer "Câmara".
+  {cd: '7', nome: 'Deputado estadual', abr: 'uf', vagas: null,
+   estadual: true},
   // Não é cargo: a tela de recordes da noite, com todos os cargos.
   {cd: 'rec', nome: 'Recordes', abr: 'br', vagas: null, especial: true},
 ];
@@ -327,6 +331,13 @@ function mostrarNoTelaoAgora() {
   if (cargoAtual().especial) {
     canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'recordes',
       titulo: 'Recordes da noite'}});
+    return;
+  }
+  if (cargoAtual().estadual) {
+    canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'composicao',
+      casa: 'assembleia', uf: st.uf || null, municipio: null, eleicao: null,
+      titulo: st.uf ? `Assembleia — ${st.uf.toUpperCase()}`
+                    : 'Assembleias — os 27 estados'}});
     return;
   }
   if (cargoAtual().proporcional || (cargoAtual().cd === '5' && !st.uf)) {
@@ -511,6 +522,11 @@ function whatsappDestaTela() {
         + 'roteiro — aba Telão, botão "WhatsApp: roteiro inteiro".');
     return;
   }
+  if (cargo.estadual) {
+    alert('As assembleias vão para o WhatsApp pelas telas de assembleia do '
+        + 'roteiro — aba Telão, botão "WhatsApp: roteiro inteiro".');
+    return;
+  }
   if (cargo.abr === 'uf' && !st.uf) {
     alert(`${cargo.nome} é decidido em cada estado. Escolha a UF antes.`);
     return;
@@ -618,6 +634,10 @@ const ROTEIRO = {
         + ' — os 27 estados';
     }
     if (it.tipo === 'duelo') return 'Presidente — estado a estado';
+    if (it.tipo === 'blocos') {
+      return 'Blocos nas esferas — '
+        + (it.uf ? it.uf.toUpperCase() : 'Brasil');
+    }
     if (it.tipo === 'participacao') {
       const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
       return `${c.nome} — ausentes, brancos e nulos`
@@ -642,6 +662,10 @@ const ROTEIRO = {
     if (it.tipo === 'composicao') {
       if (it.casa === 'camara' && it.uf)
         return `Deputados federais — ${it.uf.toUpperCase()}`;
+      if (it.casa === 'assembleia') {
+        return it.uf ? `Assembleia — ${it.uf.toUpperCase()}`
+                     : 'Assembleias — os 27 estados';
+      }
       return it.casa === 'camara' ? 'Câmara — composição'
                                   : 'Senado — composição';
     }
@@ -690,6 +714,15 @@ const ROTEIRO = {
 
 async function enviarParaLista() {
   const cargo = cargoAtual();
+  if (cargo.estadual) {
+    await ROTEIRO.garantir();
+    ROTEIRO.itens.push({tipo: 'composicao', casa: 'assembleia',
+      abrangencia: null, cargo: '1', uf: st.uf || null, municipio: null,
+      municipio_nome: null, camada: 'lider', segundos: 25, titulo: null});
+    ROTEIRO.guardar();
+    navegacao();
+    return;
+  }
   if ((st.visao || '') === 'comparar') {
     const resumo = st.resumo === '1';
     const cd = resumo ? 'R' : cargo.proporcional ? '6'
@@ -820,6 +853,9 @@ function editorRoteiro() {
       ['Senado: composição', {tipo: 'composicao', casa: 'senado'}],
       ['Câmara: composição', {tipo: 'composicao', casa: 'camara'}],
       ['Recordes da noite', {tipo: 'recordes'}],
+      ['Blocos nas esferas: Brasil', {tipo: 'blocos'}],
+      ['Assembleias: os 27 estados',
+       {tipo: 'composicao', casa: 'assembleia'}],
       ['Governadores: os 27 estados', {tipo: 'panorama', cargo: '3'}],
       ['Senadores: os 27 estados', {tipo: 'panorama', cargo: '5'}],
       ['Presidente: estado a estado', {tipo: 'duelo', cargo: '1'}],
@@ -829,6 +865,10 @@ function editorRoteiro() {
       ...(st.uf ? [
         [`Resumo do estado: ${st.uf.toUpperCase()}`,
          {tipo: 'estado', uf: st.uf}],
+        [`Assembleia: ${st.uf.toUpperCase()}`,
+         {tipo: 'composicao', casa: 'assembleia', uf: st.uf}],
+        [`Blocos nas esferas: ${st.uf.toUpperCase()}`,
+         {tipo: 'blocos', uf: st.uf}],
         [`Governador ${st.uf.toUpperCase()}: ausentes, brancos e nulos`,
          {tipo: 'participacao', cargo: '3', uf: st.uf}],
       ] : []),
@@ -1014,7 +1054,7 @@ function eleicaoPedida() {
   if (!st.ano || st.ano === '2026') return null;
   if (!VISOES_COM_ANO.has(st.visao || 'resultado')) return null;
   const c = cargoAtual();
-  if (c.especial) return null;
+  if (c.especial || c.estadual) return null;
   const turno = (c.cd === '5' || c.proporcional) ? '1' : (st.turno || '2');
   return `tse${st.ano}t${turno}`;
 }
@@ -1053,7 +1093,7 @@ async function anosCongelados() {
 function seletorAno() {
   const visao = st.visao || 'resultado';
   const c = cargoAtual();
-  if (c.especial) return null;
+  if (c.especial || c.estadual) return null;
   const caixa = el('span', {style: 'display:inline-flex;gap:6px;'
     + 'align-items:center;margin-left:auto;font-size:12.5px;'
     + 'color:var(--muted)'});
@@ -1129,6 +1169,10 @@ function navegacao() {
     if (cargo.proporcional) {
       kids.push(el('span', {}, '· composição nacional da Câmara; a UF '
                                + 'mostra os eleitos dela'));
+    }
+    if (cargo.estadual && !st.uf) {
+      kids.push(el('span', {}, '· as 27 assembleias; a UF abre o plenário '
+                               + 'dela'));
     }
     if (cargo.cd === '5' && !st.uf) {
       kids.push(el('span', {}, '· composição do Senado; a UF abre a '
@@ -2494,7 +2538,25 @@ async function viewConfig() {
       botao('Abrir telão ↗', abrirTelao),
       el('div', {cls: 'nota'}, 'Recarregar relê a página do projetor — '
         + 'útil depois de assinar a classificação ou trocar cores. O '
-        + 'roteiro continua o gravado, na aba Telão.'));
+        + 'roteiro continua o gravado, na aba Telão.'),
+      el('div', {style: 'margin-top:10px'},
+        el('b', {}, 'Faixa de alertas no pé do telão: '),
+        botao('Ligada (últimos 40 min)', () => {
+          comandarTelao('alertas:recentes');
+          aviso('Faixa ligada: novidades dos últimos 40 minutos.');
+        }),
+        botao('Todas, de qualquer hora', () => {
+          comandarTelao('alertas:tudo');
+          aviso('Faixa mostrando as últimas novidades, de qualquer hora.');
+        }),
+        botao('Desligada', () => {
+          comandarTelao('alertas:0');
+          aviso('Faixa de alertas desligada.');
+        })),
+      el('div', {cls: 'nota'}, 'As novidades saem do diário de projeções: '
+        + 'matematicamente eleito, 2º turno definido, vencedor ou 2º turno '
+        + 'projetado e 100% apurado. A escolha fica guardada no navegador '
+        + 'do telão.'));
   }
 
   function secaoPartidos() {
@@ -2753,6 +2815,183 @@ async function viewConfig() {
  * no banco: os 27 arquivos de UF vêm do arquivo bruto pela rota de
  * composição. Por isso esta aba tem visão própria, e as de projeção,
  * convergência e auditoria não se aplicam a ela. */
+/* ------------------------------------------------------ deputado estadual
+ *
+ * As 27 assembleias (05/10/2026). Como deputado federal: só o resultado do
+ * TSE, sem projeção, lido do arquivo bruto pela rota de composição. Sem UF,
+ * o quadro do país por bloco; com UF, o plenário daquela casa e os eleitos.
+ * No DF a casa é a Câmara Legislativa e o cargo, deputado distrital. */
+const COR_BLOCO_PAINEL = {esquerda: '#C62828', centro: '#F2C94C',
+                          direita: '#1565C0', sem_classificacao: '#59636e'};
+function barraBlocosPainel(por, total, marca) {
+  const b = el('div', {style: 'position:relative;display:flex;height:14px;'
+    + 'border-radius:4px;overflow:hidden;background:#2a313d;min-width:120px'});
+  for (const k of ['esquerda', 'centro', 'direita', 'sem_classificacao']) {
+    const n = (por[k] || {}).total || 0;
+    if (n) b.append(el('i', {style: `display:block;width:${100 * n / total}%;`
+      + `background:${COR_BLOCO_PAINEL[k]}`}));
+  }
+  if (marca) b.append(el('i', {style: 'position:absolute;top:0;bottom:0;'
+    + `left:${100 * marca / total}%;width:2px;background:#f2f5f9`}));
+  return b;
+}
+
+async function viewAssembleias() {
+  const r = await get('/composicao?casa=assembleia'
+    + (st.uf ? `&uf=${st.uf}` : ''));
+  rodape(r);
+  const d = r.dados;
+  const comIdeo = d.classificacao.estado === 'disponivel';
+  const out = [];
+  const numBloco = (por, k) => el('span', {style:
+    `color:${COR_BLOCO_PAINEL[k]};font-weight:700`}, String(por[k].total));
+
+  if (!st.uf) {
+    if (!(d.ufs || []).length) {
+      return el('div', {cls: 'estado'}, r.status_motivo
+        || 'Nenhum arquivo de deputado estadual coletado ainda.');
+    }
+    const tot = d.total || 1;
+    out.push(el('div', {cls: 'resumo'},
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Cadeiras'),
+        el('div', {cls: 'v'}, fmt(d.total)),
+        el('div', {cls: 'n'}, `em ${d.ufs_com_dado} casas`)),
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Eleitos segundo o TSE'),
+        el('div', {cls: 'v'}, fmt(d.eleitos)),
+        el('div', {cls: 'n'}, d.provisorios
+          ? `${fmt(d.provisorios)} vagas provisórias`
+          : `${d.ufs_encerradas} casas encerradas`)),
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Maior bancada do país'),
+        el('div', {cls: 'v'}, d.partidos.length
+          ? `${d.partidos[0].partido.sigla} ${d.partidos[0].total}` : '—'),
+        el('div', {cls: 'n'}, d.partidos.length
+          ? `em ${d.partidos[0].assembleias} casas` : ''))));
+    out.push(el('div', {cls: 'nota'}, el('b', {}, 'Só o resultado. '),
+      d.nota));
+    if (comIdeo) {
+      out.push(el('h2', {}, 'O país por bloco'),
+        barraBlocosPainel(d.por_bloco, tot),
+        el('div', {style: 'display:flex;gap:18px;margin:6px 0 14px;'
+          + 'font-size:13px'},
+          ...['esquerda', 'centro', 'direita'].map(k => el('span', {},
+            el('b', {style: `color:${COR_BLOCO_PAINEL[k]}`},
+              k[0].toUpperCase() + k.slice(1) + ' '),
+            `${fmt(d.por_bloco[k].total)} (${pct(100 * d.por_bloco[k].total
+              / tot, 1)})`))));
+    }
+    out.push(el('h2', {}, 'As 27 casas'),
+      el('div', {cls: 'nota'}, 'Clique num estado para abrir o plenário '
+        + 'dele. O traço branco marca a maioria da casa.'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'UF'),
+        el('th', {cls: 'num'}, 'Cadeiras'),
+        comIdeo ? el('th', {}, 'Blocos') : null,
+        comIdeo ? el('th', {cls: 'num'}, 'Esq.') : null,
+        comIdeo ? el('th', {cls: 'num'}, 'Centro') : null,
+        comIdeo ? el('th', {cls: 'num'}, 'Dir.') : null,
+        comIdeo ? el('th', {}, 'Maioria de bloco') : null,
+        el('th', {}, 'Maior bancada'))),
+        el('tbody', {}, ...d.ufs.map(u => el('tr', {
+            style: 'cursor:pointer',
+            onclick: () => { st.uf = u.uf; }},
+          el('td', {}, el('b', {}, u.uf.toUpperCase())),
+          el('td', {cls: 'num'}, String(u.vagas)),
+          comIdeo ? el('td', {}, barraBlocosPainel(u.por_bloco,
+            u.vagas || 1, u.maioria)) : null,
+          comIdeo ? el('td', {cls: 'num'}, numBloco(u.por_bloco,
+                                                    'esquerda')) : null,
+          comIdeo ? el('td', {cls: 'num'}, numBloco(u.por_bloco,
+                                                    'centro')) : null,
+          comIdeo ? el('td', {cls: 'num'}, numBloco(u.por_bloco,
+                                                    'direita')) : null,
+          comIdeo ? el('td', {}, u.bloco_com_maioria
+            || el('span', {cls: 'null'}, 'nenhum')) : null,
+          el('td', {}, u.maior_bancada ? el('span', {},
+            el('span', {cls: 'sw', style: 'margin-right:6px;background:'
+              + u.maior_bancada.partido.cor}),
+            `${u.maior_bancada.partido.sigla} ${u.maior_bancada.total}`)
+            : '—'))))));
+    out.push(el('h2', {}, 'Bancadas somadas'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Partido'),
+        el('th', {cls: 'num'}, 'Cadeiras'), el('th', {cls: 'num'}, 'Casas'),
+        el('th', {}, 'Ideologia'))),
+        el('tbody', {}, ...d.partidos.map(p => el('tr', {},
+          el('td', {}, el('span', {cls: 'sw', style:
+            `background:${p.partido.cor};margin-right:6px`}),
+            p.partido.sigla),
+          el('td', {cls: 'num'}, el('b', {}, String(p.total))),
+          el('td', {cls: 'num'}, String(p.assembleias)),
+          el('td', {}, p.ideologia ? p.ideologia.rotulo
+                                   : el('span', {cls: 'null'}, '—')))))));
+    return el('div', {}, ...out);
+  }
+
+  const UF = st.uf.toUpperCase();
+  const casa = st.uf === 'df' ? 'Câmara Legislativa' : 'Assembleia Legislativa';
+  if (!d.vagas) {
+    return el('div', {cls: 'estado'},
+      `Arquivo de deputado estadual de ${UF} ainda não coletado.`);
+  }
+  out.push(el('div', {cls: 'resumo'},
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, casa + ' — ' + UF),
+      el('div', {cls: 'v'}, `${d.eleitos}/${d.vagas}`),
+      el('div', {cls: 'n'}, 'eleitos segundo o TSE')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Maioria'),
+      el('div', {cls: 'v'}, String(d.maioria)),
+      el('div', {cls: 'n'}, `3/5: ${Math.ceil(d.vagas * 3 / 5)}`)),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Maior bancada'),
+      el('div', {cls: 'v'}, d.partidos.length
+        ? `${d.partidos[0].partido.sigla} ${d.partidos[0].total}` : '—'),
+      el('div', {cls: 'n'}, `${d.partidos.length} partidos com cadeira`))));
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Só o resultado. '), d.nota));
+  if (d.provisorios) {
+    out.push(el('div', {cls: 'nota aten'}, el('b', {}, 'Provisório. '),
+      `${d.provisorios} cadeiras são as vagas que o TSE já distribuiu às `
+      + 'listas, com os mais votados de cada uma. Mudam a cada boletim.'));
+  }
+  if (typeof POLITICO !== 'undefined') {
+    const caixa = el('div', {style: 'background:#0b0e13;border:1px solid '
+      + 'var(--line);border-radius:var(--radius);padding:10px;'
+      + 'max-width:760px'});
+    caixa.append(POLITICO.hemiciclo(d.cadeiras, {largura: 1000, altura: 540,
+      comIdeologia: comIdeo, maioria: d.maioria, centro: String(d.vagas),
+      subcentro: `maioria ${d.maioria}`}));
+    out.push(caixa);
+  }
+  if (comIdeo) {
+    out.push(el('div', {style: 'max-width:760px;margin-top:10px'},
+      barraBlocosPainel(d.por_bloco, d.vagas, d.maioria)),
+      el('div', {style: 'display:flex;gap:18px;margin:6px 0 4px;'
+        + 'font-size:13px'},
+        ...['esquerda', 'centro', 'direita'].map(k => el('span', {},
+          el('b', {style: `color:${COR_BLOCO_PAINEL[k]}`},
+            k[0].toUpperCase() + k.slice(1) + ' '),
+          String(d.por_bloco[k].total)))));
+  }
+  out.push(el('h2', {}, 'Bancadas'),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Partido'),
+      el('th', {cls: 'num'}, 'Cadeiras'), el('th', {}, 'Ideologia'))),
+      el('tbody', {}, ...d.partidos.map(p => el('tr', {},
+        el('td', {}, el('span', {cls: 'sw', style:
+          `background:${p.partido.cor};margin-right:6px`}), p.partido.sigla),
+        el('td', {cls: 'num'}, el('b', {}, String(p.total))),
+        el('td', {}, p.ideologia ? p.ideologia.rotulo
+                                 : el('span', {cls: 'null'}, '—')))))));
+  const nomes = d.cadeiras.filter(c => c.nome);
+  out.push(el('h2', {}, `Deputados — ${UF}`),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {cls: 'num'}, '#'),
+      el('th', {}, 'Nome'), el('th', {}, 'Partido'),
+      el('th', {cls: 'num'}, 'Votos'), el('th', {}, 'Situação'))),
+      el('tbody', {}, ...nomes.map((c, i) => el('tr', {},
+        el('td', {cls: 'num'}, String(i + 1)),
+        el('td', {}, c.nome),
+        el('td', {}, el('span', {cls: 'sw', style:
+          `background:${c.partido.cor};margin-right:6px`}), c.partido.sigla),
+        el('td', {cls: 'num'}, fmt(c.votos)),
+        el('td', {}, c.estado === 'eleito' ? 'eleito'
+          : el('span', {cls: 'null'}, 'provisório')))))));
+  return el('div', {}, ...out);
+}
+
 async function viewCamara() {
   const q = st.uf ? `&uf=${st.uf}` : '';
   const r = await get(`/composicao?casa=camara${q}`);
@@ -3775,6 +4014,8 @@ function escolherVisao() {
   if (cargoAtual().proporcional && visao !== 'telao' && visao !== 'config'
       && visao !== 'comparar')
     return viewCamara;
+  if (cargoAtual().estadual && visao !== 'telao' && visao !== 'config')
+    return viewAssembleias;
   return {resultado: viewResultado, mapa: viewMapa,
           projecao: viewProjecao, auditoria: viewAuditoria,
           convergencia: viewConvergencia, telao: viewTelao,

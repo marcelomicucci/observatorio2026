@@ -34,6 +34,9 @@ from ..storage.raw import RawArchive, SnapshotRef
 from ..tse.parsers.common import fold, parse_dt
 
 CARGO_DEP_FEDERAL = "6"
+#: Assembleias legislativas (05/10/2026): deputado estadual é o cargo 7; no
+#: DF a casa é a Câmara Legislativa e o cargo é o 8, deputado distrital.
+CARGOS_ASSEMBLEIA = ("7", "8")
 TOTAL_CADEIRAS = 513
 
 
@@ -145,6 +148,9 @@ class LeitorCamara:
     deslocamento de cada dia e continua de onde parou."""
 
     archive: RawArchive
+    #: Cargos lidos. O padrão é a Câmara; `CARGOS_ASSEMBLEIA` lê as 27
+    #: assembleias com o mesmo leitor — o arquivo tem o mesmo formato.
+    cargos: tuple[str, ...] = (CARGO_DEP_FEDERAL,)
     _pos: dict[str, int] = field(default_factory=dict)
     _ultimo: dict[str, SnapshotRef] = field(default_factory=dict)
     _resumo: dict[str, tuple[str, dict]] = field(default_factory=dict)
@@ -155,7 +161,7 @@ class LeitorCamara:
             for ref, fim in self.archive.manifest_desde(
                     dia, self._pos.get(dia, 0)):
                 self._pos[dia] = fim
-                if (ref.kind != "ea20" or ref.cargo != CARGO_DEP_FEDERAL
+                if (ref.kind != "ea20" or ref.cargo not in self.cargos
                         or not ref.uf or ref.mun or not ref.path
                         or ref.status != 200):
                     continue
@@ -273,4 +279,105 @@ def em_formacao(por_uf: dict[str, dict], resolver, ideologia) -> dict:
                  "distribuídas pelo TSE às listas com os votos contados até "
                  "agora, ocupadas pelos mais votados de cada lista. "
                  "Provisório: muda a cada boletim. Não é projeção."),
+    }
+
+
+# ------------------------------------------------------------ assembleias ---
+
+BLOCOS = ("esquerda", "centro", "direita", "sem_classificacao")
+
+
+def ocupantes(r: dict) -> list[tuple[dict, str]]:
+    """Quem ocupa as cadeiras de uma casa numa UF: os eleitos do TSE ou,
+    enquanto ele não os marca, os mais votados de cada lista dentro das
+    vagas que o próprio TSE distribuiu — provisório, sem projeção."""
+    if r["eleitos"]:
+        return [(c, "eleito") for c in r["eleitos"]]
+    return [(c, "provisorio") for x in r.get("listas") or []
+            for c in x["candidatos"]
+            if c["dentro_das_vagas"] and c["votos"] > 0]
+
+
+def assembleia(r: dict, resolver, ideologia) -> dict:
+    """Composição de UMA assembleia: cadeiras (para o hemiciclo), bancadas e
+    blocos. `ideologia(partido)` devolve a classificação ou None."""
+    vagas = r.get("vagas") or 0
+    partidos: dict[str, dict] = {}
+    blocos = {b: {"total": 0} for b in BLOCOS}
+    cadeiras = []
+    for c, tipo in sorted(ocupantes(r), key=lambda x: -x[0]["votos"]):
+        p = resolver(c["partido_numero"], c["partido_sigla"])
+        ideo = ideologia(p)
+        k = p.numero if p.cadastrado else f"?{p.sigla}"
+        d = partidos.setdefault(k, {"partido": p.as_dict(), "ideologia": ideo,
+                                    "eleito": 0, "provisorio": 0, "total": 0})
+        d[tipo] += 1
+        d["total"] += 1
+        blocos[(ideo or {}).get("bloco") or "sem_classificacao"]["total"] += 1
+        cadeiras.append({
+            "partido": p.as_dict(), "ideologia": ideo,
+            "estado": "eleito" if tipo == "eleito" else "liderando",
+            "nome": c["nome"], "votos": c["votos"]})
+    ocupadas = len(cadeiras)
+    for _ in range(max(0, vagas - ocupadas)):
+        cadeiras.append({"partido": None, "ideologia": None,
+                         "estado": "aguardando"})
+    return {
+        "uf": r.get("uf"), "vagas": vagas,
+        "maioria": vagas // 2 + 1 if vagas else None,
+        "eleitos": sum(d["eleito"] for d in partidos.values()),
+        "provisorios": sum(d["provisorio"] for d in partidos.values()),
+        "andamento": r.get("andamento"),
+        "totalizacao_final": r.get("totalizacao_final"),
+        "apurado_pct": r.get("apurado_pct"),
+        "gerado_em": r.get("gerado_em"),
+        "cadeiras": cadeiras[:vagas] if vagas else cadeiras,
+        "por_bloco": blocos,
+        "partidos": sorted(partidos.values(),
+                           key=lambda d: (-d["total"], d["partido"]["sigla"])),
+    }
+
+
+def assembleias(por_uf: dict[str, dict], resolver, ideologia) -> dict:
+    """As 27 assembleias: o quadro de cada uma (sem os nomes) e a soma do
+    país por partido e por bloco."""
+    ufs = []
+    partidos: dict[str, dict] = {}
+    blocos = {b: {"total": 0} for b in BLOCOS}
+    for uf in sorted(por_uf):
+        a = assembleia(por_uf[uf], resolver, ideologia)
+        for b in BLOCOS:
+            blocos[b]["total"] += a["por_bloco"][b]["total"]
+        for d in a["partidos"]:
+            k = d["partido"]["numero"] or d["partido"]["sigla"]
+            t = partidos.setdefault(k, {"partido": d["partido"],
+                                        "ideologia": d["ideologia"],
+                                        "eleito": 0, "provisorio": 0,
+                                        "total": 0, "assembleias": 0})
+            for campo in ("eleito", "provisorio", "total"):
+                t[campo] += d[campo]
+            t["assembleias"] += 1
+        maior = max((b for b in ("esquerda", "centro", "direita")),
+                    key=lambda b: a["por_bloco"][b]["total"])
+        ufs.append({k: a[k] for k in (
+            "uf", "vagas", "maioria", "eleitos", "provisorios", "andamento",
+            "apurado_pct", "por_bloco")} | {
+            "maior_bancada": a["partidos"][0] if a["partidos"] else None,
+            "bloco_maior": maior if a["por_bloco"][maior]["total"] else None,
+            "bloco_com_maioria": next(
+                (b for b in ("esquerda", "centro", "direita")
+                 if a["maioria"] and a["por_bloco"][b]["total"]
+                 >= a["maioria"]), None)})
+    ult = [r.get("gerado_em") for r in por_uf.values() if r.get("gerado_em")]
+    return {
+        "total": sum(u["vagas"] for u in ufs),
+        "eleitos": sum(u["eleitos"] for u in ufs),
+        "provisorios": sum(u["provisorios"] for u in ufs),
+        "ufs_com_dado": len(ufs),
+        "ufs_encerradas": sum(1 for u in ufs if u["andamento"] == "f"),
+        "por_bloco": blocos,
+        "partidos": sorted(partidos.values(),
+                           key=lambda d: (-d["total"], d["partido"]["sigla"])),
+        "ufs": ufs,
+        "fonte_gerada_em": max(ult) if ult else None,
     }

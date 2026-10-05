@@ -64,6 +64,18 @@ MODELOS = {
             "de 2022 (22/09): vence o M0 nas 18 rodadas, cobertura 81%."),
         "recomendado": True,
     },
+    "m33": {
+        "nome": "M3.3 — M3 com a faixa 20% mais estreita",
+        "descricao": (
+            "O número central do M3, com os choques de preferência do "
+            "simulador × 0,8. Na noite real do 1º turno de 2026 a faixa de "
+            "80% do M3 conteve o resultado em 96–100% dos casos: larga "
+            "demais. Com 0,8 ficou em 92–100% em 2026, 76% em 2022 e "
+            "74–76% em 2018 — o maior estreitamento que passa nas três. "
+            "Faixas menores decidem as probabilidades mais cedo. A rever "
+            "depois do 2º turno."),
+        "recomendado": False,
+    },
     "m31": {
         "nome": "M3.1 — M3 + resposta à inclinação por bloco (em teste)",
         "descricao": (
@@ -119,7 +131,8 @@ CABECALHO = """\
 # coletor e do servidor, sem reiniciar. A versão anterior de cada gravação
 # fica em config/operacao.anterior/.
 #
-#   modelo_projecao            m2 | m3 | m31 | m32 | m1 | m0  (m0 só referência)
+#   modelo_projecao            m2 | m3 | m33 | m31 | m32 | m1 | m0
+#                              (m0 só referência)
 #   coleta.pular_finalizados   não busca de novo o que o TSE finalizou;
 #                              segue vigiando pelo EA14/EA15
 #   coleta.deputados_federais  busca os 27 arquivos de UF de deputado

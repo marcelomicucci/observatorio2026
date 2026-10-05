@@ -75,8 +75,10 @@ TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo",
          #   participacao  ausentes, brancos e nulos de um cargo
          #   estado        resumo de uma UF: presidente, governador,
          #                 senadores e deputados federais
-         "panorama", "duelo", "participacao", "estado")
-CASAS = ("senado", "camara")
+         #   blocos        os blocos ideológicos em todas as esferas —
+         #                 do país ou, com `uf`, de um estado
+         "panorama", "duelo", "participacao", "estado", "blocos")
+CASAS = ("senado", "camara", "assembleia")
 #: Nomes de antes da fusão das camadas do mapa. Continuam aceitos para que
 #: nenhum roteiro já escrito quebre, mas são traduzidos aqui — o telão
 #: recebe sempre o nome atual. Sem isto, `cobertura` chegava ao mapa como
@@ -238,12 +240,15 @@ def register(app) -> None:
                         "`obs2026 montar-ano`")
             elif tipo == "composicao":
                 if casa not in CASAS:
-                    erro = ("tela de composição exige `casa: senado` ou "
-                            "`casa: camara`")
+                    erro = ("tela de composição exige `casa: senado`, "
+                            "`casa: camara` ou `casa: assembleia`")
                 # Câmara com `uf`: a lista de deputados daquele estado
                 # (04/10/2026). No Senado a UF não significa nada.
                 cd, cargo_nome = None, ""
-                if casa != "camara" or uf not in UF_DISPUTAS:
+                # Assembleia com `uf`: o plenário daquele estado; sem,
+                # o quadro das 27.
+                if casa not in ("camara", "assembleia") \
+                        or uf not in UF_DISPUTAS:
                     uf = None
             elif tipo == "recordes":
                 # Nacional, sem cargo: junta governador, senador, deputado e
@@ -253,6 +258,10 @@ def register(app) -> None:
                 cd, cargo_nome = None, ""
                 if uf not in UF_DISPUTAS:
                     erro = "resumo do estado exige `uf`"
+            elif tipo == "blocos":
+                cd, cargo_nome = None, ""
+                if uf not in UF_DISPUTAS:
+                    uf = None
             elif tipo == "panorama":
                 uf = None
                 if cd not in ("3", "5"):
@@ -328,6 +337,9 @@ def register(app) -> None:
                 titulo = "Recordes da noite"
             elif tipo == "estado":
                 titulo = f"Resumo do estado — {(uf or '').upper()}"
+            elif tipo == "blocos":
+                titulo = ("Blocos nas esferas — "
+                          + (uf.upper() if uf else "Brasil"))
             elif tipo == "panorama":
                 titulo = ("Governadores" if cd == "3" else "Senadores")                     + " — os 27 estados"
             elif tipo == "duelo":
@@ -345,6 +357,9 @@ def register(app) -> None:
                           + " ao longo das eleições")
             elif tipo == "composicao":
                 titulo = ("Senado — composição" if casa == "senado"
+                          else (f"Assembleia — {uf.upper()}" if uf
+                                else "Assembleias — os 27 estados")
+                          if casa == "assembleia"
                           else f"Deputados federais — {uf.upper()}" if uf
                           else "Câmara — composição")
             elif tipo == "politico":
@@ -451,7 +466,7 @@ def register(app) -> None:
                 d["tipo"] = tipo
             if tipo == "composicao":
                 d["casa"] = str(it.get("casa") or "").strip().lower()
-            elif tipo in ("recordes", "estado"):
+            elif tipo in ("recordes", "estado", "blocos"):
                 pass
             elif tipo == "comparativo":
                 d["cargo"] = CARGO_NOME_COMPARATIVO.get(

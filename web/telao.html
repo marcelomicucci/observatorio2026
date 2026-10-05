@@ -316,6 +316,10 @@ try {
       // Da aba Configuração: relê a página inteira (classificação assinada,
       // cores novas). O recorte e o roteiro voltam do localStorage e da API.
       else if (d.acao === 'recarregar') location.reload();
+      // Faixa de alertas: liga, desliga ou mostra de qualquer idade.
+      else if (d.acao && d.acao.startsWith('alertas:')) {
+        modoAlertas(d.acao.slice(8));
+      }
     }
   };
 } catch (e) { /* navegador sem BroadcastChannel: telão fica autônomo */ }
@@ -841,7 +845,110 @@ async function carregarDeputadosUF(uf, desatualizada) {
     + 'vagas do TSE às listas × mais votados');
 }
 
+/* Assembleias legislativas (05/10/2026). Com UF: o plenário daquele estado
+ * em hemiciclo, como o Senado e a Câmara. Sem UF: as 27 casas numa tela,
+ * com os blocos de cada uma. Só o resultado do TSE, sem projeção. */
+async function carregarAssembleia(uf, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  document.getElementById('vagas').hidden = true;
+  const r = await get('/composicao?casa=assembleia' + (uf ? `&uf=${uf}` : ''));
+  if (desatualizada()) return;
+  faixaAmbiente(r.ambiente);
+  const d = r.dados;
+  const meta = d.classificacao;
+  const comIdeo = meta.estado === 'disponivel';
+  const nota = 'deputado estadual: situação oficial de eleito no TSE · '
+    + 'sem projeção';
+
+  if (!uf) {
+    document.getElementById('titulo').textContent =
+      'Assembleias legislativas';
+    document.getElementById('onde').textContent =
+      'os 27 estados · cadeiras por bloco e a maior bancada de cada casa';
+    const assin = 'assembleias|' + meta.estado + '|' + meta.versao + '|'
+      + JSON.stringify((d.ufs || []).map(u => [u.uf, u.eleitos,
+                                               u.provisorios]));
+    if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') {
+      return;
+    }
+    if (!(d.ufs || []).length) {
+      return telaResumo(corpo, assin, el('div', {cls: 'vazio'},
+        r.status_motivo || 'Nenhum arquivo de deputado estadual ainda.'),
+        r.source_generated_at);
+    }
+    return telaResumo(corpo, assin, TELAS.assembleias(d, comIdeo),
+      r.source_generated_at,
+      [nota, 'traço branco = maioria da casa', notaClassificacao(meta)]
+        .filter(Boolean).join('  ·  '));
+  }
+
+  const NOME = POLITICO.NOME_UF[uf] || uf.toUpperCase();
+  document.getElementById('titulo').textContent =
+    uf === 'df' ? 'Câmara Legislativa do DF' : 'Assembleia Legislativa';
+  document.getElementById('onde').textContent = d.vagas
+    ? `${NOME} · ${d.vagas} cadeiras · maioria ${d.maioria}`
+    : NOME;
+  const assin = ['assembleia', uf, meta.estado, meta.versao, d.eleitos,
+                 d.provisorios, JSON.stringify((d.partidos || []).map(
+                   p => [p.partido.sigla, p.total]))].join('|');
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'composicao') {
+    return;
+  }
+  if (!d.vagas) {
+    return telaResumo(corpo, assin, el('div', {cls: 'vazio'},
+      `Arquivo de deputado estadual de ${NOME} ainda não coletado.`),
+      r.source_generated_at);
+  }
+  const tresQuintos = Math.ceil(d.vagas * 3 / 5);
+  const esquerda = el('div', {cls: 'phem'});
+  const alvo = el('div', {cls: 'phem-svg'});
+  esquerda.append(alvo);
+  alvo.append(POLITICO.hemiciclo(d.cadeiras, {
+    largura: 1000, altura: 560, comIdeologia: comIdeo, maioria: d.maioria,
+    centro: String(d.vagas),
+    subcentro: `maioria ${d.maioria} · 3/5 ${tresQuintos}`,
+    rotulo: 'assembleia',
+  }));
+  esquerda.append(POLITICO.legendaEstados(
+    [['eleito', d.eleitos], ['liderando', d.provisorios],
+     ['aguardando', Math.max(0, d.vagas - d.eleitos - d.provisorios)]],
+    {liderando: 'provisório — vaga do TSE, pode mudar'}));
+  if (comIdeo) {
+    esquerda.append(tituloBloco('Cadeiras por bloco',
+      'blocos não votam unidos por terem a mesma cor'),
+      POLITICO.barraBlocos(d.por_bloco, d.vagas, {chave: 'total', marcas: [
+        {valor: d.maioria, rotulo: `maioria absoluta ${d.maioria}`},
+        {valor: tresQuintos, rotulo: `3/5 ${tresQuintos}`}]}));
+  } else {
+    esquerda.append(avisoCuradoria(meta));
+  }
+  const lado = el('div', {cls: 'plado'});
+  lado.append(el('div', {cls: 'kpis'},
+    kpi('Eleitos', fmt(d.eleitos), `de ${d.vagas} cadeiras`),
+    kpi('Partidos', String(d.partidos.length), 'com cadeira'),
+    kpi('Maior bancada', d.partidos.length ? String(d.partidos[0].total)
+        : '—', d.partidos.length ? d.partidos[0].partido.sigla : '')));
+  lado.append(tituloBloco('Bancadas', 'cheio = eleito · claro = provisório'),
+    POLITICO.listaPartidos(d.partidos.map(x => ({
+      partido: x.partido, valor: x.total,
+      partes: [{valor: x.eleito}, {valor: x.provisorio,
+                                   estilo: 'opacity:.3'}],
+      rotulo: String(x.total),
+    })), {limite: 13}));
+  if (desatualizada()) return;
+  corpo.dataset.tipo = 'composicao';
+  corpo.className = 'corpo composicao';
+  poe(corpo, esquerda, lado);
+  assinaturaPolitica = assin;
+  rodapePolitico(r.source_generated_at,
+    [nota, notaClassificacao(meta)].filter(Boolean).join('  ·  '));
+}
+
 async function carregarComposicao(minhaCarga, desatualizada) {
+  if (recorte.casa === 'assembleia') {
+    return carregarAssembleia(
+      recorte.uf ? String(recorte.uf).toLowerCase() : null, desatualizada);
+  }
   const casa = recorte.casa === 'camara' ? 'camara' : 'senado';
   // Câmara com UF: a lista de deputados daquele estado, não o hemiciclo.
   if (casa === 'camara' && recorte.uf) {
@@ -1085,6 +1192,32 @@ async function carregarDuelo(minhaCarga, desatualizada) {
     'estados do maior para o menor eleitorado · cinza = demais candidatos');
 }
 
+async function carregarBlocos(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  const uf = recorte.uf ? String(recorte.uf).toLowerCase() : null;
+  document.getElementById('titulo').textContent = 'Esquerda, centro e direita';
+  document.getElementById('vagas').hidden = true;
+  const r = await get('/blocos' + (uf ? `?uf=${uf}` : ''));
+  if (desatualizada()) return;
+  faixaAmbiente(r.ambiente);
+  const d = r.dados;
+  const meta = d.classificacao;
+  document.getElementById('onde').textContent =
+    (uf ? (POLITICO.NOME_UF[uf] || uf.toUpperCase()) : 'Brasil')
+    + ' · os blocos em cada esfera de poder';
+  const assin = 'blocos|' + uf + '|' + meta.estado + '|' + meta.versao + '|'
+    + JSON.stringify(d.linhas.map(l => [l.por_bloco, l.em_disputa,
+                                        l.situacao]));
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  if (meta.estado !== 'disponivel') {
+    return telaResumo(corpo, assin, avisoCuradoria(meta),
+                      r.source_generated_at);
+  }
+  telaResumo(corpo, assin, TELAS.blocos(d), r.source_generated_at,
+    ['majoritárias em votos válidos · casas em cadeiras · traço branco = '
+     + 'maioria', notaClassificacao(meta)].filter(Boolean).join('  ·  '));
+}
+
 async function carregarParticipacao(minhaCarga, desatualizada) {
   const corpo = document.getElementById('corpo');
   const cargo = CARGOS[recorte.cargo] ? recorte.cargo : '1';
@@ -1119,14 +1252,15 @@ async function carregarEstado(minhaCarga, desatualizada) {
   document.getElementById('vagas').hidden = true;
   const q = c => `cargo=${c}&uf=${uf}`;
   const nulo = () => null;
-  const [rp, cp, rg, cg, dg, rs, cs, ds, cam, par] = await Promise.all([
+  const [rp, cp, rg, cg, dg, rs, cs, ds, cam, par, asb] = await Promise.all([
     get(`/results?abrangencia=uf&${q(1)}`), get(`/candidates?${q(1)}`),
     get(`/results?abrangencia=uf&${q(3)}`), get(`/candidates?${q(3)}`),
     get(`/decided?${q(3)}`).catch(nulo),
     get(`/results?abrangencia=uf&${q(5)}`), get(`/candidates?${q(5)}`),
     get(`/decided?${q(5)}`).catch(nulo),
     get(`/composicao?casa=camara&uf=${uf}`).catch(nulo),
-    get('/partidos').catch(nulo)]);
+    get('/partidos').catch(nulo),
+    get(`/composicao?casa=assembleia&uf=${uf}`).catch(nulo)]);
   if (desatualizada()) return;
   faixaAmbiente(rg.ambiente);
   document.getElementById('onde').textContent =
@@ -1149,13 +1283,18 @@ async function carregarEstado(minhaCarga, desatualizada) {
   for (const x of ((par && par.dados.partidos) || [])) cores[x.sigla] = x.cor;
   const d = {uf, cores, presidente: parte(rp, cp, null),
              governador: parte(rg, cg, dg), senador: parte(rs, cs, ds),
-             camara: cam && cam.dados.uf_detalhe};
+             camara: cam && cam.dados.uf_detalhe,
+             assembleia: asb && asb.dados,
+             comIdeo: !!(asb && asb.dados.classificacao
+                         && asb.dados.classificacao.estado === 'disponivel')};
   const assin = 'estado|' + uf + '|' + JSON.stringify([
     d.presidente.cands.map(c => c.oficial.votos),
     d.governador.cands.map(c => [c.oficial.votos, c.oficial.situacao]),
     d.governador.estados, d.senador.cands.map(c => c.oficial.votos),
     d.senador.estados, d.camara && [d.camara.apurado_pct,
-                                    d.camara.eleitos.length]]);
+                                    d.camara.eleitos.length],
+    d.assembleia && [d.assembleia.eleitos, d.assembleia.provisorios,
+                     d.comIdeo]]);
   if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
   telaResumo(corpo, assin, TELAS.estado(d), rg.source_generated_at,
     '% dos votos válidos · "eleito" e "2º turno" são a situação do TSE');
@@ -1166,10 +1305,27 @@ async function carregarEstado(minhaCarga, desatualizada) {
  * recente: na parede, "matematicamente eleito" de três horas atrás não é
  * novidade. `?alertas=tudo` mostra as últimas de qualquer idade (ensaio e
  * conferência depois da noite); `?alertas=0` desliga a faixa. */
-const ALERTAS = {lista: [], i: -1, janelaMin: 40,
-                 modo: new URLSearchParams(location.search).get('alertas')};
+const ALERTAS = {lista: [], i: -1, janelaMin: 40, modo: (() => {
+  // O endereço manda; sem ele, a última escolha feita pelo painel.
+  const u = new URLSearchParams(location.search).get('alertas');
+  if (u) return u;
+  try { return localStorage.getItem('telao-alertas'); } catch (e) {}
+  return null;
+})()};
+function modoAlertas(m) {
+  ALERTAS.modo = m === 'recentes' ? null : m;
+  try {
+    if (ALERTAS.modo) localStorage.setItem('telao-alertas', ALERTAS.modo);
+    else localStorage.removeItem('telao-alertas');
+  } catch (e) { /* vale só enquanto a janela viver */ }
+  ALERTAS.lista = []; ALERTAS.i = -1;
+  buscarAlertas().then(girarAlertas);
+}
 async function buscarAlertas() {
-  if (ALERTAS.modo === '0' || (recorte && recorte.eleicao)) return;
+  if (ALERTAS.modo === '0' || (recorte && recorte.eleicao)) {
+    ALERTAS.lista = [];
+    return;
+  }
   try {
     const r = await fetch(API + '/alertas?limite=12&peso_min=2');
     if (!r.ok) return;
@@ -1781,7 +1937,7 @@ async function carregar() {
     composicao: carregarComposicao, recordes: carregarRecordes,
     comparativo: carregarComparativo, panorama: carregarPanorama,
     duelo: carregarDuelo, participacao: carregarParticipacao,
-    estado: carregarEstado};
+    estado: carregarEstado, blocos: carregarBlocos};
   if (ESPECIAIS[recorte.tipo]) {
     try {
       await (ESPECIAIS[recorte.tipo])(

@@ -512,7 +512,8 @@ def register(app) -> None:
     # ------------------------------------------------------- composição
 
     @app.get("/api/v1/composicao")
-    def composicao(casa: str = Query(..., pattern="^(senado|camara)$"),
+    def composicao(casa: str = Query(...,
+                                     pattern="^(senado|camara|assembleia)$"),
                    uf: str | None = Query(None, pattern="^[a-zA-Z]{2}$"),
                    s: Session = Depends(M.get_session)):
         reg, ativa = _classificacao()
@@ -520,6 +521,8 @@ def register(app) -> None:
         meta = _meta_classificacao(reg, ativa)
         if casa == "camara":
             return _camara(ideo, meta, uf.lower() if uf else None)
+        if casa == "assembleia":
+            return _assembleia(ideo, meta, uf.lower() if uf else None)
         return _senado(s, ideo, meta)
 
     def _leitor_camara() -> CAM.LeitorCamara:
@@ -530,6 +533,48 @@ def register(app) -> None:
             leitor = _leitores[env.name] = CAM.LeitorCamara(
                 RawArchive(DATA_DIR / "raw", env.name))
         return leitor
+
+    def _leitor_assembleias() -> CAM.LeitorCamara:
+        from ..config import load_environment
+        env = load_environment(M.env_atual())
+        chave = env.name + "|assembleias"
+        leitor = _leitores.get(chave)
+        if leitor is None:
+            leitor = _leitores[chave] = CAM.LeitorCamara(
+                RawArchive(DATA_DIR / "raw", env.name),
+                cargos=CAM.CARGOS_ASSEMBLEIA)
+        return leitor
+
+    def _assembleia(ideo, meta, uf: str | None = None) -> dict:
+        """As 27 assembleias (sem `uf`) ou o plenário de uma (com `uf`).
+        Só o resultado do TSE, como a Câmara: sem projeção."""
+        por_uf = _leitor_assembleias().por_uf()
+        if uf:
+            r = por_uf.get(uf)
+            d = (CAM.assembleia(r, PA.resolver, ideo) if r
+                 else {"uf": uf, "vagas": 0, "cadeiras": [], "partidos": [],
+                       "por_bloco": {b: {"total": 0} for b in CAM.BLOCOS}})
+            fonte = d.get("gerado_em")
+        else:
+            d = CAM.assembleias(por_uf, PA.resolver, ideo)
+            fonte = d["fonte_gerada_em"]
+        d["classificacao"] = meta
+        d["nota"] = (
+            "Só o resultado divulgado pelo TSE — deputado estadual não tem "
+            "projeção. Cadeira cheia é candidato com situação oficial de "
+            "eleito; enquanto o TSE não marca, as vagas que ele distribui "
+            "às listas, com os mais votados de cada uma. No DF a casa é a "
+            "Câmara Legislativa (deputado distrital).")
+        tem = bool(por_uf) and (not uf or uf in por_uf)
+        return M.envelope(
+            d, snapshots=[],
+            estado=("aguardando" if not tem else "resultado_oficial"
+                    if (d.get("andamento") == "f" if uf
+                        else d["ufs_encerradas"] == d["ufs_com_dado"])
+                    else "apuracao_em_andamento"),
+            motivo=(None if tem else
+                    "nenhum arquivo de deputado estadual coletado ainda"),
+            extra={"source_generated_at": fonte})
 
     def _camara(ideo, meta, uf: str | None = None) -> dict:
         por_uf = _leitor_camara().por_uf()
@@ -567,6 +612,159 @@ def register(app) -> None:
             motivo=(None if por_uf else
                     "nenhum arquivo de deputado federal coletado ainda"),
             extra={"source_generated_at": comp["fonte_gerada_em"]})
+
+    # ---------------------------------------------- blocos nas esferas
+
+    @app.get("/api/v1/blocos")
+    def blocos(uf: str | None = Query(None, pattern="^[a-zA-Z]{2}$"),
+               s: Session = Depends(M.get_session)):
+        """Os blocos ideológicos em todas as esferas, numa resposta só
+        (pedido de 05/10/2026): presidente, governo, Senado, Câmara e
+        assembleias. Sem `uf`, o país; com `uf`, o estado.
+
+        Duas unidades convivem e cada linha diz a sua: nas disputas
+        majoritárias, **votos** (o que o eleitorado escolheu); nas casas,
+        **cadeiras** (quem ficou com o poder). No quadro do país o governo
+        dos estados conta **estados**, e os que vão ao 2º turno ficam "em
+        disputa" — não entram no bloco de quem lidera.
+
+        Sem a classificação assinada tudo cai em "sem classificação" e a
+        tela diz por quê: nada de ideologia sem autoria (§6)."""
+        reg, ativa = _classificacao()
+        ideo = _ideologia(reg, ativa)
+        meta = _meta_classificacao(reg, ativa)
+        uf = uf.lower() if uf else None
+
+        def zero() -> dict:
+            return {b: 0 for b in CAM.BLOCOS}
+
+        def bloco_p(numero, sigla) -> str:
+            i = ideo(PA.resolver(numero, sigla))
+            return (i or {}).get("bloco") or "sem_classificacao"
+
+        def contest(cargo):
+            try:
+                return M._contest_or_404(s, cargo, None)
+            except HTTPException:
+                return None
+
+        def votos(cargo: str, tipo: str) -> tuple[dict, list]:
+            """Votos válidos por bloco e as unidades lidas."""
+            ct = contest(cargo)
+            out, us = zero(), []
+            if ct is None:
+                return out, us
+            for u in _unidades(s, ct, tipo):
+                if uf and u["geo"].uf != uf:
+                    continue
+                us.append((ct, u))
+                for c, v in u["rows"]:
+                    out[bloco_p(c.partido_numero, c.partido_sigla)] += v
+            return out, us
+
+        def nomes(ct, u) -> tuple[str, list]:
+            est, topo = _estado_vagas(u, ct.vagas,
+                                      M.tem_segundo_turno(s, ct))
+            if est == "segundo_turno":
+                topo = u["rows"][:2]          # os dois que seguem na disputa
+            return est, [{"nome": c.nome_urna or c.nome,
+                          "partido": PA.resolver(c.partido_numero,
+                                                 c.partido_sigla).sigla,
+                          "bloco": bloco_p(c.partido_numero,
+                                           c.partido_sigla)}
+                         for c, _v in topo]
+
+        linhas = []
+
+        def linha(chave, rotulo, unidade, por, **extra):
+            linhas.append({"chave": chave, "rotulo": rotulo,
+                           "unidade": unidade, "por_bloco": por,
+                           "total": sum(por.values())
+                           + int(extra.get("em_disputa") or 0), **extra})
+
+        # ---- presidente: votos
+        por, us = votos("1", "uf" if uf else "br")
+        linha("presidente", "Presidente", "votos", por,
+              nota=("votos válidos no estado — quem decide é o total do "
+                    "Brasil" if uf else "votos válidos no país"))
+
+        # ---- governo
+        if uf:
+            por, us = votos("3", "uf")
+            est, quem = nomes(*us[0]) if us else ("aguardando", [])
+            linha("governador", "Governador", "votos", por,
+                  nota="votos válidos no estado", situacao=est, quem=quem)
+        else:
+            por, disputa = zero(), 0
+            ct = contest("3")
+            for u in (_unidades(s, ct, "uf") if ct else []):
+                est, quem = nomes(ct, u)
+                if est in ("eleito", "definido") and quem:
+                    por[quem[0]["bloco"]] += 1
+                elif est != "aguardando":
+                    disputa += 1
+            linha("governadores", "Governos estaduais", "estados", por,
+                  em_disputa=disputa, maioria=14,
+                  nota="estados com governador eleito · em disputa = 2º "
+                       "turno ou apuração em aberto")
+
+        # ---- Senado
+        if uf:
+            por, us = votos("5", "uf")
+            est, quem = nomes(*us[0]) if us else ("aguardando", [])
+            linha("senador", "Senador", "votos", por,
+                  nota="votos válidos no estado · duas vagas",
+                  situacao=est, quem=quem)
+        else:
+            sen = _senado(s, ideo, meta)["dados"]
+            linha("senado", "Senado", "cadeiras",
+                  {b: sen["por_bloco"][b]["total"] for b in CAM.BLOCOS},
+                  maioria=41,
+                  nota="81 cadeiras: as 54 desta eleição e as 27 com "
+                       "mandato até 2031")
+
+        # ---- Câmara
+        por_uf_cam = _leitor_camara().por_uf()
+        por = zero()
+        for u_, r in por_uf_cam.items():
+            if uf and u_ != uf:
+                continue
+            for c, _tipo in CAM.ocupantes(r):
+                por[bloco_p(c["partido_numero"], c["partido_sigla"])] += 1
+        vagas_cam = (por_uf_cam.get(uf) or {}).get("vagas") if uf else 513
+        linha("camara", "Bancada federal do estado" if uf
+              else "Câmara dos Deputados", "cadeiras", por,
+              maioria=None if uf else 257, vagas=vagas_cam,
+              nota="deputados federais eleitos pelo estado" if uf
+              else "513 cadeiras")
+
+        # ---- assembleias
+        por_uf_asb = _leitor_assembleias().por_uf()
+        if uf:
+            r = por_uf_asb.get(uf)
+            a = CAM.assembleia(r, PA.resolver, ideo) if r else None
+            linha("assembleia", "Câmara Legislativa" if uf == "df"
+                  else "Assembleia Legislativa", "cadeiras",
+                  {b: a["por_bloco"][b]["total"] for b in CAM.BLOCOS}
+                  if a else zero(),
+                  maioria=a["maioria"] if a else None,
+                  vagas=a["vagas"] if a else None,
+                  nota="deputados estaduais" if uf != "df"
+                  else "deputados distritais")
+        else:
+            a = CAM.assembleias(por_uf_asb, PA.resolver, ideo)
+            linha("assembleias", "Assembleias legislativas", "cadeiras",
+                  {b: a["por_bloco"][b]["total"] for b in CAM.BLOCOS},
+                  vagas=a["total"],
+                  nota=f"{a['total']} cadeiras nas {a['ufs_com_dado']} "
+                       "casas, somadas")
+
+        tem = any(l["total"] for l in linhas)
+        return M.envelope(
+            {"escopo": uf or "br", "linhas": linhas, "classificacao": meta},
+            snapshots=[],
+            estado=("aguardando" if not tem else "observado"),
+            motivo=None if tem else "nenhum voto contado ainda")
 
     def _senado(s: Session, ideo, meta) -> dict:
         try:

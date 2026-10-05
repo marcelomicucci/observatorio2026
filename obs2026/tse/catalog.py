@@ -98,7 +98,9 @@ class Catalog:
                     if (e.turno != "1" or e.cd not in self.ea12_por_eleicao
                             or not e.tem_cargo(prop["cd"])):
                         continue
-                    for uf in sorted(UF_DISPUTAS):
+                    so = set(prop.get("ufs") or ()) or set(UF_DISPUTAS)
+                    fora = set(prop.get("exceto_ufs") or ())
+                    for uf in sorted((so & set(UF_DISPUTAS)) - fora):
                         out.append((chave, prop["intervalo_s"],
                                     self.urls.ea20_uf(e.cd, prop["cd"], uf)))
         return out

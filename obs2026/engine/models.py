@@ -255,7 +255,8 @@ def build_m2(observacoes: list[UnitObservation], candidatos: list[str],
              conformal: bool = False,
              m0_conformal: float | None = None,
              gamma_conformal: float | None = None,
-             blocos: dict[str, str | None] | None = None) -> list[UnitInput]:
+             blocos: dict[str, str | None] | None = None,
+             agro: dict[str, float] | None = None) -> list[UnitInput]:
     """Estimativa hierárquica: município -> porte -> grupo -> UF.
 
     O grupo é capital (capital + cidades do arranjo dela, IBGE) ou interior,
@@ -325,6 +326,24 @@ def build_m2(observacoes: list[UnitObservation], candidatos: list[str],
             observacoes, candidatos, inclinacao, por_uf, por_g, por_s,
             gr, sub, k_inclinacao or K_INCLINACAO, blocos=blocos)
 
+    # M3 + agro: média do agro por nível e a resposta conjunta de cada
+    # candidato à inclinação e ao agro. Só entra com as duas covariáveis.
+    a_s, duas = {}, {}
+    if agro is not None and slopes:
+        from . import historico as HI
+
+        def _x(o):
+            v = inclinacao.get(HI.chave(o.unit))
+            return None if v is None else HI.logit(v)
+
+        def _a(o):
+            return agro.get(HI.chave(o.unit))
+
+        duas = _respostas_duas(observacoes, candidatos, _x, _a,
+                               k_inclinacao or K_INCLINACAO)
+        if duas:
+            a_s = _medias_por_nivel(observacoes, _a, por_uf, por_g, por_s)
+
     # M3.2: fator do choque local e do choque de grupo, medido nos
     # municípios já contados (ver `_escala_conformal`).
     escala = 1.0
@@ -338,7 +357,12 @@ def build_m2(observacoes: list[UnitObservation], candidatos: list[str],
     for o in observacoes:
         p, b = o.pending, o.obs
         t_e, vr_e, q_e, pref_e = est_s[sub(o)]
-        if slopes:
+        if duas and x_s.get(sub(o)) is not None \
+                and a_s.get(sub(o)) is not None \
+                and _x(o) is not None and _a(o) is not None:
+            pref_e = _corrige_por_duas(
+                pref_e, _x(o) - x_s[sub(o)], _a(o) - a_s[sub(o)], duas)
+        elif slopes:
             pref_e = _corrige_por_inclinacao(
                 pref_e, o, inclinacao, x_s.get(sub(o)), slopes)
         n = b.validos
@@ -474,6 +498,116 @@ def _corrige_por_inclinacao(pref, o, inclinacao, x_ref, slopes):
     return _normalize(novo)
 
 
+# --------------------------------------------------------------- M3 + agro ---
+#
+# Segunda covariável do nível (05/10/2026). No 1º turno de 2026 a inclinação
+# de 2022 previu o voto de cada município com correlação de 0,986, e o que
+# sobrou tinha a cara do agro: onde a agropecuária é 6% do valor adicionado,
+# Lula ficou 0,6 pp ACIMA do que 2022 previa; onde é 47%, 2,3 pp ABAIXO
+# (correlação do resíduo com o agro: −0,38). O M3 corrige o município
+# pendente pela inclinação; aqui ele corrige também pelo agro:
+#
+#     log p[g,k] = log p_estrato[k] + b1[k]·(x[g] − x_estrato)
+#                                   + b2[k]·(a[g] − a_estrato)
+#
+# `a` é a fatia da agropecuária no valor adicionado do município (IBGE,
+# `engine/historico.economia`). As duas respostas são medidas na própria
+# noite, numa regressão ponderada conjunta sobre o que já foi contado, e
+# levam o mesmo encolhimento por volume do M3. Sem agro para a unidade
+# (exterior), vale a correção só pela inclinação.
+#
+# RESULTADO (ensaio sobre a noite real de 2026, 55 disputas, 05/10/2026):
+# NÃO MELHOROU. Erro médio de 0,458 pp sem o agro e 0,459 com ele; reduz o
+# erro em 18 disputas e aumenta em 20. No presidente só ajuda com menos de
+# 6% apurado (0,85 → 0,55 pp). A explicação provável: o que o agro diz
+# sobre um município pendente os vizinhos de estrato já contados dizem
+# antes — a hierarquia UF → grupo → porte já carrega essa informação. O
+# agro explica a diferença entre 2022 e 2026 no país inteiro, mas não
+# acrescenta nada ao que a própria noite revela. Fica como experimento, fora
+# da produção e sem gate; o dado do IBGE segue útil para análise e telas.
+
+
+def _medias_por_nivel(observacoes, valor_de, por_uf, por_g, por_s) -> dict:
+    """Média efetiva de uma covariável por subestrato, com o mesmo
+    encolhimento hierárquico da preferência (nível sem dado herda o de
+    cima). Vazio se nada contado tem a covariável."""
+    def media(lst):
+        num = den = 0.0
+        for o in lst:
+            x = valor_de(o)
+            n = o.obs.validos
+            if x is None or n <= 0:
+                continue
+            num += n * x
+            den += n
+        return (num / den if den else None), den
+
+    nac, _ = media(observacoes)
+    if nac is None:
+        return {}
+    m_uf = {}
+    for uf, lst in por_uf.items():
+        m, n = media(lst)
+        m_uf[uf] = _shrink(m, nac, n / (n + K_GRUPO) if n > 0 else 0.0)
+    m_g = {}
+    for g, lst in por_g.items():
+        m, n = media(lst)
+        m_g[g] = _shrink(m, m_uf[g[0]], n / (n + K_GRUPO) if n > 0 else 0.0)
+    m_s = {}
+    for s_, lst in por_s.items():
+        m, n = media(lst)
+        m_s[s_] = _shrink(m, m_g[s_[:2]],
+                          n / (n + K_SUBESTRATO) if n > 0 else 0.0)
+    return m_s
+
+
+def _respostas_duas(observacoes, candidatos, x_de, a_de, k_inc) -> dict:
+    """{candidato: (b1, b2)}: resposta à inclinação e ao agro, por mínimos
+    quadrados ponderados sobre as unidades já contadas que têm as duas.
+    Vazio quando não dá para separar uma da outra (poucas unidades, ou as
+    duas covariáveis andando juntas)."""
+    pts = []
+    for o in observacoes:
+        x, a = x_de(o), a_de(o)
+        b = o.obs
+        if x is None or a is None or b.validos <= 0:
+            continue
+        pts.append((x, a, b.validos, b.votos_por_candidato))
+    W = sum(p[2] for p in pts)
+    if W <= 0 or len(pts) < 8:
+        return {}
+    xb = sum(w * x for x, _, w, _ in pts) / W
+    ab = sum(w * a for _, a, w, _ in pts) / W
+    sxx = sum(w * (x - xb) ** 2 for x, _, w, _ in pts)
+    saa = sum(w * (a - ab) ** 2 for _, a, w, _ in pts)
+    sxa = sum(w * (x - xb) * (a - ab) for x, a, w, _ in pts)
+    det = sxx * saa - sxa * sxa
+    # Quase colineares: a regressão conjunta inventaria dois números
+    # grandes de sinais opostos. Fica a correção só pela inclinação.
+    if sxx <= 0 or saa <= 0 or det <= 1e-6 * sxx * saa:
+        return {}
+    fator = W / (W + k_inc)
+    out = {}
+    for c in candidatos:
+        ys = [(x, a, w, math.log((v.get(c, 0) + 0.5) / (w + 0.5)))
+              for x, a, w, v in pts]
+        yb = sum(w * y for _, _, w, y in ys) / W
+        sxy = sum(w * (x - xb) * (y - yb) for x, _, w, y in ys)
+        say = sum(w * (a - ab) * (y - yb) for _, a, w, y in ys)
+        out[c] = (fator * (saa * sxy - sxa * say) / det,
+                  fator * (sxx * say - sxa * sxy) / det)
+    return out
+
+
+def _corrige_por_duas(pref, dx, da, respostas):
+    novo = {}
+    for c, p in pref.items():
+        b1, b2 = respostas.get(c, (0.0, 0.0))
+        ajuste = max(-CORRECAO_MAX, min(CORRECAO_MAX, b1 * dx + b2 * da))
+        novo[c] = p * math.exp(ajuste)
+    return _normalize(novo)
+
+
 def build_m3(observacoes: list[UnitObservation], candidatos: list[str],
              *, seats: int = 1, inclinacao: dict[str, float] | None = None,
              ano_referencia: int | None = None,
@@ -500,6 +634,57 @@ def build_m3(observacoes: list[UnitObservation], candidatos: list[str],
         inclinacao = HI.inclinacao(ano_referencia or 2022)
     return build_m2(observacoes, candidatos, seats=seats,
                     inclinacao=inclinacao, **kw)
+
+
+# ------------------------------------------------------------------- M3.3 ---
+
+#: Fator dos choques de preferência no M3.3 (decisão de 05/10/2026).
+#:
+#: Na noite real do 1º turno de 2026 a faixa de 80% do M3 conteve o
+#: resultado em 96–100% dos casos entre 6% e 95% apurado: larga demais. Mas
+#: nos ensaios de 2018 e 2022 (cidades grandes fatiadas por zona, mais duros
+#: que a noite real) o M3 já está na medida, com 81–83%. Medido nos três
+#: (`scripts/ensaio2026.py`, `gate2022.py --nome gate2022-largura`):
+#:
+#:     fator   2026 real   2022    2018
+#:     1,00     96–100%    82%    81–82%
+#:     0,80     92–100%    76%    74–76%
+#:     0,65     89–99%     70%    67–70%   reprova no gate
+#:     0,50     81–98%     60%    57–61%   reprova no gate
+#:
+#: 0,8 é o maior estreitamento que passa nos três. A rever depois do 2º
+#: turno, com duas noites reais.
+FATOR_M33 = 0.8
+
+
+def build_m33(observacoes: list[UnitObservation], candidatos: list[str],
+              *, seats: int = 1, **kw) -> list[UnitInput]:
+    """M3 com os choques de preferência × `FATOR_M33`.
+
+    O número central é o do M3; muda a largura da faixa e, com ela, a
+    velocidade com que as probabilidades se decidem. Aqui entra o choque de
+    grupo; os choques nacional, de UF e local são do simulador e levam o
+    mesmo fator em `simulate.estreitar` — quem roda o M3.3 aplica os dois
+    (ver `engine/runner.py`)."""
+    kw.setdefault("sigma_grupo_vazio", SIGMA_GRUPO_VAZIO * FATOR_M33)
+    return build_m3(observacoes, candidatos, seats=seats, **kw)
+
+
+def agro_por_municipio() -> dict[str, float]:
+    """{"uf:mun": fatia da agropecuária no valor adicionado} — a covariável
+    do M3.4, do perfil econômico mais recente em disco."""
+    from . import historico as HI
+    return {k: v["agro"] for k, v in HI.economia().items()}
+
+
+def build_m34(observacoes: list[UnitObservation], candidatos: list[str],
+              *, seats: int = 1, **kw) -> list[UnitInput]:
+    """M3.3 (faixa × `FATOR_M33`) com o agro como segunda covariável do
+    nível. Experimento que não melhorou o erro no ensaio de 2026 (ver o
+    comentário acima): não está registrado no runner nem na aba
+    Configuração."""
+    kw.setdefault("agro", agro_por_municipio())
+    return build_m33(observacoes, candidatos, seats=seats, **kw)
 
 
 # ------------------------------------------------------------------- M3.2 ---
