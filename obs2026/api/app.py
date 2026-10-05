@@ -807,3 +807,5 @@ _compartilhar.register(app)
 _politico.register(app)
 _configuracao.register(app)
 _historico.register(app)
+from . import alertas as _alertas  # noqa: E402
+_alertas.register(app)

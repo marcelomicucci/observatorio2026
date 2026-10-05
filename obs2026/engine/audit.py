@@ -155,6 +155,8 @@ class Registro:
 #: Estado da leitura incremental de `Diario.ultimos`, por arquivo.
 _ULTIMOS: dict[str, dict] = {}
 
+from .nivel import TRAVA_LARGURA_APURADO  # noqa: E402
+
 
 #: Quantos registros de cada disputa ficam na memória para a regra de
 #: apontar vencedor (§4.7, `engine/chamada.py`).
@@ -238,7 +240,17 @@ class Diario:
                 h = est.setdefault("hist", {}).setdefault(k, [])
                 h.insert(0, r)
                 del h[MEMORIA_CHAMADA:]
+                # Último registro antes de a apuração passar do limite em
+                # que a faixa publicada trava a largura (engine/nivel.py).
+                if r.cobertura_pct < TRAVA_LARGURA_APURADO:
+                    est.setdefault("trava", {})[k] = r
         return est["ult"]
+
+    def referencia_da_trava(self, chave: tuple[str, str, str]):
+        """O último registro da disputa abaixo do limite da trava de
+        largura, ou None. Exige `ultimos()` antes."""
+        est = _ULTIMOS.get(str(self.caminho)) or {}
+        return (est.get("trava") or {}).get(chave)
 
     def recentes(self, chave: tuple[str, str, str],
                  n: int = MEMORIA_CHAMADA) -> list:

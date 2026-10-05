@@ -47,3 +47,45 @@ def faixa(d: dict, nivel: int) -> tuple[float | None, float | None]:
     if d.get(lo) is None or d.get(hi) is None:
         lo, hi = CHAVES[80]
     return d.get(lo), d.get(hi)
+
+
+# ---------------------------------------------------------------------------
+# Duas regras de publicação decididas depois do 1º turno de 2026 (05/10/2026)
+# pela auditoria das 6.617 projeções da noite. As duas medem o apurado como a
+# tela mede: eleitorado apurado sobre o eleitorado total. Valem só para o que
+# se PUBLICA — o diário guarda sempre o número que o modelo produziu.
+
+#: Abaixo disto a probabilidade não sai. Com 0,0% apurado o modelo deu 97,6%
+#: de chance de maioria a quem foi ao 2º turno (governo do RJ) e 93% a quem
+#: perdeu (AL); o primeiro registro do presidente dava 78% ao segundo
+#: colocado. Mediana e faixa continuam saindo.
+PROB_APURADO_MIN = 6.0
+
+#: A partir daqui a faixa para de encolher: mantém a largura que tinha no
+#: último registro abaixo do limite. Acima de 95% a faixa caía para 0,1 pp e
+#: deixava de conter o resultado (81% de cobertura entre 95% e 99% apurado,
+#: 64% acima de 99%), porque o que falta entrar não se parece com o que já
+#: entrou.
+TRAVA_LARGURA_APURADO = 95.0
+
+
+def publica_probabilidade(apurado_pct: float | None) -> bool:
+    return (apurado_pct or 0.0) >= PROB_APURADO_MIN
+
+
+def travar_largura(atual: dict, referencia: dict | None) -> dict:
+    """Quantis de `atual` com, no mínimo, a largura de `referencia`.
+
+    Os dois são dicionários `q025 … q975` de um candidato. A mediana é a de
+    agora; cada lado da faixa fica com a maior distância entre a de agora e
+    a do registro de referência. Sem referência, devolve `atual`."""
+    if not referencia or atual.get("q500") is None             or referencia.get("q500") is None:
+        return atual
+    out = dict(atual)
+    m, mr = atual["q500"], referencia["q500"]
+    for lo, hi in CHAVES.values():
+        if atual.get(lo) is not None and referencia.get(lo) is not None:
+            out[lo] = max(0.0, m - max(m - atual[lo], mr - referencia[lo]))
+        if atual.get(hi) is not None and referencia.get(hi) is not None:
+            out[hi] = min(100.0, m + max(atual[hi] - m, referencia[hi] - mr))
+    return out

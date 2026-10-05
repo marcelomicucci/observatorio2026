@@ -610,6 +610,19 @@ const ROTEIRO = {
   },
   titulo(it) {
     if (it.titulo) return it.titulo;
+    if (it.tipo === 'estado') {
+      return `Resumo do estado — ${(it.uf || '').toUpperCase()}`;
+    }
+    if (it.tipo === 'panorama') {
+      return (it.cargo === '5' ? 'Senadores' : 'Governadores')
+        + ' — os 27 estados';
+    }
+    if (it.tipo === 'duelo') return 'Presidente — estado a estado';
+    if (it.tipo === 'participacao') {
+      const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
+      return `${c.nome} — ausentes, brancos e nulos`
+        + (it.uf ? ` (${it.uf.toUpperCase()})` : '');
+    }
     // Eleição passada: o ano no título, para a tela não passar por 2026.
     if (it.eleicao) {
       return this.titulo({...it, eleicao: null}) + ` (${it.eleicao.slice(3, 7)})`;
@@ -634,7 +647,8 @@ const ROTEIRO = {
     }
     const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
     if (it.tipo === 'politico') {
-      return `${c.nome} — partido e ideologia`
+      return (c.cd === '1' ? 'Presidente — onde cada um lidera'
+        : `${c.nome} — partido e ideologia`)
         + (it.cargo === '1' && it.abrangencia === 'uf' ? ' (por estado)'
            : '');
     }
@@ -799,13 +813,25 @@ function editorRoteiro() {
                      + 'align-self:center;margin-right:4px'},
        'Acrescentar tela pronta:'),
     ...[
-      ['Presidente: partido e ideologia',
+      ['Presidente: onde cada um lidera',
        {tipo: 'politico', cargo: '1', abrangencia: 'mu'}],
       ['Governadores: partido e ideologia',
        {tipo: 'politico', cargo: '3'}],
       ['Senado: composição', {tipo: 'composicao', casa: 'senado'}],
       ['Câmara: composição', {tipo: 'composicao', casa: 'camara'}],
       ['Recordes da noite', {tipo: 'recordes'}],
+      ['Governadores: os 27 estados', {tipo: 'panorama', cargo: '3'}],
+      ['Senadores: os 27 estados', {tipo: 'panorama', cargo: '5'}],
+      ['Presidente: estado a estado', {tipo: 'duelo', cargo: '1'}],
+      ['Presidente: ausentes, brancos e nulos',
+       {tipo: 'participacao', cargo: '1'}],
+      // As duas abaixo usam a UF escolhida na pesquisa.
+      ...(st.uf ? [
+        [`Resumo do estado: ${st.uf.toUpperCase()}`,
+         {tipo: 'estado', uf: st.uf}],
+        [`Governador ${st.uf.toUpperCase()}: ausentes, brancos e nulos`,
+         {tipo: 'participacao', cargo: '3', uf: st.uf}],
+      ] : []),
       ['Presidente: evolução 2018-2026',
        {tipo: 'comparativo', cargo: '1', anos: '2018,2022,2026'}],
     ].map(([rot, t]) => el('button', {onclick: () => {

@@ -571,3 +571,38 @@ def test_imagem_nao_sai_de_data_telao(cliente):
                       ("2026-09-21", "000000-0-x.txt")):
         r = cliente.get(f"/api/v1/compartilhar/imagem/{dia}/{nome}")
         assert r.status_code in (400, 404), (dia, nome, r.status_code)
+
+
+def _coletor_para_fim(andamento, completo):
+    from obs2026.tse import collector as C
+    col = C.Collector.__new__(C.Collector)
+    col.encerrar_ao_finalizar = True
+    col._viu_aberto = True
+    col._tudo_final_desde = None
+    col._carencia = C.CARENCIA_ENCERRAMENTO_S
+    col._andamento_totais = andamento
+    col._completo_totais = completo
+    return col, C
+
+
+def test_coletor_para_quando_o_tse_marca_tudo_finalizado():
+    col, C = _coletor_para_fim({"6257:br": "f", "6257:uf:sp": "f"}, {})
+    assert not col.verificar_fim(0.0)
+    assert not col.verificar_fim(C.CARENCIA_ENCERRAMENTO_S - 1)
+    assert col.verificar_fim(C.CARENCIA_ENCERRAMENTO_S)
+
+
+def test_coletor_para_com_brasil_completo_sem_a_marca_de_finalizado():
+    """1º turno de 2026: UFs finalizadas, Brasil em "p" com 100% das seções.
+    O coletor ficou 7 horas no ar esperando uma marca que não veio."""
+    tot = {"6257:br": "p", "6257:uf:sp": "f", "6259:uf:sp": "f"}
+    col, C = _coletor_para_fim(tot, {"6257:br": True})
+    assert not col.verificar_fim(0.0)
+    assert not col.verificar_fim(C.CARENCIA_ENCERRAMENTO_S)   # espera mais
+    assert col.verificar_fim(C.CARENCIA_SEM_MARCA_S)
+    # Brasil incompleto, ou uma UF ainda aberta: não para.
+    col, C = _coletor_para_fim(tot, {"6257:br": False})
+    assert not col.verificar_fim(0.0) and not col.verificar_fim(1e6)
+    col, C = _coletor_para_fim({**tot, "6259:uf:am": "p"},
+                               {"6257:br": True, "6259:uf:am": True})
+    assert not col.verificar_fim(0.0) and not col.verificar_fim(1e6)

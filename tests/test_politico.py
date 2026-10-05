@@ -575,3 +575,132 @@ def test_chamada_liderar_sem_maioria_e_segundo_turno_nao_vencedor():
                       "b": (0.0, 0.0, 27.0, 28.0, 29.0),
                       "c": (0.0, 0.0, 26.5, 27.5, 28.5)})
     assert not CH.avaliar([emb] * 3).apta
+
+
+def test_probabilidade_so_a_partir_de_6_por_cento_apurado():
+    """Decisão de 05/10/2026: com 0,0% apurado o modelo deu 97,6% de chance
+    de maioria a quem foi ao 2º turno."""
+    from obs2026.engine import nivel as NV
+    assert not NV.publica_probabilidade(0.0)
+    assert not NV.publica_probabilidade(5.99)
+    assert NV.publica_probabilidade(6.0)
+    assert not NV.publica_probabilidade(None)
+
+
+def test_faixa_trava_a_largura_a_partir_de_95_por_cento():
+    """A mediana é a de agora; a largura, no mínimo a do último registro
+    abaixo de 95% apurado."""
+    from obs2026.engine import nivel as NV
+    ref = {"q500": 47.0, "q100": 46.6, "q900": 47.4, "q050": 46.4,
+           "q950": 47.6, "q025": 46.2, "q975": 47.8}
+    agora = {"q500": 47.2, "q100": 47.18, "q900": 47.22, "q050": 47.17,
+             "q950": 47.23, "q025": 47.16, "q975": 47.24}
+    t = NV.travar_largura(agora, ref)
+    assert t["q500"] == 47.2
+    assert abs(t["q050"] - 46.6) < 1e-9 and abs(t["q950"] - 47.8) < 1e-9
+    assert abs(t["q100"] - 46.8) < 1e-9 and abs(t["q900"] - 47.6) < 1e-9
+    # nunca estreita o que o modelo já dá de mais largo
+    largo = dict(agora, q050=45.0, q950=49.0)
+    t = NV.travar_largura(largo, ref)
+    assert t["q050"] == 45.0 and t["q950"] == 49.0
+    # sem referência, nada muda; e a faixa não sai de 0–100
+    assert NV.travar_largura(agora, None) == agora
+    borda = NV.travar_largura({"q500": 0.1, "q100": 0.1, "q900": 0.1},
+                              {"q500": 5.0, "q100": 4.0, "q900": 6.0})
+    assert borda["q100"] == 0.0 and abs(borda["q900"] - 1.1) < 1e-9
+
+
+def _reg_alerta(momento, cands, *, apurado, pendente, secoes=(50, 100),
+                cargo="3", unidade="sp"):
+    """`cands`: {nome: (votos, estado_matematico, prob_lider, prob_maioria)}."""
+    from types import SimpleNamespace as NS
+    C = sum(v[0] for v in cands.values())
+    r = NS(cargo=cargo, unidade=unidade, modelo="m3", momento=momento,
+           concorrentes_observados=C, pendente_max=pendente,
+           secoes_totalizadas=secoes[0], secoes_total=secoes[1],
+           estado_publicacao="projecao_disponivel",
+           candidatos=[NS(sqcand=k, nome=k.upper(), votos_observados=v[0],
+                          estado_matematico=v[1], prob_lideranca=v[2],
+                          prob_dentro_vagas=v[2], prob_maioria_absoluta=v[3],
+                          pct_concorrentes_q500=100.0 * v[0] / C,
+                          pct_concorrentes_q025=100.0 * v[0] / C - 1,
+                          pct_concorrentes_q975=100.0 * v[0] / C + 1)
+                       for k, v in cands.items()])
+    r.cobertura_pct = apurado
+    return r
+
+
+def test_alertas_saem_uma_vez_e_na_ordem_dos_fatos():
+    """Pedido de 05/10/2026: a faixa das últimas novidades. Um alerta é uma
+    transição — dito uma vez, não se repete a cada registro."""
+    from obs2026.engine import alertas as AL
+    ab, el = "em_aberto", "matematicamente_eleito"
+    ac = AL.Acompanhador()
+    # liderança apertada, nada a dizer
+    assert ac.alimentar(_reg_alerta("t1", {"ana": (60, ab, .6, .3),
+                                          "bia": (55, ab, .4, .1)},
+                                    apurado=12, pendente=900)) == []
+    # virada na contagem
+    a = ac.alimentar(_reg_alerta("t2", {"ana": (200, ab, .2, .1),
+                                        "bia": (230, ab, .8, .6)},
+                                 apurado=30, pendente=600))
+    assert [x.tipo for x in a] == ["virada"] and "Bia passa Ana" in a[0].texto
+    # três registros estáveis com 99%+ de maioria: vencedor projetado, 1 vez
+    proj = []
+    for t in ("t3", "t4", "t5", "t6"):
+        proj += ac.alimentar(_reg_alerta(t, {"ana": (300, ab, 0, 0),
+                                             "bia": (500, ab, 1, .995)},
+                                         apurado=60, pendente=300))
+    assert [x.tipo for x in proj] == ["projetado"]
+    assert proj[0].natureza == "probabilidade"
+    assert "vencedor projetado" in proj[0].texto
+    # a conta fecha: matematicamente eleito, e depois o 100%
+    a = ac.alimentar(_reg_alerta("t7", {"ana": (350, "matematicamente_eliminado", 0, 0),
+                                        "bia": (640, el, 1, 1)},
+                                 apurado=96, pendente=20))
+    assert [x.tipo for x in a] == ["matematico"] and a[0].natureza == "conta"
+    assert ac.alimentar(_reg_alerta("t8", {"ana": (352, "matematicamente_eliminado", 0, 0),
+                                           "bia": (645, el, 1, 1)},
+                                    apurado=97, pendente=10)) == []
+    a = ac.alimentar(_reg_alerta("t9", {"ana": (360, "matematicamente_eliminado", 0, 0),
+                                        "bia": (650, el, 1, 1)},
+                                 apurado=100, pendente=0, secoes=(100, 100)))
+    assert [x.tipo for x in a] == ["encerrada"]
+    assert "vence no 1º turno" in a[0].texto and "eleit" not in a[0].texto
+
+
+def test_alerta_de_segundo_turno_exige_que_ninguem_alcance_a_maioria():
+    from obs2026.engine import alertas as AL
+    s2 = "matematicamente_no_segundo_turno"
+    cands = {"ana": (480, s2, 1, 0), "bia": (400, s2, 0, 0),
+             "caio": (50, "matematicamente_eliminado", 0, 0)}
+    ac = AL.Acompanhador()
+    # Ana ainda pode fechar: 2·480 + 100 > 930 — não há 2º turno definido.
+    a = ac.alimentar(_reg_alerta("t1", cands, apurado=85, pendente=100))
+    assert "segundo_turno" not in [x.tipo for x in a]
+    a = ac.alimentar(_reg_alerta("t2", {"ana": (455, s2, 1, 0),
+                                        "bia": (420, s2, 0, 0),
+                                        "caio": (55, "matematicamente_eliminado", 0, 0)},
+                                 apurado=97, pendente=10))
+    assert [x.tipo for x in a] == ["segundo_turno"]
+    assert "Ana × Bia" in a[0].texto
+
+
+def test_roteiro_aceita_as_telas_de_resumo(cliente):
+    r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [
+        {"tipo": "panorama", "cargo": "governador"},
+        {"tipo": "panorama", "cargo": "senador"},
+        {"tipo": "duelo", "cargo": "presidente"},
+        {"tipo": "participacao", "cargo": "presidente"},
+        {"tipo": "estado", "uf": "sp"},
+    ]})
+    assert r.status_code == 200, r.text
+    telas = cliente.get("/api/v1/telao/roteiro").json()["dados"]
+    assert [t["tipo"] for t in telas] == ["panorama", "panorama", "duelo",
+                                          "participacao", "estado"]
+    assert not any(t["erro"] for t in telas)
+    assert telas[4]["uf"] == "sp" and "SP" in telas[4]["titulo"]
+    # sem UF, o resumo do estado é recusado
+    r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [
+        {"tipo": "estado"}]})
+    assert r.status_code == 422

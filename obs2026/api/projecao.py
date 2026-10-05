@@ -46,6 +46,12 @@ def register(app) -> None:
     from ..engine.denominators import Base as DenBase
     from ..storage.raw import RawArchive
 
+    def _regra_probabilidade(apurado: float) -> dict:
+        """Por que a probabilidade saiu ou não, para a tela dizer."""
+        return {"publicada": NV.publica_probabilidade(apurado),
+                "apurado_pct": apurado,
+                "apurado_min_pct": NV.PROB_APURADO_MIN}
+
     def _chamada_de(r, ct) -> dict:
         """A mesma chamada, quando a resposta vem de um registro do diário."""
         from ..config import load_environment
@@ -72,6 +78,28 @@ def register(app) -> None:
                 "nota": ("Vencedor projetado é probabilidade, não conta: "
                          "diferente de 'matematicamente definido'.")}
 
+    def _quantis(c) -> dict:
+        """Quantis de um candidato do diário, nos nomes de `NV.CHAVES`."""
+        return {"q500": c.pct_concorrentes_q500,
+                "q100": c.pct_concorrentes_q100,
+                "q900": c.pct_concorrentes_q900,
+                "q050": c.pct_concorrentes_q050,
+                "q950": c.pct_concorrentes_q950,
+                "q025": c.pct_concorrentes_q025,
+                "q975": c.pct_concorrentes_q975}
+
+    def _referencia_trava(ambiente: str, chave: tuple, apurado: float,
+                          pendente_max: int) -> dict:
+        """`{sqcand: quantis}` do último registro abaixo de 95% apurado,
+        quando a disputa já passou disso e ainda falta voto. Vazio fora
+        desse trecho: a faixa publicada é a do modelo."""
+        if apurado < NV.TRAVA_LARGURA_APURADO or not pendente_max:
+            return {}
+        d = A.Diario(DATA_DIR / "previsoes", ambiente)
+        d.ultimos()
+        r = d.referencia_da_trava(chave)
+        return {c.sqcand: _quantis(c) for c in r.candidatos} if r else {}
+
     def _faixa(qs: dict, nivel: int, rotulo: str) -> dict:
         lo, hi = NV.faixa(qs, nivel)
         # Registro antigo, sem os quantis largos: publica 80% e diz isso.
@@ -83,6 +111,9 @@ def register(app) -> None:
         """Monta a resposta a partir de um registro do diário, no mesmo
         formato do cálculo ao vivo — quem consome não precisa saber."""
         publicavel = r.estado_publicacao == "projecao_disponivel"
+        com_prob = publicavel and NV.publica_probabilidade(r.cobertura_pct)
+        ref = _referencia_trava(r.ambiente, (r.cargo, r.unidade, r.modelo),
+                                r.cobertura_pct, r.pendente_max)
         linhas = [{
             "sqcand": c.sqcand,
             "nome": c.nome,
@@ -92,13 +123,8 @@ def register(app) -> None:
                 "pct_mediana": c.pct_concorrentes_q500,
                 "pct_q100": c.pct_concorrentes_q100,
                 "pct_q900": c.pct_concorrentes_q900,
-                "faixa": _faixa({
-                    "q100": c.pct_concorrentes_q100,
-                    "q900": c.pct_concorrentes_q900,
-                    "q050": c.pct_concorrentes_q050,
-                    "q950": c.pct_concorrentes_q950,
-                    "q025": c.pct_concorrentes_q025,
-                    "q975": c.pct_concorrentes_q975},
+                "faixa": _faixa(NV.travar_largura(
+                    _quantis(c), ref.get(c.sqcand)),
                     *NV.nivel_por_apurado(r.cobertura_secoes_pct)),
                 "base": DenBase.VALIDOS_COMPUTADOS.value,
             },
@@ -106,7 +132,7 @@ def register(app) -> None:
                 "lideranca": c.prob_lideranca,
                 "dentro_das_vagas": c.prob_dentro_vagas,
                 "maioria_absoluta": c.prob_maioria_absoluta,
-            } if publicavel else None),
+            } if com_prob else None),
             "estado_matematico": c.estado_matematico,
         } for c in r.candidatos]
         linhas.sort(key=lambda x: -x["projecao"]["votos_mediana"])
@@ -121,6 +147,8 @@ def register(app) -> None:
             extra={
                 "publicavel": publicavel,
                 "origem": "registro",
+                "probabilidade": _regra_probabilidade(r.cobertura_pct),
+                "faixa_travada": bool(ref),
                 "registrado_em": r.momento,
                 "idade_s": round(idade, 1),
                 "disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas,
@@ -237,6 +265,12 @@ def register(app) -> None:
         lider = fc.prob_lideranca()
         vagas = fc.prob_dentro_das_vagas()
         maioria = fc.prob_maioria_absoluta()
+        apurado = (100.0 * ctx.eleitorado_apurado / ctx.eleitorado_total
+                   if ctx.eleitorado_total else 0.0)
+        com_prob = publicavel and NV.publica_probabilidade(apurado)
+        ref = _referencia_trava(
+            env.name, (ct.cargo_cd, uf.lower() if uf else "br", modelo),
+            apurado, ctx.pendente_max)
         estados = {x.sqcand: x for x in dfn.situacoes}
         # Cenário de cassação dos votos sub judice: vai junto, nunca no
         # lugar do outro. Duas informações persistentes (pedido de 23/09).
@@ -257,7 +291,8 @@ def register(app) -> None:
                     "pct_q100": q[c]["pct_concorrentes"]["q100"],
                     "pct_q900": q[c]["pct_concorrentes"]["q900"],
                     # Faixa publicada: o nível sobe com o apurado.
-                    "faixa": _faixa(q[c]["pct_concorrentes"], nivel, rotulo),
+                    "faixa": _faixa(NV.travar_largura(
+                        q[c]["pct_concorrentes"], ref.get(c)), nivel, rotulo),
                     "base": DenBase.VALIDOS_COMPUTADOS.value,
                 },
                 # §4.7: probabilidade só depois de o gate passar. `null` com
@@ -266,7 +301,7 @@ def register(app) -> None:
                     "lideranca": lider.get(c),
                     "dentro_das_vagas": vagas.get(c),
                     "maioria_absoluta": maioria.get(c),
-                } if publicavel else None),
+                } if com_prob else None),
                 "estado_matematico": e.estado.value if e else "em_aberto",
                 "estado_matematico_se_cassados": (
                     (cassados[c].estado.value if c in cassados
@@ -287,6 +322,8 @@ def register(app) -> None:
                     "divulgada (§4.7)."),
             extra={
                 "publicavel": publicavel,
+                "probabilidade": _regra_probabilidade(apurado),
+                "faixa_travada": bool(ref),
                 "nivel_intervalo": nivel,
                 "chamada": _chamada(env, ct, uf, modelo, ctx.nomes),
                 "disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas,

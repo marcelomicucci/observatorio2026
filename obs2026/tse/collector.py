@@ -55,6 +55,12 @@ RECONCILE_TICK_S = 5.0
 #: Depois que o TSE encerra Brasil e todas as UFs, espera este tanto antes
 #: de se desligar: os últimos EA20 (municípios, deputados) ainda chegam.
 CARENCIA_ENCERRAMENTO_S = 600.0
+#: Espera quando o Brasil não foi MARCADO como finalizado mas está completo.
+#: No 1º turno de 2026 o TSE deixou o total nacional em "p" com 100% das
+#: seções e todas as UFs finalizadas; o coletor ficou 7 horas pedindo
+#: 25 mil arquivos por hora que não mudavam. Sem a marca, a espera é maior
+#: e qualquer mudança num total a reinicia.
+CARENCIA_SEM_MARCA_S = 1800.0
 
 
 #: Níveis da fila. O nível decide antes do peso: nada de nível mais baixo
@@ -216,6 +222,9 @@ class Collector:
         #: com os arquivos de um ciclo já fechado o desligaria na hora.
         self.encerrar_ao_finalizar = True
         self._andamento_totais: dict[str, str] = {}
+        #: Totais com 100% das seções totalizadas, marcados ou não.
+        self._completo_totais: dict[str, bool] = {}
+        self._carencia = CARENCIA_ENCERRAMENTO_S
         self._viu_aberto = False
         self._tudo_final_desde: float | None = None
         self.encerrado_por_fim = False
@@ -483,12 +492,17 @@ class Collector:
                     escopo = (f"{t.election}:br" if unit.tpabr == "br"
                               else f"{t.election}:uf:{unit.cdabr.lower()}")
                     self._andamento_totais[escopo] = unit.andamento
+                    sc = unit.sections
+                    self._completo_totais[escopo] = bool(
+                        sc and sc.ts and sc.st >= sc.ts)
                     if unit.andamento != "f":
                         self._viu_aberto = True
                     tok = unit.change_token()
                     antes = self.tokens_totais.get(escopo)
                     self.tokens_totais[escopo] = tok
                     if antes is not None and antes != tok:
+                        # Um total mudou: a contagem de silêncio recomeça.
+                        self._tudo_final_desde = None
                         self._reabrir_totais(t.election, escopo,
                                              unit.totalized_at)
                     continue
@@ -518,8 +532,15 @@ class Collector:
 
     def verificar_fim(self, agora: float) -> bool:
         """True quando é hora de desligar: tudo encerrado há 10 min."""
-        vals = list(self._andamento_totais.values())
-        tudo_f = bool(vals) and all(v == "f" for v in vals)
+        tot = self._andamento_totais
+        marcado = bool(tot) and all(v == "f" for v in tot.values())
+        # Sem a marca do Brasil: vale se todas as UFs estão finalizadas e o
+        # total nacional tem 100% das seções.
+        tudo_f = marcado or (bool(tot) and all(
+            v == "f" or (k.endswith(":br") and self._completo_totais.get(k))
+            for k, v in tot.items()))
+        carencia = self._carencia = (CARENCIA_ENCERRAMENTO_S if marcado
+                                     else CARENCIA_SEM_MARCA_S)
         if not (self.encerrar_ao_finalizar and self._viu_aberto and tudo_f):
             if self._tudo_final_desde is not None and not tudo_f:
                 log.warning("apuração reaberta pelo TSE: coletor continua")
@@ -527,11 +548,13 @@ class Collector:
             return False
         if self._tudo_final_desde is None:
             self._tudo_final_desde = agora
-            log.warning("TSE encerrou Brasil e todas as UFs; o coletor se "
-                        "desliga em %.0f min (últimos arquivos)",
-                        CARENCIA_ENCERRAMENTO_S / 60)
+            log.warning("%s; o coletor se desliga em %.0f min sem mudança "
+                        "nos totais (últimos arquivos)",
+                        "TSE encerrou Brasil e todas as UFs" if marcado else
+                        "Todas as UFs encerradas e Brasil com 100% das "
+                        "seções, sem a marca de finalizado", carencia / 60)
             return False
-        return agora - self._tudo_final_desde >= CARENCIA_ENCERRAMENTO_S
+        return agora - self._tudo_final_desde >= carencia
 
     # -- laço de controle -------------------------------------------------
 
@@ -639,7 +662,7 @@ class Collector:
                 finalizados=len(self.finalizados),
                 encerrar_ao_finalizar=self.encerrar_ao_finalizar,
                 encerra_em_s=(None if self._tudo_final_desde is None else
-                              max(0, round(CARENCIA_ENCERRAMENTO_S
+                              max(0, round(self._carencia
                                            - (agora
                                               - self._tudo_final_desde)))))
         except OSError:

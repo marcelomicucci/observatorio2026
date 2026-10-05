@@ -67,7 +67,15 @@ CAMADAS = ("lider", "apurar", "partido", "ideologia")
 #: Tipos de tela. `mapa` é a de apuração; `politico` põe lado a lado o mapa
 #: por partido e o ideológico (presidente ou governador); `composicao` é o
 #: hemiciclo do Senado ou da Câmara.
-TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo")
+TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo",
+         # Telas de 05/10/2026 (web/telas.js):
+         #   panorama      os 27 estados numa tela — governadores ou
+         #                 senadores, quem levou e onde há 2º turno
+         #   duelo         presidente: os dois primeiros, estado a estado
+         #   participacao  ausentes, brancos e nulos de um cargo
+         #   estado        resumo de uma UF: presidente, governador,
+         #                 senadores e deputados federais
+         "panorama", "duelo", "participacao", "estado")
 CASAS = ("senado", "camara")
 #: Nomes de antes da fusão das camadas do mapa. Continuam aceitos para que
 #: nenhum roteiro já escrito quebre, mas são traduzidos aqui — o telão
@@ -241,6 +249,26 @@ def register(app) -> None:
                 # Nacional, sem cargo: junta governador, senador, deputado e
                 # a apuração numa tela só.
                 cd, cargo_nome, uf = None, "", None
+            elif tipo == "estado":
+                cd, cargo_nome = None, ""
+                if uf not in UF_DISPUTAS:
+                    erro = "resumo do estado exige `uf`"
+            elif tipo == "panorama":
+                uf = None
+                if cd not in ("3", "5"):
+                    erro = ("panorama é de governador ou senador: os 27 "
+                            "estados numa tela")
+            elif tipo == "duelo":
+                uf = None
+                if cd != "1":
+                    erro = ("duelo estado a estado é de presidente; em "
+                            "governador e senador, use o mapa da UF")
+            elif tipo == "participacao":
+                if cd is None:
+                    erro = (f"cargo {item.get('cargo')!r} desconhecido; "
+                            f"use um de {sorted(CARGOS)}")
+                elif cd in ("3", "5") and uf not in UF_DISPUTAS:
+                    erro = f"{cargo_nome} é decidido por UF; informe `uf`"
             elif tipo == "comparativo":
                 # Mesmo território em várias eleições. Governador e senador
                 # exigem UF, como em qualquer disputa estadual; deputado
@@ -298,6 +326,15 @@ def register(app) -> None:
                 titulo = titulo_livre
             elif tipo == "recordes":
                 titulo = "Recordes da noite"
+            elif tipo == "estado":
+                titulo = f"Resumo do estado — {(uf or '').upper()}"
+            elif tipo == "panorama":
+                titulo = ("Governadores" if cd == "3" else "Senadores")                     + " — os 27 estados"
+            elif tipo == "duelo":
+                titulo = "Presidente — estado a estado"
+            elif tipo == "participacao":
+                titulo = (f"{cargo_nome.title()} — ausentes, brancos e nulos"
+                          + (f" ({uf.upper()})" if uf else ""))
             elif tipo == "comparativo" and cd == "6":
                 titulo = "Câmara — bancadas ao longo das eleições"
             elif tipo == "comparativo" and cd == "R":
@@ -311,7 +348,8 @@ def register(app) -> None:
                           else f"Deputados federais — {uf.upper()}" if uf
                           else "Câmara — composição")
             elif tipo == "politico":
-                titulo = f"{cargo_nome.title()} — partido e ideologia"
+                titulo = ("Presidente — onde cada um lidera" if cd == "1"
+                          else f"{cargo_nome.title()} — partido e ideologia")
             elif municipio_nome:
                 titulo = (f"{cargo_nome.title()} — "
                           f"{municipio_nome}/{(uf or '').upper()}")
@@ -413,7 +451,7 @@ def register(app) -> None:
                 d["tipo"] = tipo
             if tipo == "composicao":
                 d["casa"] = str(it.get("casa") or "").strip().lower()
-            elif tipo == "recordes":
+            elif tipo in ("recordes", "estado"):
                 pass
             elif tipo == "comparativo":
                 d["cargo"] = CARGO_NOME_COMPARATIVO.get(

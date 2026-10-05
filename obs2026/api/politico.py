@@ -36,6 +36,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..engine import nivel as NV
 from ..politics import camara as CAM
 from ..politics import classification as CL
 from ..politics import partidos as PA
@@ -243,7 +244,13 @@ def register(app) -> None:
                                             [])
                     if r.dvt == "Válido" and r.candidate_id in cands]
             rows.sort(key=lambda r: -r.votos)
-            out.append({"geo": geos[t.geography_id], "t": t,
+            # Votos sub judice por candidato: sem o detalhe, a definição
+            # trata qualquer voto sub judice como capaz de mudar o resultado
+            # (DF e RN ficaram "liderando" com 100% apurado em 04/10/2026).
+            sj = {cands[r.candidate_id].sqcand: r.votos
+                  for r in por_snap.get((t.snapshot_id, t.geography_id), [])
+                  if r.dvt == "Anulado sub judice" and r.candidate_id in cands}
+            out.append({"geo": geos[t.geography_id], "t": t, "sj": sj,
                         "rows": [(cands[r.candidate_id], r.votos)
                                  for r in rows]})
         return out
@@ -279,10 +286,12 @@ def register(app) -> None:
         topo = rows[:vagas]
         if all(c.eleito for c, _ in topo) and len(topo) == vagas:
             return "eleito", topo
+        sj = u.get("sj") or {}
         dfn = DC.avaliar(
-            {c.sqcand: v for c, v in rows}, vagas=vagas,
+            {**{c.sqcand: v for c, v in rows}, **sj}, vagas=vagas,
             concorrentes_observados=t.validos_computados,
             pendente_max=t.pendente_max, sub_judice=t.anulados_sub_judice,
+            sub_judice_por_candidato=sj or None,
             encerrada=(t.andamento == "f"),
             tem_segundo_turno=segundo_turno)
         if dfn.disputa_definida:
@@ -444,7 +453,11 @@ def register(app) -> None:
             publicavel = False
             idade = None
             if reg is not None:
+                # Probabilidade só com o gate e a partir do piso de apuração
+                # (engine/nivel.py); mediana e faixa saem sempre.
                 publicavel = reg.estado_publicacao == "projecao_disponivel"
+                com_prob = publicavel and NV.publica_probabilidade(
+                    reg.cobertura_pct)
                 idade = (agora - datetime.fromisoformat(reg.momento)
                          ).total_seconds()
                 for c in reg.candidatos:
@@ -453,9 +466,9 @@ def register(app) -> None:
                         "pct_q100": c.pct_concorrentes_q100,
                         "pct_q900": c.pct_concorrentes_q900,
                         "prob_lideranca": (c.prob_lideranca
-                                           if publicavel else None),
+                                           if com_prob else None),
                         "prob_dentro_vagas": (c.prob_dentro_vagas
-                                              if publicavel else None),
+                                              if com_prob else None),
                     }
             if u is None:
                 ufs.append({"uf": uf, "estado": "aguardando",

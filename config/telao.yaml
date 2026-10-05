@@ -38,34 +38,27 @@
 # Nome não é chave: PAU D'ARCO existe em PA e em TO. Nome exige `uf`, e
 # ambiguidade é recusada em vez de resolvida por adivinhação (§2.1).
 #
-# Gravado pelo painel em 04/10/2026 21:48:33.
+# Gravado pelo painel em 05/10/2026 12:38:23.
 
 padrao_segundos: 20
 camada_padrao: lider
 roteiro:
-- cargo: presidente
-  camada: partido
-  segundos: 20
 - tipo: politico
+  cargo: presidente
+  abrangencia: mu
+  segundos: 25
+- tipo: panorama
   cargo: governador
-  segundos: 20
-- cargo: governador
-  uf: pa
-  camada: lider
-  segundos: 20
-- cargo: senador
-  uf: pa
-  camada: lider
-  segundos: 20
-- tipo: recordes
   segundos: 25
-- tipo: composicao
-  casa: senado
+- tipo: panorama
+  cargo: senador
   segundos: 25
-- tipo: composicao
-  casa: camara
+- tipo: duelo
+  cargo: presidente
   segundos: 25
-- cargo: governador
-  uf: sp
+- tipo: participacao
+  cargo: presidente
+  segundos: 25
+- cargo: presidente
   camada: lider
   segundos: 20

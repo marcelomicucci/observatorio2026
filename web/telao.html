@@ -118,8 +118,26 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
 /* Telas políticas: dois mapas lado a lado e uma coluna de números; ou o
    hemiciclo e a lista de bancadas. */
 .corpo.politico{grid-template-columns:1fr 1fr .82fr;gap:1.2vw}
+.corpo.politico.um{grid-template-columns:1.35fr .65fr}
 .corpo.composicao{grid-template-columns:1.3fr .9fr}
 .corpo.recordes{display:block;--u:1vw;overflow:hidden}
+/* Faixa das últimas novidades (engine/alertas.py), no pé da tela como o
+   gerador de caracteres de um telejornal. Uma por vez, em rodízio. */
+.alertas{display:flex;align-items:center;gap:1vw;margin-top:1vh;
+ background:#101826;border:1px solid #27405f;border-left:.5vw solid var(--acento);
+ border-radius:.6vw;padding:.9vh 1.1vw;font-size:1.35vw;min-height:5.2vh;
+ overflow:hidden;white-space:nowrap}
+.alertas[hidden]{display:none}
+.alertas.conta{border-left-color:var(--ok)}
+.alertas.probabilidade{border-left-color:var(--proj)}
+.alertas-rot{font-size:.95vw;font-weight:800;letter-spacing:.1em;
+ text-transform:uppercase;color:var(--acento)}
+.alertas-hora{color:var(--muted);font-variant-numeric:tabular-nums}
+.alertas-tit{font-weight:800}
+.alertas-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.alertas-n{font-size:.9vw;color:var(--muted)}
+.alertas .troca{animation:entra .5s ease-out}
+@keyframes entra{from{opacity:0;transform:translateY(.8vh)}to{opacity:1}}
 .corpo.comparativo{display:block;--u:1vw;overflow:hidden}
 .pmapa{background:var(--panel);border:1px solid var(--line);border-radius:1vw;
  padding:.8vh .8vw;display:flex;flex-direction:column;gap:.6vh;min-height:0;
@@ -161,6 +179,13 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
   <div class="corpo" id="corpo">
     <div class="vazio">carregando…</div>
   </div>
+  <div class="alertas" id="alertas" hidden>
+    <span class="alertas-rot">Últimas</span>
+    <span class="alertas-hora" id="alertas-hora"></span>
+    <span class="alertas-tit" id="alertas-tit"></span>
+    <span class="alertas-txt" id="alertas-txt"></span>
+    <span class="alertas-n" id="alertas-n"></span>
+  </div>
   <div class="pe">
     <span id="fonte"></span>
     <span id="atualizacao"></span>
@@ -169,6 +194,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
 
 <script src="/mapa.js"></script>
 <script src="/politico.js"></script>
+<script src="/telas.js"></script>
 <script>
 const API = '/api/v1';
 const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
@@ -582,7 +608,7 @@ async function carregarPolitico(minhaCarga, desatualizada) {
   document.getElementById('titulo').textContent = cargo.nome;
   document.getElementById('onde').textContent =
     recorte.cargo === '1'
-      ? 'partido e ideologia do líder · ' + (abr === 'mu'
+      ? 'onde cada um lidera · ' + (abr === 'mu'
         ? 'por município' : 'por estado')
       : 'os 27 estados · partido e ideologia de quem lidera';
   document.getElementById('vagas').hidden = true;
@@ -619,9 +645,19 @@ async function carregarPolitico(minhaCarga, desatualizada) {
     return [caixa, p];
   };
 
-  const [mp, pp] = painelMapa('partido', 'Partido de quem lidera');
+  // Presidente: um mapa só (05/10/2026). Com dois candidatos de blocos
+  // opostos, o mapa por partido e o ideológico saem iguais — duas vezes o
+  // mesmo desenho, na metade do tamanho. A ideologia continua na coluna de
+  // números ("Votos por bloco"). Governador mantém os dois: são muitos
+  // partidos, e o mapa ideológico é o que os agrupa.
+  const umMapa = recorte.cargo === '1';
+  const [mp, pp] = painelMapa('partido', umMapa
+    ? 'Quem lidera em cada ' + (abr === 'mu' ? 'município' : 'estado')
+    : 'Partido de quem lidera');
   let mi, pi = Promise.resolve();
-  if (comIdeo) {
+  if (umMapa) {
+    mi = null;
+  } else if (comIdeo) {
     [mi, pi] = painelMapa('ideologia', 'Ideologia do partido de quem lidera');
   } else {
     mi = el('div', {cls: 'pmapa'},
@@ -701,7 +737,7 @@ async function carregarPolitico(minhaCarga, desatualizada) {
 
   if (desatualizada()) return;
   corpo.dataset.tipo = 'politico';
-  corpo.className = 'corpo politico';
+  corpo.className = 'corpo politico' + (umMapa ? ' um' : '');
   poe(corpo, mp, mi, lado);
   assinaturaPolitica = assin;
   const pintura = Promise.all([pp, pi]).catch(() => null);
@@ -988,6 +1024,180 @@ async function carregarRecordes(minhaCarga, desatualizada) {
   rodapePolitico(r.source_generated_at,
     'apuração mais rápida: 1º boletim com 100% das seções (presidente) · '
     + '% = votos ÷ votos da UF, a base do TSE');
+}
+
+/* ------------------------------------------- telas de resumo (telas.js)
+ * Quatro telas de 05/10/2026. Cada uma busca o que a API já entrega para
+ * outras telas e passa ao desenho; só redesenha quando o dado muda. */
+function telaResumo(corpo, assin, filhos, fonte, nota) {
+  corpo.dataset.tipo = 'resumo';
+  corpo.className = 'corpo recordes';
+  poe(corpo, filhos);
+  assinaturaPolitica = assin;
+  rodapePolitico(fonte, nota);
+}
+
+async function carregarPanorama(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  const cargo = recorte.cargo === '5' ? '5' : '3';
+  document.getElementById('titulo').textContent =
+    cargo === '5' ? 'Senadores' : 'Governadores';
+  document.getElementById('vagas').hidden = true;
+  const r = await get(`/panorama?cargo=${cargo}`);
+  if (desatualizada()) return;
+  faixaAmbiente(r.ambiente);
+  document.getElementById('onde').textContent = cargo === '5'
+    ? 'os 27 estados · duas vagas por estado'
+    : 'os 27 estados · quem levou e onde há 2º turno';
+  const assin = 'panorama|' + cargo + '|' + JSON.stringify(r.dados.map(
+    u => [u.uf, u.estado, u.apurado_pct, u.candidatos.map(c => c.votos)]));
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  telaResumo(corpo, assin,
+    TELAS.panorama(r.dados, {vagas: cargo === '5' ? 2 : 1}),
+    r.source_generated_at,
+    'verde = eleito ou definido · amarelo = 2º turno · cinza = em aberto '
+    + '· % dos votos válidos');
+}
+
+async function carregarDuelo(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  document.getElementById('titulo').textContent = 'Presidente';
+  document.getElementById('vagas').hidden = true;
+  const [m, res] = await Promise.all([
+    get('/map-layers?cargo=1&abrangencia=uf'),
+    get('/politico/resumo?cargo=1&abrangencia=uf')]);
+  if (desatualizada()) return;
+  faixaAmbiente(m.ambiente);
+  document.getElementById('onde').textContent =
+    'os dois primeiros do país, estado a estado · % dos votos válidos';
+  const dois = ((res.dados.votos || {}).por_partido || []).slice(0, 2).map(
+    x => ({nome: x.candidatos[0], sigla: x.partido.sigla,
+           cor: x.partido.cor}));
+  const assin = 'duelo|' + JSON.stringify([dois, m.dados.map(
+    u => [u.uf, u.lider_pct, u.segundo_pct])]);
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  if (dois.length < 2) {
+    return telaResumo(corpo, assin, el('div', {cls: 'vazio'},
+      'Sem votos contados para presidente ainda.'), m.source_generated_at);
+  }
+  telaResumo(corpo, assin, TELAS.duelo(m.dados, dois[0], dois[1]),
+    m.source_generated_at,
+    'estados do maior para o menor eleitorado · cinza = demais candidatos');
+}
+
+async function carregarParticipacao(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  const cargo = CARGOS[recorte.cargo] ? recorte.cargo : '1';
+  const uf = recorte.uf ? String(recorte.uf).toLowerCase() : null;
+  document.getElementById('titulo').textContent =
+    'Ausentes, brancos e nulos';
+  document.getElementById('vagas').hidden = true;
+  const r = await get(`/comparativo?cargo=${cargo}&anos=2026`
+    + (uf ? `&uf=${uf}` : ''));
+  if (desatualizada()) return;
+  faixaAmbiente(r.ambiente);
+  const c = (r.dados.colunas || []).find(x => x.ano === 2026);
+  document.getElementById('onde').textContent = CARGOS[cargo].nome + ' · '
+    + (uf ? (POLITICO.NOME_UF[uf] || uf.toUpperCase()) : 'Brasil');
+  const assin = 'participacao|' + cargo + '|' + uf + '|' + JSON.stringify(
+    c && [c.comparecimento, c.brancos, c.nulos, c.validos]);
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  if (!c || !c.total_votos) {
+    return telaResumo(corpo, assin, el('div', {cls: 'vazio'},
+      'Nenhum voto contado ainda.'), r.source_generated_at);
+  }
+  telaResumo(corpo, assin, TELAS.participacao(c), r.source_generated_at,
+    cargo === '5' ? 'no Senado cada eleitor dá dois votos: brancos e nulos '
+      + 'são contados por voto' : null);
+}
+
+async function carregarEstado(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  const uf = String(recorte.uf || '').toLowerCase();
+  document.getElementById('titulo').textContent =
+    POLITICO.NOME_UF[uf] || uf.toUpperCase();
+  document.getElementById('vagas').hidden = true;
+  const q = c => `cargo=${c}&uf=${uf}`;
+  const nulo = () => null;
+  const [rp, cp, rg, cg, dg, rs, cs, ds, cam, par] = await Promise.all([
+    get(`/results?abrangencia=uf&${q(1)}`), get(`/candidates?${q(1)}`),
+    get(`/results?abrangencia=uf&${q(3)}`), get(`/candidates?${q(3)}`),
+    get(`/decided?${q(3)}`).catch(nulo),
+    get(`/results?abrangencia=uf&${q(5)}`), get(`/candidates?${q(5)}`),
+    get(`/decided?${q(5)}`).catch(nulo),
+    get(`/composicao?casa=camara&uf=${uf}`).catch(nulo),
+    get('/partidos').catch(nulo)]);
+  if (desatualizada()) return;
+  faixaAmbiente(rg.ambiente);
+  document.getElementById('onde').textContent =
+    'resumo do estado · presidente, governador, senadores e deputados';
+  const parte = (res, cands, def) => {
+    const u = res.dados[0] || {};
+    const e = u.eleitorado || {};
+    const lista = ((cands.dados || [])[0] || {}).candidatos || [];
+    const dfn = def && def.dados && def.dados[0];
+    const estados = {};
+    if (dfn) for (const c of dfn.candidatos) estados[c.sqcand] = c.estado;
+    const cObs = u.votos && u.votos.validos_computados;
+    const resto = dfn ? dfn.resto_maximo_total : null;
+    return {apurado: e.total ? 100 * e.apurado / e.total : null,
+            cands: lista, estados, votos: u.votos,
+            turnoCerto: !!(dfn && resto != null && cObs > 0
+              && !lista.some(c => 2 * c.oficial.votos + resto > cObs))};
+  };
+  const cores = {};
+  for (const x of ((par && par.dados.partidos) || [])) cores[x.sigla] = x.cor;
+  const d = {uf, cores, presidente: parte(rp, cp, null),
+             governador: parte(rg, cg, dg), senador: parte(rs, cs, ds),
+             camara: cam && cam.dados.uf_detalhe};
+  const assin = 'estado|' + uf + '|' + JSON.stringify([
+    d.presidente.cands.map(c => c.oficial.votos),
+    d.governador.cands.map(c => [c.oficial.votos, c.oficial.situacao]),
+    d.governador.estados, d.senador.cands.map(c => c.oficial.votos),
+    d.senador.estados, d.camara && [d.camara.apurado_pct,
+                                    d.camara.eleitos.length]]);
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  telaResumo(corpo, assin, TELAS.estado(d), rg.source_generated_at,
+    '% dos votos válidos · "eleito" e "2º turno" são a situação do TSE');
+}
+
+/* ------------------------------------------------ faixa de alertas
+ * As últimas novidades (rota /alertas), uma por vez. Só entra o que é
+ * recente: na parede, "matematicamente eleito" de três horas atrás não é
+ * novidade. `?alertas=tudo` mostra as últimas de qualquer idade (ensaio e
+ * conferência depois da noite); `?alertas=0` desliga a faixa. */
+const ALERTAS = {lista: [], i: -1, janelaMin: 40,
+                 modo: new URLSearchParams(location.search).get('alertas')};
+async function buscarAlertas() {
+  if (ALERTAS.modo === '0' || (recorte && recorte.eleicao)) return;
+  try {
+    const r = await fetch(API + '/alertas?limite=12&peso_min=2');
+    if (!r.ok) return;
+    const agora = Date.now();
+    ALERTAS.lista = ((await r.json()).dados || []).filter(a =>
+      ALERTAS.modo === 'tudo'
+      || agora - new Date(a.momento).getTime() < ALERTAS.janelaMin * 60000);
+  } catch (e) { /* a faixa é acessória: sem ela o telão segue igual */ }
+}
+function girarAlertas() {
+  const caixa = document.getElementById('alertas');
+  const n = ALERTAS.lista.length;
+  if (!n) { caixa.hidden = true; return; }
+  ALERTAS.i = (ALERTAS.i + 1) % n;
+  const a = ALERTAS.lista[ALERTAS.i];
+  caixa.hidden = false;
+  caixa.className = 'alertas ' + a.natureza;
+  document.getElementById('alertas-hora').textContent =
+    brt(a.momento).slice(0, 5);
+  const tit = document.getElementById('alertas-tit');
+  const txt = document.getElementById('alertas-txt');
+  tit.textContent = a.titulo;
+  txt.textContent = a.texto;
+  for (const x of [tit, txt]) {
+    x.classList.remove('troca'); void x.offsetWidth; x.classList.add('troca');
+  }
+  document.getElementById('alertas-n').textContent =
+    n > 1 ? `${ALERTAS.i + 1}/${n}` : '';
 }
 
 /* Comparativo: o mesmo território em várias eleições, para a sala ver a
@@ -1567,12 +1777,14 @@ async function carregar() {
   const minhaCarga = ++cargaAtual;
   const desatualizada = () => minhaCarga !== cargaAtual;
 
-  if (recorte.tipo === 'politico' || recorte.tipo === 'composicao'
-      || recorte.tipo === 'recordes' || recorte.tipo === 'comparativo') {
+  const ESPECIAIS = {politico: carregarPolitico,
+    composicao: carregarComposicao, recordes: carregarRecordes,
+    comparativo: carregarComparativo, panorama: carregarPanorama,
+    duelo: carregarDuelo, participacao: carregarParticipacao,
+    estado: carregarEstado};
+  if (ESPECIAIS[recorte.tipo]) {
     try {
-      await ({politico: carregarPolitico, composicao: carregarComposicao,
-              recordes: carregarRecordes,
-              comparativo: carregarComparativo}[recorte.tipo])(
+      await (ESPECIAIS[recorte.tipo])(
         minhaCarga, desatualizada);
     } catch (err) {
       if (!desatualizada()) {
@@ -1593,8 +1805,7 @@ async function carregar() {
   // Tipo que esta página não conhece: quase sempre é o telão aberto antes
   // de uma atualização do sistema. Cair no mapa em silêncio faz o operador
   // achar que o botão do painel não funcionou (visto em 23/09).
-  const CONHECIDOS = ['mapa', 'politico', 'composicao', 'recordes',
-                      'comparativo'];
+  const CONHECIDOS = ['mapa', ...Object.keys(ESPECIAIS)];
   if (recorte.tipo && !CONHECIDOS.includes(recorte.tipo)) {
     assinaturaPolitica = null;
     document.getElementById('titulo').textContent = 'Tela desconhecida';
@@ -1864,6 +2075,9 @@ async function carregar() {
   // banco a cada 10 s pelo coletor, e esperar 30 s aqui desperdiçaria dois
   // terços disso. A leitura é barata; a projeção, que não é, fica em cache.
   setInterval(carregar, 10000);
+  buscarAlertas().then(girarAlertas);
+  setInterval(buscarAlertas, 20000);
+  setInterval(girarAlertas, 7000);
   // O roteiro pode ser editado no arquivo durante a noite; releitura
   // periódica evita ter que recarregar a janela do projetor.
   setInterval(async () => {
