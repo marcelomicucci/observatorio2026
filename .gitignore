@@ -24,3 +24,12 @@ data/telao/
 
 # Copias de seguranca do roteiro, gravadas pelo painel a cada alteracao.
 config/telao.anterior/
+
+# Estado de execucao: comandos ao coletor, batimento e trava.
+data/comandos/
+data/*.lock
+
+# Copias de seguranca gravadas pelo painel a cada alteracao (como o roteiro).
+config/classificacao.anterior/
+config/operacao.anterior/
+config/thresholds.anterior/

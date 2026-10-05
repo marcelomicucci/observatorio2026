@@ -65,11 +65,17 @@ class Pleito:
     eleicoes: tuple[Eleicao, ...]
 
 
+#: Valor do campo `f` nos arquivos de produção. O simulado manda 's'. Até
+#: 04/10/2026 o código esperava 'f' — nunca visto, porque só havia simulado;
+#: o catálogo oficial de 2026 (e os de 2022) trazem 'o'.
+FASE_OFICIAL = "o"
+
+
 @dataclass(frozen=True, slots=True)
 class Ea11:
     generated_at: datetime | None
     idg: str | None
-    fase: str                   # 's' simulado / 'f' oficial
+    fase: str                   # 's' simulado / 'o' oficial
     diretorios: tuple[dict, ...]
     pleitos: tuple[Pleito, ...]
 

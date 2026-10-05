@@ -59,6 +59,20 @@ class Environment:
     seed_elections: tuple[str, ...]
     allowed_hosts: frozenset[str]
     cargos: dict[str, CargoConfig]
+    #: Cargos proporcionais coletados só no total da UF, sem projeção e sem
+    #: municípios: `{chave: {"cd": "6", "intervalo_s": 120.0}}`. Ficam fora
+    #: de `cargos` de propósito — o que está em `cargos` vira disputa no
+    #: catálogo, no banco e no motor.
+    proporcionais: dict[str, dict] = field(default_factory=dict)
+    #: Faixa do telão para ambiente não oficial. `None` usa o texto padrão
+    #: de simulado.
+    aviso: str | None = None
+    #: Ambiente montado a partir de arquivo histórico, para demonstração. O
+    #: coletor recusa: não há o que buscar no TSE.
+    demonstracao: bool = False
+    #: Eleição passada no formato do ao vivo (`history/congelado.py`), lida
+    #: pelo seletor de anos. Só estes o painel pode pedir por `eleicao=`.
+    congelado: bool = False
 
     @property
     def raw_root(self) -> Path:
@@ -113,7 +127,8 @@ class CollectorConfig:
     pular_finalizados: bool = True
 
     def budget_floor_rps(self, *, n_accompaniment: int, n_control: int,
-                         n_municipal: int) -> dict:
+                         n_municipal: int,
+                         proporcional_rps: float = 0.0) -> dict:
         """Piso de requisições por segundo em regime permanente.
 
         As três fontes de carga *contínua* somam antes de qualquer EA20 movido
@@ -124,11 +139,12 @@ class CollectorConfig:
         acc = n_accompaniment / self.accompaniment_interval_s
         ctl = n_control / self.control_interval_s
         rec = n_municipal / self.reconcile_interval_s
-        floor = acc + ctl + rec
+        floor = acc + ctl + rec + proporcional_rps
         return {
             "acompanhamento_rps": acc,
             "controle_rps": ctl,
             "reconciliacao_rps": rec,
+            "proporcional_rps": proporcional_rps,
             "piso_rps": floor,
             "teto_rps": self.max_rps,
             "folga_rps": self.max_rps - floor,
@@ -207,6 +223,14 @@ def load_environment(name: str, config_dir: Path = CONFIG_DIR) -> Environment:
         seed_elections=tuple(str(x) for x in seed.get("elections") or ()),
         allowed_hosts=frozenset(src.get("allowed_hosts") or ()),
         cargos=cargos,
+        proporcionais={
+            k: {"cd": str(v["cd"]),
+                "intervalo_s": float(v.get("intervalo_s", 120))}
+            for k, v in (src.get("proporcionais") or {}).items()
+        },
+        aviso=e.get("aviso"),
+        demonstracao=bool(e.get("demonstracao", False)),
+        congelado=bool(e.get("congelado", False)),
     )
 
 

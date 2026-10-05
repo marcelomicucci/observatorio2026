@@ -41,9 +41,20 @@ def register(app) -> None:
         serve para ler o território, não para atribuir mandato (§3).
         """
         ct = M._contest_or_404(s, cargo, eleicao)
+        from ..contexto import ano_passado
+        if ano_passado() is not None:
+            # Eleição passada e encerrada: vale a situação oficial do TSE.
+            # A aritmética da noite, aplicada a ela, promovia a "definido"
+            # quem o TSE marca como não eleito — em MT/2018, o 3º colocado,
+            # porque a eleita foi cassada e seus votos não estão mais no
+            # arquivo (visto em 24/09).
+            return M.envelope(
+                [], snapshots=[], estado="nao_aplicavel",
+                motivo=("eleição passada: vale a situação oficial do TSE, "
+                        "não a definição matemática"))
         abr = M._abrangencia_do_recorte(ct, uf, municipio)
         gq = select(Geography.id).where(
-            Geography.environment == M._ENV_NAME, Geography.tipo == abr)
+            Geography.environment == M.env_atual(), Geography.tipo == abr)
         if uf:
             gq = gq.where(Geography.uf == uf.lower())
         if municipio:
@@ -68,21 +79,26 @@ def register(app) -> None:
             rows = s.execute(select(ObservedResult).where(
                 ObservedResult.snapshot_id == t.snapshot_id,
                 ObservedResult.geography_id == t.geography_id,
-                ObservedResult.dvt == "Válido",
+                ObservedResult.dvt.in_(("Válido", "Anulado sub judice")),
             )).scalars().all()
             if not rows:
                 continue
             votos = {cands[r.candidate_id].sqcand: r.votos
                      for r in rows if r.candidate_id in cands}
+            # Sub judice por candidato: a definição matemática sai nos dois
+            # cenários (validação e cassação) em vez de ficar suspensa.
+            sj = {cands[r.candidate_id].sqcand: r.votos for r in rows
+                  if r.dvt == "Anulado sub judice" and r.candidate_id in cands}
             d = DC.avaliar(
                 votos, vagas=ct.vagas,
                 concorrentes_observados=t.validos_computados,
                 pendente_max=t.pendente_max,
                 sub_judice=t.anulados_sub_judice,
+                sub_judice_por_candidato=sj or None,
                 encerrada=(t.andamento == "f"),
                 unidade=geos[t.geography_id].nome,
-                # Presidente e governador têm segundo turno; senador não.
-                tem_segundo_turno=(ct.vagas == 1),
+                # Presidente e governador no 1º turno; senador nunca.
+                tem_segundo_turno=M.tem_segundo_turno(s, ct),
             )
             # Num recorte municipal a aritmética local é válida, mas o
             # resultado dela NÃO atribui mandato: quem decide é o Brasil
@@ -99,10 +115,11 @@ def register(app) -> None:
                     + "; liderar aqui nao e ser eleito por aqui."
                     if recorte_nao_decisorio else None),
                 "vagas": ct.vagas,
-                "tem_segundo_turno": ct.vagas == 1,
+                "tem_segundo_turno": M.tem_segundo_turno(s, ct),
                 "resto_maximo_total": d.resto_maximo_total,
                 "resto_maximo_por_candidato": d.resto_maximo_por_candidato,
                 "sub_judice_em_jogo": d.sub_judice_em_jogo,
+                "cenario_base": "votos sub judice validados",
                 "encerrada": d.encerrada,
                 "disputa_matematicamente_definida": d.disputa_definida,
                 "segundo_turno_matematicamente_definido":
@@ -117,6 +134,14 @@ def register(app) -> None:
                     "votos": x.votos,
                     "estado": x.estado.value,
                     "rotulo": DC.ROTULOS[x.estado],
+                    # Cenário de cassação dos sub judice, quando ele muda o
+                    # resultado: a tela mostra os dois, nunca um no lugar
+                    # do outro.
+                    "estado_se_cassados": (
+                        {y.sqcand: y.estado.value
+                         for y in (d.situacoes_cassado or ())}
+                        .get(x.sqcand, "fora_da_disputa")
+                        if d.situacoes_cassado is not None else None),
                     "custo_para_perder_a_vaga": x.custo_para_perder_a_vaga,
                     "precisa_para_alcancar": x.precisa_para_alcancar,
                     "motivo": x.motivo,
@@ -135,7 +160,7 @@ def register(app) -> None:
     @app.get("/api/v1/forecast-audit")
     def auditoria_de_previsoes(serie: str | None = None):
         """Histórico das projeções feitas e a coerência delas (§7, §11.2)."""
-        env = load_environment(M._ENV_NAME)
+        env = load_environment(M.env_atual())
         d = A.Diario(DATA_DIR / "previsoes", env.name)
         series = d.series()
         saida = []

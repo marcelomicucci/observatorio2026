@@ -56,6 +56,16 @@ class UnitInput:
     #: (não são voto que a totalização aceita para candidato apto) e DENTRO
     #: do denominador da maioria absoluta ("votos a concorrentes").
     observed_anulados: int = 0
+    #: Grupo territorial (M2): capital ou interior da UF. Unidades do mesmo
+    #: grupo compartilham um choque de preferência de desvio `sigma_grupo`,
+    #: largo quando o grupo ainda não chegou. Vazio/0 = sem choque de grupo
+    #: (M0 e M1 ficam exatamente como eram).
+    grupo: str = ""
+    sigma_grupo: float = 0.0
+    #: M3.2: multiplica o choque local de preferência, medido na noite pelo
+    #: calibrador (`models._escala_conformal`). 1,0 = sem calibrador, e os
+    #: outros modelos reproduzem exatamente os mesmos números.
+    escala_pref: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +106,10 @@ class Forecast:
 
     # -- resumos ---------------------------------------------------------
 
-    def quantis(self, qs=(0.025, 0.10, 0.50, 0.90, 0.975)) -> dict:
+    #: 80% (q100–q900), 90% (q050–q950) e 95% (q025–q975): o nível
+    #: publicado sobe conforme a apuração avança (`engine/nivel.py`).
+    def quantis(self, qs=(0.025, 0.05, 0.10, 0.50, 0.90, 0.95, 0.975)
+                ) -> dict:
         out = {}
         for i, k in enumerate(self.candidates):
             v = self.votes[:, i]
@@ -260,6 +273,12 @@ def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
     z_uf_v = rng.standard_normal((B, len(ufs)))
     z_nac_p = rng.standard_normal((B, K))
     z_uf_p = rng.standard_normal((B, len(ufs), K))
+    # Choque de grupo (M2) num gerador separado: sem grupos, a sequência de
+    # sorteios é idêntica à de antes, e M0/M1 reproduzem os mesmos números.
+    grupos = sorted({u.grupo for u in units if u.grupo and u.sigma_grupo > 0})
+    g_idx = {g: i for i, g in enumerate(grupos)}
+    z_grp_p = (np.random.default_rng([cfg.seed, 7]).standard_normal(
+        (B, len(grupos), K)) if grupos else None)
 
     votos = np.zeros((B, K), dtype=np.int64)
     validos_totais = np.zeros(B, dtype=np.int64)
@@ -334,7 +353,10 @@ def run(units: list[UnitInput], candidates: list[str], cfg: SimConfig,
         alpha = (np.log(base)[None, :]
                  + cfg.sigma_pref_nacional * z_nac_p
                  + cfg.sigma_pref_uf * z_uf_p[:, j, :]
-                 + cfg.sigma_pref_local * infl * rng.standard_normal((B, K)))
+                 + cfg.sigma_pref_local * infl * u.escala_pref
+                 * rng.standard_normal((B, K)))
+        if z_grp_p is not None and u.grupo in g_idx:
+            alpha = alpha + u.sigma_grupo * z_grp_p[:, g_idx[u.grupo], :]
         alpha -= alpha.max(axis=1, keepdims=True)
         pref = np.exp(alpha)
         pref /= pref.sum(axis=1, keepdims=True)

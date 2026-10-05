@@ -124,6 +124,28 @@ const MAPA = (() => {
     return `hsl(${h} ${s}% ${(70 - t * 30).toFixed(0)}%)`;
   }
 
+  /* Cor de partido modulada pela margem. A cor do partido é identidade e
+   * não pode virar outra (PSOL amarelo escurecido parece outro partido);
+   * então a margem não mexe no matiz: ela mistura a cor com o fundo. Disputa
+   * apertada fica apagada, vitória folgada fica cheia. Mesma âncora fixa de
+   * 20 pp do mapa de líderes. */
+  function hexRgb(h) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(h || '');
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const FUNDO_MISTURA = [20, 25, 34];
+  function corPorMargem(hex, margem) {
+    const c = hexRgb(hex);
+    if (!c) return hex;
+    const t = margem == null ? 1
+      : Math.max(0, Math.min(1, margem / MARGEM_CHEIA));
+    const k = 0.6 * (1 - t);
+    const m = c.map((v, i) => Math.round(v * (1 - k) + FUNDO_MISTURA[i] * k));
+    return `rgb(${m[0]} ${m[1]} ${m[2]})`;
+  }
+
   // Sequencial. Escura = mais. Clara = menos. Nunca vermelho-verde, que
   // é o par que mais falha em daltonismo.
   function corSequencial(v, min, max) {
@@ -154,6 +176,15 @@ const MAPA = (() => {
     suspensa_sub_judice: {cor: '#c98fa8', sim: '△',
                           txt: 'definição suspensa (sub judice)',
                           traco: '4 3'},
+    // Recorte do voto (município numa disputa estadual ou nacional): aqui
+    // não há o que definir, só contagem terminada.
+    local_encerrada: {cor: '#8a95a6', sim: '✓',
+                      txt: 'apuração local encerrada', traco: null},
+    // A UF fechou e o arquivo deste município não foi atualizado pelo TSE.
+    // Diferente de "falta apurar": não falta voto, falta publicação.
+    nao_atualizado: {cor: '#c9a227', sim: '⚠',
+                     txt: 'o TSE não atualizou este município',
+                     traco: '3 2'},
   };
 
   const SEM_DADO = 'url(#hachura)';
@@ -180,6 +211,25 @@ const MAPA = (() => {
    * O que sobra é a pergunta que muda de resposta durante a noite — onde
    * ainda falta voto entrar —, que é a única que merece um botão próprio.
    */
+  /* Texto de sobrevoo comum às camadas que pintam pelo líder. */
+  function textoLider(d) {
+    if (!d.lider_nome) return 'sem votação';
+    const p = d.lider_partido ? ' (' + d.lider_partido + ')' : '';
+    let s = d.lider_nome + p;
+    if (d.lider_pct != null) s += ' ' + num(d.lider_pct) + '%';
+    if (d.segundo_nome) {
+      s += ' · 2º ' + d.segundo_nome
+         + (d.segundo_pct != null ? ' ' + num(d.segundo_pct) + '%' : '');
+    }
+    if (d.margem_pp != null) s += ' · margem ' + num(d.margem_pp) + ' pp';
+    const e = ESTADO_DE(d);
+    if (e) s += ' · ' + e.txt;
+    return s;
+  }
+
+  const ORDEM_IDEOLOGIA = ['esquerda', 'centro_esquerda', 'centro',
+                           'centro_direita', 'direita'];
+
   const CAMADAS = {
     lider: {
       rotulo: 'Quem lidera',
@@ -212,6 +262,42 @@ const MAPA = (() => {
         if (e) s += ' · ' + e.txt;
         return s;
       },
+    },
+    /* Partido e ideologia pintam pela cor DADA (tipo 'direta'): a cor do
+     * partido vem do cadastro e a da ideologia da paleta do §6 — não de uma
+     * paleta sorteada por candidato. */
+    partido: {
+      rotulo: 'Partido do líder',
+      nota: 'Cor do partido de quem lidera; tom apagado é disputa apertada ' +
+            '(menos de 20 pp sobre o 2º). Contorno amarelo: definido; ' +
+            'verde: eleito segundo o TSE. Partido não é ideologia.',
+      tipo: 'direta',
+      chave: d => d.lider_partido_sigla || d.lider_partido || null,
+      cor: d => d.lider_partido_cor
+        ? corPorMargem(d.lider_partido_cor, d.margem_pp) : null,
+      corGrupo: d => d.lider_partido_cor || null,
+      etiqueta: d => (d.lider_partido_sigla || d.lider_partido || '?')
+        + (d.lider_partido_cadastrado === false ? ' (fora do cadastro)' : ''),
+      texto: textoLider,
+      margem: true,
+    },
+    ideologia: {
+      rotulo: 'Ideologia (partido do líder)',
+      nota: 'Classificação analítica do partido de quem lidera, com autoria ' +
+            'e versão (§6) — não é atributo oficial do TSE. Vale o partido ' +
+            'do candidato, nunca o da coligação. Hachura: partido sem ' +
+            'classificação.',
+      tipo: 'direta',
+      chave: d => d.lider_ideologia ? d.lider_ideologia.categoria : null,
+      cor: d => d.lider_ideologia ? d.lider_ideologia.cor : null,
+      corGrupo: d => d.lider_ideologia ? d.lider_ideologia.cor : null,
+      simbolo: d => d.lider_ideologia ? d.lider_ideologia.simbolo : null,
+      ordem: k => ORDEM_IDEOLOGIA.indexOf(k),
+      etiqueta: d => d.lider_ideologia ? d.lider_ideologia.rotulo
+        : 'sem classificação',
+      texto: d => (d.lider_ideologia
+        ? d.lider_ideologia.rotulo + ' · ' : 'sem classificação · ')
+        + textoLider(d),
     },
     apurar: {
       rotulo: 'Onde falta apurar',
@@ -256,6 +342,9 @@ const MAPA = (() => {
       return DEF_CORES.segundo_turno_definido;
     if (d.definicao === 'suspensa_sub_judice')
       return DEF_CORES.suspensa_sub_judice;
+    // `local_encerrada` (recorte do voto) não vira marca no mapa: seriam
+    // milhares de municípios marcados dizendo o óbvio. Aparece só na
+    // etiqueta, em `detalhe`.
     return null;
   }
 
@@ -277,6 +366,10 @@ const MAPA = (() => {
       if (!hs) return SEM_DADO;
       return corCandidato(hs, camada.forca ? camada.forca(dado) : null);
     }
+    if (camada.tipo === 'direta') {
+      if (!dado.lider_nome) return SEM_DADO;
+      return camada.cor(dado) || SEM_DADO;
+    }
     const v = camada.valor(dado);
     if (v == null) return SEM_DADO;
     if (ctx.degenerado) return corSequencial(0.5, 0, 1);   // tom único
@@ -286,7 +379,8 @@ const MAPA = (() => {
   function descreve(dado, camada, ctx) {
     if (!dado) return 'sem dado';
     if (dado.aguardando) return 'aguardando resultado';
-    if (camada.tipo === 'categorica') return camada.texto(dado);
+    if (camada.tipo === 'categorica' || camada.tipo === 'direta')
+      return camada.texto(dado);
     const v = camada.valor(dado);
     if (v == null) return 'sem dado';
     const casas = (ctx && ctx.faixa != null && ctx.faixa < 1) ? 3 : 1;
@@ -387,7 +481,10 @@ const MAPA = (() => {
 
     // Estado sempre, inclusive "em aberto". No mapa a ausência de contorno
     // já diz isso; num texto, o silêncio seria lido como esquecimento.
-    const e = ESTADO_DE(d);
+    const e = ESTADO_DE(d)
+      || (d.definicao === 'local_encerrada' ? DEF_CORES.local_encerrada
+          : d.definicao === 'nao_atualizado' ? DEF_CORES.nao_atualizado
+                                             : null);
     box.append(cria('div',
       'font-size:12px;font-weight:600;color:'
       + (e ? e.cor : 'var(--muted)'),
@@ -488,7 +585,14 @@ const MAPA = (() => {
       // O contorno de status só entra na camada do líder: em "onde falta
       // apurar" a pergunta é outra, e marcar definição ali competiria com
       // a informação que a camada existe para dar.
-      const est = (camada.tipo === 'categorica' && dado && !dado.aguardando)
+      // Nas camadas de partido e ideologia, contorno só onde a unidade
+      // decide: "matematicamente definido" num município, para presidente,
+      // é afirmação sobre um recorte que não elege ninguém — e 5.570
+      // contornos amarelos apagam a cor que a camada existe para mostrar.
+      const est = ((camada.tipo === 'categorica'
+                    || (camada.tipo === 'direta'
+                        && dado && dado.unidade_decide !== false))
+                   && dado && !dado.aguardando)
         ? ESTADO_DE(dado) : null;
       const finoPadrao = opts.malha === 'uf.json' ? 1 : 0.25;
       // Território escolhido no filtro: contorno branco, acima de tudo.
@@ -585,6 +689,7 @@ const MAPA = (() => {
     const grupos = new Map();
     let total = 0;
     for (const d of dados) {
+      if (camada.tipo === 'direta' && d.aguardando) continue;
       const k = camada.tipo === 'sequencial'
         ? 'todos' : String(camada.chave(d));
       const g = grupos.get(k) || {eleitorado: 0, n: 0, exemplo: d};
@@ -607,7 +712,9 @@ const MAPA = (() => {
        * sobre o grupo algo que só vale para um membro dele. */
       const cor = camada.tipo === 'categorica' && ctx.cores.get(k)
         ? corCandidato(ctx.cores.get(k), null)
-        : pinta(g.exemplo, camada, ctx);
+        : camada.tipo === 'direta'
+          ? (camada.corGrupo(g.exemplo) || SEM_DADO)
+          : pinta(g.exemplo, camada, ctx);
       seg.style.cssText = 'width:' + pctEl.toFixed(2) + '%;background:' + cor;
       seg.title = descreve(g.exemplo, camada, ctx)
         + ' — ' + g.eleitorado.toLocaleString('pt-BR') + ' eleitores ('
@@ -662,6 +769,34 @@ const MAPA = (() => {
           continue;
         box.append(item(v.cor, v.sim, 'contorno: ' + v.txt));
       }
+    } else if (camada.tipo === 'direta') {
+      // Uma entrada por grupo, na ordem que se lê: ideologia da esquerda
+      // para a direita; partido por eleitorado liderado.
+      const grupos = new Map();
+      for (const d of dados) {
+        if (d.aguardando || !d.lider_nome) continue;
+        const k = camada.chave(d);
+        const g = grupos.get(k) || {d, el: 0};
+        g.el += d.eleitorado || 0;
+        grupos.set(k, g);
+      }
+      const ord = [...grupos.entries()].sort((a, b) => camada.ordem
+        ? camada.ordem(a[0]) - camada.ordem(b[0]) : b[1].el - a[1].el);
+      for (const [, g] of ord) {
+        box.append(item(camada.corGrupo(g.d) || SEM_DADO,
+                        camada.simbolo ? camada.simbolo(g.d) : null,
+                        camada.etiqueta(g.d)));
+      }
+      if (camada.margem) {
+        box.append(item(corPorMargem('#9aa5b5', 0), null,
+                        'tom apagado: disputa apertada'));
+      }
+      for (const v of [DEF_CORES.eleito, DEF_CORES.definida,
+                       DEF_CORES.segundo_turno_definido]) {
+        if (!dados.some(d => d.unidade_decide !== false
+                             && ESTADO_DE(d) === v)) continue;
+        box.append(item(v.cor, v.sim, 'contorno: ' + v.txt));
+      }
     } else {
       const n = v => v.toFixed(2).replace('.', ',');
       const f = v => n(v) + (camada.unidade || '');
@@ -688,5 +823,6 @@ const MAPA = (() => {
   }
 
   return {CAMADAS, desenhar, barraPonderada, legenda, descreve, DEF_CORES,
-          estadoDe: ESTADO_DE, detalhe, camadaCanonica};
+          estadoDe: ESTADO_DE, detalhe, camadaCanonica, corPorMargem,
+          ORDEM_IDEOLOGIA};
 })();

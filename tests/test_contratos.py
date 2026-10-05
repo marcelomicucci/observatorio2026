@@ -282,14 +282,21 @@ def test_status_eleito_nao_vem_do_campo_e():
     assert sen.tpabr == "mu"
 
 
-def test_sub_judice_fica_fora_da_preferencia_mas_nao_some():
+def test_sub_judice_entra_na_projecao_sem_contar_duas_vezes():
+    """Desde 22/09: sub judice é projetado ("se os votos forem validados").
+    Os votos saem dos anulados na mesma medida — o total de votos a
+    concorrentes (base da maioria absoluta) não muda."""
     r = ea20.parse(load("ea20_br_pres.json"))
     obs = PD.observed_of(r)
     sj = [c for c in r.cargo.candidatos if c.dvt == "Anulado sub judice"]
     assert sj, "fixture deveria ter candidato sub judice"
     for c in sj:
-        assert c.sqcand not in obs.votos_por_candidato   # fora da preferência
-    assert r.votes.vansj == sum(c.votos for c in sj)     # mas contabilizado
+        assert obs.votos_por_candidato[c.sqcand] == c.votos
+    assert r.votes.vansj == sum(c.votos for c in sj)
+    assert obs.concorrentes == r.votes.vvc
+    anulados = [c for c in r.cargo.candidatos if c.dvt == "Anulado"]
+    for c in anulados:                        # anulado definitivo fica fora
+        assert c.sqcand not in obs.votos_por_candidato
 
 
 # ------------------------------------------------------------ pendente ----

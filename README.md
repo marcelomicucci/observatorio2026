@@ -60,6 +60,12 @@ definido" são aritmética, não modelo: nenhuma distribuição possível dos vo
 restantes muda o resultado. Voto sub judice em jogo suspende qualquer
 definição.
 
+**Mostra o poder.** Mapas por partido e por ideologia do líder
+(presidente por município, governadores nos 27 estados), votos e governos
+por bloco, e a composição do Senado (27 cadeiras até 2031 + 54 em disputa) e
+da Câmara (513, só o resultado do TSE) em hemiciclo. Partido é fato;
+ideologia é classificação analítica com autor, e só aparece assinada.
+
 **Presta contas.** O gráfico de convergência mostra, para cada candidato, o
 apurado e o projetado ao longo da noite. Se o modelo presta, a linha
 projetada nasce perto do resultado final e fica lá, enquanto a apurada
@@ -180,9 +186,10 @@ Os demais comandos:
 | **Motor** | M0, M1, Senado, Monte Carlo e backtest funcionando |
 | **Definição matemática** | funcionando, sem modelo |
 | **Auditoria** | diário de projeções e gráfico de convergência funcionando |
-| **Painel e telão** | funcionando, com roteiro gravável e captura para WhatsApp |
+| **Painel e telão** | funcionando, com roteiro gravável, captura para WhatsApp e aba Configuração |
+| **Partido e composição** | mapas por partido, Senado (81) e Câmara (513, só resultado) no telão |
 | **Projeção com probabilidade** | **desligada** — o gate não passou |
-| **Mapa ideológico** | **desligado** — curadoria pendente |
+| **Mapa ideológico** | **proposta pronta, aguardando assinatura** |
 
 **As duas coisas desligadas estão desligadas de propósito.** Ligá-las sem o
 trabalho que falta seria pior do que deixá-las assim.
@@ -194,10 +201,12 @@ sintéticos sem estrutura territorial, não por defeito do modelo. Até lá, o
 painel mostra "cenário exploratório" e diz por quê. Ver
 [METODOLOGIA.md](docs/METODOLOGIA.md#estado-atual-o-gate-não-passou).
 
-*Classificar partidos* em esquerda, centro e direita é ato editorial. A
-máquina está pronta e `config/classificacao_2026.yaml` está vazio: cada
-entrada exige fonte, justificativa, autor e data. Preencher por conta própria
-seria inventar autoria.
+*Classificar partidos* em esquerda, centro e direita é ato editorial.
+`config/classificacao_2026.yaml` traz desde 21/09 uma proposta para os 30
+partidos de 2026 — fonte, justificativa e grau de controvérsia por partido —
+**sem autor**. Liga quando alguém assina (aba Configuração, ou
+`obs2026 assinar-classificacao --curador "Nome"`); cada alteração depois
+disso é versão nova, com nome e data.
 
 ---
 

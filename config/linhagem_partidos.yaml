@@ -1,0 +1,215 @@
+# Linhagem partidária — sucessões, fusões e trocas de nome.
+#
+# ASSINADA por Marcelo Micucci em 24/09/2026 (versão 2026.2).
+#
+# Redigida pelo assistente sobre a 2026.1 (assinada por Marcelo Micucci em
+# 23/09/2026, guardada em linhagem_partidos.2026.1.yaml). Aprovada por ele
+# no chat em 24/09/2026, com o pedido expresso de que o assistente
+# executasse a assinatura em seu nome — o comando foi rodado pelo
+# assistente, a decisão é dele. Ajustar uma ligação é versão nova, escrita
+# em linhagem_partidos.proposta.yaml e assinada com:
+#
+#     obs2026 assinar-linhagem --curador "Nome Sobrenome"
+#
+# O QUE MUDA EM RELAÇÃO À 2026.1 — tudo conferido contra o próprio TSE (o
+# banco histórico de 2022 e o cadastro de candidaturas de 2026):
+#
+#   1. Podemos: em 2018 e 2022 concorreu com o 19; em 2026 concorre com o 20
+#      (o número do PSC, que ele incorporou). A 2026.1 mandava o PSC para
+#      "PODE 19" e deixava o Podemos de 2026 numa série separada. Agora o 19
+#      segue para o 20, e o PSC vai direto para o 20.
+#   2. PTC → Agir (36): troca de nome; em 2022 o 36 já é AGIR no TSE.
+#   3. PMN → Mobiliza (33): troca de nome; em 2026 o 33 é Mobiliza.
+#   4. PMB → Democrata (35): troca de nome; em 2026 o 35 é Democrata.
+#   5. PRTB: sai a entrada "fim". O partido existe — concorreu com o 28 em
+#      2022 e concorre em 2026. Estava marcado "verificar antes de assinar".
+#
+# `desde` é a primeira eleição GERAL em que o nome/número novo aparece nos
+# dados (a data exata do ato no TSE não muda a comparação entre 2018, 2022
+# e 2026).
+#
+# Sem assinatura (curador nulo), a tela comparativa mostra cada eleição com o
+# nome que o partido tinha na época e NÃO liga as séries.
+#
+# POR QUE ISSO PRECISA DE ASSINATURA
+#
+# Dizer que "o União Brasil de 2022 é a continuação do PSL de 2018" é uma
+# afirmação editorial, não um fato do banco de dados. Fusão não é herança
+# automática: o eleitorado, os quadros e o programa podem mudar. Como a
+# decisão de 23/09/2026 foi comparar seguindo a linhagem, cada ligação fica
+# escrita aqui, com fonte, e a tela mostra a troca ("União Brasil (ex-PSL)")
+# em vez de fingir que sempre foi a mesma legenda.
+#
+# COMO A TELA USA
+#
+#   sucessor   para onde a sigla foi. A série continua no sucessor.
+#   tipo       fusao | incorporacao | renomeacao | federacao
+#   desde      ano da eleição a partir do qual vale o sucessor
+#   nota       o que a tela escreve ao lado do nome
+#
+# Uma legenda que apenas deixou de existir (sem sucessor) fica com
+# `sucessor: null`: a série termina ali, e isso aparece como fim de linha,
+# não como queda a zero.
+#
+# FEDERAÇÃO NÃO É FUSÃO. PT/PCdoB/PV e PSDB/Cidadania disputaram 2022 em
+# federação, mas continuam partidos distintos, com bancadas próprias. Aqui
+# elas NÃO viram sucessão; a tela soma por federação quando o usuário pedir.
+
+versao: "2026.2"
+curador: "Marcelo Micucci"
+publicada_em: 2026-09-24
+versao_anterior: "2026.1"
+
+sucessoes:
+  - sigla: PSL
+    numero: "17"
+    ano: 2018
+    sucessor: {sigla: UNIÃO, numero: "44"}
+    tipo: fusao
+    desde: 2022
+    nota: "União Brasil (ex-PSL + DEM)"
+    fonte: "TSE, registro do União Brasil em 08/02/2022 (fusão PSL + DEM)"
+
+  - sigla: DEM
+    numero: "25"
+    ano: 2018
+    sucessor: {sigla: UNIÃO, numero: "44"}
+    tipo: fusao
+    desde: 2022
+    nota: "União Brasil (ex-DEM + PSL)"
+    fonte: "TSE, registro do União Brasil em 08/02/2022 (fusão PSL + DEM)"
+
+  - sigla: PR
+    numero: "22"
+    ano: 2018
+    sucessor: {sigla: PL, numero: "22"}
+    tipo: renomeacao
+    desde: 2019
+    nota: "PL (ex-PR)"
+    fonte: "TSE, alteração de nome do PR para PL em 2019"
+
+  - sigla: PRB
+    numero: "10"
+    ano: 2018
+    sucessor: {sigla: REPUBLICANOS, numero: "10"}
+    tipo: renomeacao
+    desde: 2019
+    nota: "Republicanos (ex-PRB)"
+    fonte: "TSE, alteração de nome do PRB em 2019"
+
+  - sigla: PPS
+    numero: "23"
+    ano: 2018
+    sucessor: {sigla: CIDADANIA, numero: "23"}
+    tipo: renomeacao
+    desde: 2019
+    nota: "Cidadania (ex-PPS)"
+    fonte: "TSE, alteração de nome do PPS em 2019"
+
+  - sigla: PMDB
+    numero: "15"
+    ano: 2014
+    sucessor: {sigla: MDB, numero: "15"}
+    tipo: renomeacao
+    desde: 2018
+    nota: "MDB (ex-PMDB)"
+    fonte: "TSE, alteração de nome do PMDB em 2017"
+
+  - sigla: PATRI
+    numero: "51"
+    ano: 2018
+    sucessor: {sigla: PRD, numero: "25"}
+    tipo: fusao
+    desde: 2026
+    nota: "PRD (ex-Patriota + PTB)"
+    fonte: "TSE, registro do PRD em 2023 (fusão Patriota + PTB)"
+
+  - sigla: PTB
+    numero: "14"
+    ano: 2018
+    sucessor: {sigla: PRD, numero: "25"}
+    tipo: fusao
+    desde: 2026
+    nota: "PRD (ex-PTB + Patriota)"
+    fonte: "TSE, registro do PRD em 2023 (fusão Patriota + PTB)"
+
+  - sigla: PSC
+    numero: "20"
+    ano: 2018
+    sucessor: {sigla: PODE, numero: "20"}
+    tipo: incorporacao
+    desde: 2026
+    nota: "Podemos (incorporou o PSC)"
+    fonte: "TSE, incorporação do PSC pelo Podemos em 2023"
+
+  - sigla: PROS
+    numero: "90"
+    ano: 2018
+    sucessor: {sigla: SOLIDARIEDADE, numero: "77"}
+    tipo: incorporacao
+    desde: 2026
+    nota: "Solidariedade (incorporou o Pros)"
+    fonte: "TSE, incorporação do Pros pelo Solidariedade em 2023"
+
+  - sigla: PHS
+    numero: "31"
+    ano: 2018
+    sucessor: {sigla: PODE, numero: "19"}
+    tipo: incorporacao
+    desde: 2020
+    nota: "Podemos (incorporou o PHS)"
+    fonte: "TSE, incorporação do PHS pelo Podemos em 2019"
+
+  - sigla: PRP
+    numero: "44"
+    ano: 2018
+    sucessor: {sigla: PATRI, numero: "51"}
+    tipo: incorporacao
+    desde: 2020
+    nota: "Patriota (incorporou o PRP)"
+    fonte: "TSE, incorporação do PRP pelo Patriota em 2019"
+
+  - sigla: PPL
+    numero: "54"
+    ano: 2018
+    sucessor: {sigla: PCdoB, numero: "65"}
+    tipo: incorporacao
+    desde: 2020
+    nota: "PCdoB (incorporou o PPL)"
+    fonte: "TSE, incorporação do PPL pelo PCdoB em 2019"
+
+  - sigla: PODE
+    numero: "19"
+    ano: 2018
+    sucessor: {sigla: PODE, numero: "20"}
+    tipo: renomeacao
+    desde: 2026
+    nota: "Podemos (19 até 2022, 20 desde a incorporação do PSC)"
+    fonte: "TSE: 19 nos resultados de 2018 e 2022; 20 no cadastro de candidaturas de 2026"
+
+  - sigla: PTC
+    numero: "36"
+    ano: 2018
+    sucessor: {sigla: AGIR, numero: "36"}
+    tipo: renomeacao
+    desde: 2022
+    nota: "Agir (ex-PTC)"
+    fonte: "TSE: 36 = PTC nos resultados de 2018; 36 = AGIR nos de 2022"
+
+  - sigla: PMN
+    numero: "33"
+    ano: 2018
+    sucessor: {sigla: MOBILIZA, numero: "33"}
+    tipo: renomeacao
+    desde: 2026
+    nota: "Mobiliza (ex-PMN)"
+    fonte: "TSE: 33 = PMN nos resultados de 2018 e 2022; 33 = Mobiliza no cadastro de 2026"
+
+  - sigla: PMB
+    numero: "35"
+    ano: 2018
+    sucessor: {sigla: DEMOCRATA, numero: "35"}
+    tipo: renomeacao
+    desde: 2026
+    nota: "Democrata (ex-PMB)"
+    fonte: "TSE: 35 = PMB nos resultados de 2018 e 2022; 35 = Democrata no cadastro de 2026"

@@ -60,6 +60,12 @@ class RegistroCandidato:
     pct_concorrentes_q100: float
     pct_concorrentes_q500: float
     pct_concorrentes_q900: float
+    #: Faixas mais largas, para o nível publicado subir com o apurado
+    #: (`engine/nivel.py`). `None` em registros anteriores a 22/09/2026.
+    pct_concorrentes_q050: float | None = None
+    pct_concorrentes_q950: float | None = None
+    pct_concorrentes_q025: float | None = None
+    pct_concorrentes_q975: float | None = None
     prob_lideranca: float | None = None
     prob_dentro_vagas: float | None = None
     prob_maioria_absoluta: float | None = None
@@ -150,6 +156,11 @@ class Registro:
 _ULTIMOS: dict[str, dict] = {}
 
 
+#: Quantos registros de cada disputa ficam na memória para a regra de
+#: apontar vencedor (§4.7, `engine/chamada.py`).
+MEMORIA_CHAMADA = 6
+
+
 class Diario:
     """Diário append-only de projeções, em JSONL.
 
@@ -219,8 +230,22 @@ class Diario:
                     r = self._decodificar(texto.decode("utf-8"))
                 except (ValueError, TypeError):
                     continue
-                est["ult"][(r.cargo, r.unidade, r.modelo)] = r
+                k = (r.cargo, r.unidade, r.modelo)
+                est["ult"][k] = r
+                # Últimos registros de cada disputa, do mais novo para o
+                # mais antigo: a chamada de vencedor exige estabilidade
+                # (engine/chamada.py) e não pode reler o diário inteiro.
+                h = est.setdefault("hist", {}).setdefault(k, [])
+                h.insert(0, r)
+                del h[MEMORIA_CHAMADA:]
         return est["ult"]
+
+    def recentes(self, chave: tuple[str, str, str],
+                 n: int = MEMORIA_CHAMADA) -> list:
+        """Os `n` registros mais recentes de uma disputa, do mais novo para
+        o mais antigo. Exige `ultimos()` antes (é ele que lê o arquivo)."""
+        est = _ULTIMOS.get(str(self.caminho)) or {}
+        return list((est.get("hist") or {}).get(chave, [])[:n])
 
     def series(self) -> dict[str, list[Registro]]:
         out: dict[str, list[Registro]] = {}
@@ -248,7 +273,7 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
              eleitorado_sem_dado: int = 0) -> Registro:
     """Monta o registro a partir de um `Forecast` e de uma `Definicao`."""
     nomes = nomes or {}
-    q = forecast.quantis((0.10, 0.50, 0.90))
+    q = forecast.quantis((0.025, 0.05, 0.10, 0.50, 0.90, 0.95, 0.975))
     lider = forecast.prob_lideranca()
     vagas = forecast.prob_dentro_das_vagas()
     maioria = forecast.prob_maioria_absoluta()
@@ -259,6 +284,10 @@ def capturar(*, forecast, definicao, ambiente: str, eleicao: str, turno: str,
         RegistroCandidato(
             sqcand=c, nome=nomes.get(c, c),
             votos_observados=forecast.observed.get(c, 0),
+            pct_concorrentes_q050=q[c]["pct_concorrentes"].get("q050"),
+            pct_concorrentes_q950=q[c]["pct_concorrentes"].get("q950"),
+            pct_concorrentes_q025=q[c]["pct_concorrentes"].get("q025"),
+            pct_concorrentes_q975=q[c]["pct_concorrentes"].get("q975"),
             votos_q100=q[c]["votos"]["q100"],
             votos_q500=q[c]["votos"]["q500"],
             votos_q900=q[c]["votos"]["q900"],

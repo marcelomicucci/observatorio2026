@@ -44,7 +44,7 @@ def register(app) -> None:
     def convergencia(serie: str | None = None, ambiente: str | None = None,
                      top: int = 6):
         """Séries de apurado e projetado por candidato, por cobertura."""
-        env = load_environment(M._ENV_NAME)
+        env = load_environment(M.env_atual())
         nome_diario = ambiente or env.name
         d = A.Diario(DATA_DIR / "previsoes", nome_diario)
         series = d.series()

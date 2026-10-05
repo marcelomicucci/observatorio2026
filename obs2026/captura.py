@@ -217,8 +217,126 @@ def _disparar(navegador: Path, url: str, destino: Path,
     raise CapturaError(f"estado de prontidão inesperado: {estado!r}")
 
 
+def _rodape_legenda() -> str:
+    agora = datetime.now(BRT).strftime("%d/%m %H:%M:%S")
+    return (f"— Observatório Eleitoral 2026, {agora}. Número não oficial; "
+            f"o resultado oficial é o do TSE.")
+
+
+def _get_json(api: str, rota: str, params: dict) -> dict | None:
+    try:
+        with httpx.Client(base_url=api, timeout=60.0) as c:
+            r = c.get(rota, params=params)
+            r.raise_for_status()
+            return r.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _nota_classificacao(meta: dict | None) -> str | None:
+    """Ideologia só vai para o texto com curadoria assinada — e com a
+    ressalva junto, porque a legenda circula sozinha."""
+    if not meta or meta.get("estado") != "disponivel":
+        return None
+    return (f"Blocos pela classificação {meta.get('versao')} do Observatório "
+            f"(curadoria {meta.get('curador')}), não do TSE.")
+
+
+def _blocos_texto(por_bloco: dict | None, chave: str, fmt) -> str | None:
+    if not por_bloco:
+        return None
+    nomes = {"esquerda": "esquerda", "centro": "centro",
+             "direita": "direita", "sem_classificacao": "sem classificação"}
+    partes = [f"{nomes[b]} {fmt(por_bloco[b][chave])}"
+              for b in ("esquerda", "centro", "direita", "sem_classificacao")
+              if por_bloco.get(b) and por_bloco[b].get(chave)]
+    return " · ".join(partes) if partes else None
+
+
+def _legenda_politica(api: str, tela: dict) -> str:
+    """Legenda das telas de partido/ideologia e de composição. Só apurado:
+    nenhuma destas telas tem projeção."""
+    linhas = [tela["titulo"]]
+    if tela.get("tipo") == "composicao":
+        r = _get_json(api, "/api/v1/composicao", {"casa": tela.get("casa")})
+        d = (r or {}).get("dados")
+        if not d:
+            linhas.append("sem dados para esta tela")
+        elif tela.get("casa") == "camara" and not d["ufs_com_dado"]:
+            linhas.append("Nenhum resultado de deputado federal divulgado "
+                          "ainda.")
+        elif tela.get("casa") == "camara":
+            linhas.append(f"{d['eleitos']} de 513 deputados eleitos segundo "
+                          f"o TSE · {d['ufs_encerradas']}/27 UFs encerradas")
+            if d["partidos"]:
+                linhas.append(", ".join(
+                    f"{p['partido']['sigla']} {p['cadeiras']}"
+                    for p in d["partidos"][:10]))
+            b = _blocos_texto(
+                {k: {"total": v} for k, v in _somar_blocos_camara(d).items()}
+                if (d.get("classificacao") or {}).get("estado")
+                == "disponivel" else None, "total", str)
+            if b:
+                linhas.append("Por bloco: " + b)
+        else:
+            e = d["em_disputa"]["estados"]
+            linhas.append(
+                f"{e['eleito'] + e['definido']} de {d['em_disputa']['n']} "
+                f"vagas definidas · {e['liderando']} liderando (pode virar)"
+                f" · {e['aguardando']} sem voto · "
+                f"{d['remanescentes']['n']} cadeiras seguem até 2031")
+            linhas.append(", ".join(
+                f"{p['partido']['sigla']} {p['total']}"
+                for p in d["por_partido"][:10]))
+            b = _blocos_texto(d.get("por_bloco"), "total", str)
+            if b:
+                linhas.append("Por bloco (inclui liderando): " + b)
+        n = _nota_classificacao((d or {}).get("classificacao"))
+        if n:
+            linhas.append(n)
+    else:
+        r = _get_json(api, "/api/v1/politico/resumo",
+                      {"cargo": tela["cargo"]})
+        d = (r or {}).get("dados")
+        if not d:
+            linhas.append("sem dados para esta tela")
+        else:
+            v = d["votos"]
+            linhas.append("Votos: " + ", ".join(
+                f"{x['partido']['sigla']} {_num(x['pct'], 1)}%"
+                for x in v["por_partido"][:6]))
+            b = _blocos_texto(v.get("por_bloco"), "pct",
+                              lambda x: f"{_num(x, 1)}%")
+            if b:
+                linhas.append("Votos por bloco: " + b)
+            if tela["cargo"] == "3":
+                t = d["territorios"]
+                e = t["estados"]
+                linhas.append(
+                    f"Governos: {e['eleito'] + e['definido']} definidos, "
+                    f"{e.get('segundo_turno', 0)} no 2º turno, "
+                    f"{e['liderando']} em aberto — " + ", ".join(
+                        f"{x['partido']['sigla']} {x['territorios']}"
+                        for x in t["por_partido"][:8]))
+            n = _nota_classificacao(d.get("classificacao"))
+            if n:
+                linhas.append(n)
+    linhas.append(_rodape_legenda())
+    return "\n".join(linhas)
+
+
+def _somar_blocos_camara(d: dict) -> dict:
+    out = {"esquerda": 0, "centro": 0, "direita": 0, "sem_classificacao": 0}
+    for p in d.get("partidos") or []:
+        b = (p.get("ideologia") or {}).get("bloco") or "sem_classificacao"
+        out[b] += p["cadeiras"]
+    return out
+
+
 def _legenda(api: str, tela: dict, quantos: int = 5) -> str:
     """O mesmo instante da foto, em texto, com a ressalva de sempre."""
+    if tela.get("tipo") in ("politico", "composicao"):
+        return _legenda_politica(api, tela)
     qs = {"cargo": tela["cargo"]}
     if tela.get("uf"):
         qs["uf"] = tela["uf"]
@@ -323,7 +441,7 @@ CARGOS = {"1": "Presidente", "3": "Governador", "5": "Senador"}
 
 
 def _tela_avulsa(cargo: str, uf: str | None, municipio: str | None,
-                 camada: str) -> dict:
+                 camada: str, eleicao: str | None = None) -> dict:
     """Um recorte pedido na linha de comando, sem passar pelo roteiro.
 
     O município vem por **código TSE**, não por nome: `PAU D'ARCO` existe em
@@ -345,7 +463,7 @@ def _tela_avulsa(cargo: str, uf: str | None, municipio: str | None,
     onde = (f"{municipio}/{uf.upper()}" if municipio
             else uf.upper() if uf else "Brasil")
     return {
-        "indice": -1, "cargo": cargo, "uf": uf,
+        "indice": -1, "cargo": cargo, "uf": uf, "eleicao": eleicao,
         "municipio": str(municipio).zfill(5) if municipio else None,
         "camada": camada, "titulo": f"{nome} — {onde}",
         "erro": None,
@@ -412,7 +530,9 @@ def capturar(*, api: str = "http://localhost:8026",
         else:
             url = (f"{base}&cargo={t['cargo']}&camada={t['camada']}"
                    + (f"&uf={t['uf']}" if t["uf"] else "")
-                   + (f"&municipio={t['municipio']}" if t["municipio"] else ""))
+                   + (f"&municipio={t['municipio']}" if t["municipio"] else "")
+                   + (f"&eleicao={t['eleicao']}" if t.get("eleicao")
+                      else ""))
         try:
             _disparar(nav, url, arq, largura, altura)
         except CapturaError as exc:

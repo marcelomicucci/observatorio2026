@@ -21,6 +21,7 @@ existe caminho que produza número de projeção sem deixar rastro (§7).
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException
@@ -29,6 +30,10 @@ from sqlalchemy.orm import Session
 
 #: Uma trava por disputa para o cálculo de exibição.
 _TRAVAS: dict[tuple, threading.Lock] = {}
+#: Última resposta "aguardando" de cada disputa no modo exibição, e por
+#: quanto tempo ela vale antes de tentar calcular de novo.
+_SEM_PROJECAO: dict[tuple, tuple[float, dict]] = {}
+SEM_PROJECAO_S = 45.0
 
 
 def register(app) -> None:
@@ -36,9 +41,43 @@ def register(app) -> None:
     from ..config import DATA_DIR, load_environment, load_thresholds
     from ..engine import audit as A
     from ..engine import decided as DC
+    from ..engine import nivel as NV
     from ..engine import runner as R
     from ..engine.denominators import Base as DenBase
     from ..storage.raw import RawArchive
+
+    def _chamada_de(r, ct) -> dict:
+        """A mesma chamada, quando a resposta vem de um registro do diário."""
+        from ..config import load_environment
+        env = load_environment(M.env_atual())
+        nomes = {c.sqcand: c.nome for c in r.candidatos}
+        return _chamada(env, ct, None if r.unidade == "br" else r.unidade,
+                        r.modelo, nomes)
+
+    def _chamada(env, ct, uf, modelo, nomes: dict) -> dict:
+        """Vencedor projetado, com a régua dura do §4.7
+        (`engine/chamada.py`): 99%, estável em 3 registros e 20% apurado."""
+        from ..engine import chamada as CH
+        d = A.Diario(DATA_DIR / "previsoes", env.name)
+        d.ultimos()
+        chave = (ct.cargo_cd, (uf.lower() if uf else "br"), modelo)
+        ch = CH.avaliar(d.recentes(chave), vagas=ct.vagas)
+        return {"apta": ch.apta, "motivo": ch.motivo, "tipo": ch.tipo,
+                "candidatos": [{"sqcand": c, "nome": nomes.get(c, c)}
+                               for c in ch.sqcands],
+                "probabilidade_minima": ch.p_min_observada,
+                "registros_estaveis": ch.registros_estaveis,
+                "regra": {"p_min": CH.P_MIN, "registros": CH.ESTAVEL_N,
+                          "apurado_min_pct": CH.APURADO_MIN},
+                "nota": ("Vencedor projetado é probabilidade, não conta: "
+                         "diferente de 'matematicamente definido'.")}
+
+    def _faixa(qs: dict, nivel: int, rotulo: str) -> dict:
+        lo, hi = NV.faixa(qs, nivel)
+        # Registro antigo, sem os quantis largos: publica 80% e diz isso.
+        real = nivel if (qs.get(NV.CHAVES[nivel][0]) is not None) else 80
+        return {"nivel": real, "rotulo": rotulo if real == nivel
+                else "tendência", "pct_min": lo, "pct_max": hi}
 
     def _de_registro(r, ct, idade: float) -> dict:
         """Monta a resposta a partir de um registro do diário, no mesmo
@@ -53,6 +92,14 @@ def register(app) -> None:
                 "pct_mediana": c.pct_concorrentes_q500,
                 "pct_q100": c.pct_concorrentes_q100,
                 "pct_q900": c.pct_concorrentes_q900,
+                "faixa": _faixa({
+                    "q100": c.pct_concorrentes_q100,
+                    "q900": c.pct_concorrentes_q900,
+                    "q050": c.pct_concorrentes_q050,
+                    "q950": c.pct_concorrentes_q950,
+                    "q025": c.pct_concorrentes_q025,
+                    "q975": c.pct_concorrentes_q975},
+                    *NV.nivel_por_apurado(r.cobertura_secoes_pct)),
                 "base": DenBase.VALIDOS_COMPUTADOS.value,
             },
             "probabilidades": ({
@@ -88,6 +135,7 @@ def register(app) -> None:
                 "pendente_min": r.pendente_min,
                 "pendente_max": r.pendente_max,
                 "registro_id": r.registro_id,
+                "chamada": _chamada_de(r, ct),
                 "definicao": {
                     "disputa_definida": r.disputa_matematicamente_definida,
                     "segundo_turno_definido":
@@ -96,13 +144,28 @@ def register(app) -> None:
             })
 
     @app.get("/api/v1/projection")
-    def projecao(cargo: str, uf: str | None = None, modelo: str = "m1",
+    def projecao(cargo: str, uf: str | None = None,
+                 modelo: str | None = None,
                  sims: int | None = None, registrar: bool = True,
-                 max_idade_s: int = 300,
+                 # Idade aceitável do último registro antes de recalcular.
+                 # Eram 300 s, menos do que o coletor leva para dar a volta
+                 # nas 55 disputas (6 a 10 min com a apuração em andamento):
+                 # quase todo pedido de presidente recalculava do zero, e
+                 # recalcular com o coletor trabalhando levou 56 s no
+                 # simulado de 23/09. Servir o registro de 8 minutos atrás,
+                 # com a hora dele na tela, é melhor do que travar o telão
+                 # por um número um pouco mais novo.
+                 max_idade_s: int = 900,
                  s: Session = Depends(M.get_session)):
         """Roda a projeção da disputa e devolve quantis por candidato."""
-        env = load_environment(M._ENV_NAME)
+        env = load_environment(M.env_atual())
         thr = load_thresholds()
+        if modelo is None:
+            # Sem pedido explícito, o modelo em produção (aba Configuração).
+            # Resolvido aqui, antes do cache, para a chave do diário ser a
+            # do modelo que de fato roda.
+            from ..operacao import modelo_ativo
+            modelo = modelo_ativo()
         ct = M._contest_or_404(s, cargo, None)
         if ct.abrangencia_decisoria == "uf" and not uf:
             raise HTTPException(
@@ -134,8 +197,21 @@ def register(app) -> None:
                              ).total_seconds()
                     if idade <= max_idade_s:
                         return _de_registro(r, ct, idade)
-                return _calcular(env, thr, ct, uf, modelo, sims,
+                # Sem o que projetar (antes do primeiro voto: "nenhum
+                # candidato valido"), o cálculo lê a disputa inteira para
+                # dizer que não há projeção — 8 s para presidente em
+                # 04/10/2026 — e não deixa registro. Sem guardar essa
+                # resposta, cada tela do telão pagava os 8 s de novo.
+                memo = _SEM_PROJECAO.get(chave)
+                if memo and time.monotonic() - memo[0] < SEM_PROJECAO_S:
+                    return memo[1]
+                resp = _calcular(env, thr, ct, uf, modelo, sims,
                                  registrar=True)
+                if resp.get("status") == "aguardando":
+                    _SEM_PROJECAO[chave] = (time.monotonic(), resp)
+                else:
+                    _SEM_PROJECAO.pop(chave, None)
+                return resp
         return _calcular(env, thr, ct, uf, modelo, sims, registrar=registrar)
 
     def _calcular(env, thr, ct, uf, modelo, sims, *, registrar: bool):
@@ -154,11 +230,17 @@ def register(app) -> None:
 
         publicavel = (reg.estado_publicacao == "projecao_disponivel"
                       if reg else thr.homologated)
-        q = fc.quantis((0.10, 0.50, 0.90))
+        q = fc.quantis((0.025, 0.05, 0.10, 0.50, 0.90, 0.95, 0.975))
+        nivel, rotulo = NV.nivel_por_apurado(
+            100.0 * ctx.secoes_totalizadas / ctx.secoes_total
+            if ctx.secoes_total else 0.0)
         lider = fc.prob_lideranca()
         vagas = fc.prob_dentro_das_vagas()
         maioria = fc.prob_maioria_absoluta()
         estados = {x.sqcand: x for x in dfn.situacoes}
+        # Cenário de cassação dos votos sub judice: vai junto, nunca no
+        # lugar do outro. Duas informações persistentes (pedido de 23/09).
+        cassados = {x.sqcand: x for x in (dfn.situacoes_cassado or ())}
 
         linhas = []
         for c in fc.candidates:
@@ -170,8 +252,12 @@ def register(app) -> None:
                 "projecao": {
                     "votos_mediana": q[c]["votos"]["q500"],
                     "pct_mediana": q[c]["pct_concorrentes"]["q500"],
+                    # 80% sempre: é a série que o gráfico de
+                    # convergência compara ao longo da noite.
                     "pct_q100": q[c]["pct_concorrentes"]["q100"],
                     "pct_q900": q[c]["pct_concorrentes"]["q900"],
+                    # Faixa publicada: o nível sobe com o apurado.
+                    "faixa": _faixa(q[c]["pct_concorrentes"], nivel, rotulo),
                     "base": DenBase.VALIDOS_COMPUTADOS.value,
                 },
                 # §4.7: probabilidade só depois de o gate passar. `null` com
@@ -182,12 +268,17 @@ def register(app) -> None:
                     "maioria_absoluta": maioria.get(c),
                 } if publicavel else None),
                 "estado_matematico": e.estado.value if e else "em_aberto",
+                "estado_matematico_se_cassados": (
+                    (cassados[c].estado.value if c in cassados
+                     else "fora_da_disputa")
+                    if dfn.situacoes_cassado is not None else None),
             })
         linhas.sort(key=lambda x: -x["projecao"]["votos_mediana"])
 
         return M.envelope(
-            linhas, snapshots=[], estado=(reg.estado_publicacao if reg
-                                          else "cenario_exploratorio"),
+            linhas, snapshots=[],
+            estado=(reg.estado_publicacao if reg
+                    else "cenario_exploratorio"),
             denominador=DenBase.VALIDOS_COMPUTADOS,
             motivo=(None if publicavel else
                     "config/thresholds.yaml não homologado: os intervalos "
@@ -196,6 +287,8 @@ def register(app) -> None:
                     "divulgada (§4.7)."),
             extra={
                 "publicavel": publicavel,
+                "nivel_intervalo": nivel,
+                "chamada": _chamada(env, ct, uf, modelo, ctx.nomes),
                 "disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas,
                             "unidade": ctx.unidade},
                 "modelo": modelo,
@@ -213,6 +306,8 @@ def register(app) -> None:
                 "definicao": {
                     "disputa_definida": dfn.disputa_definida,
                     "segundo_turno_definido": dfn.segundo_turno_definido,
+                    "cenarios_divergem": dfn.sub_judice_em_jogo,
+                    "cenario_base": "votos sub judice validados",
                     "sub_judice_em_jogo": dfn.sub_judice_em_jogo,
                 },
             })

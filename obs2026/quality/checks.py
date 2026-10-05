@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..tse.parsers.ea20 import DVT_CONHECIDAS, DVT_VALIDO, Ea20
+from ..tse.parsers.ea11 import FASE_OFICIAL
+from ..tse.parsers.ea20 import DVT_CONHECIDAS, DVT_SEM, DVT_VALIDO, Ea20
 
 CRITICAL, WARNING, INFO = "critical", "warning", "info"
 
@@ -73,15 +74,30 @@ def check_ea20(r: Ea20, *, expected_seats: int | None = None,
             f"vvc-soma={v.vvc - soma_todos}")
 
     # -- destinacao do voto ----------------------------------------------
-    novas = {c.dvt for c in r.cargo.candidatos} - DVT_CONHECIDAS
+    # Sem destinação e sem voto é o arquivo ainda não recebido: normal no
+    # começo da noite. Sem destinação COM voto, não se sabe se o voto é
+    # válido — a soma de `vv` deixa de fechar, e isso bloqueia a projeção.
+    com_voto_sem_dvt = [c for c in r.cargo.candidatos
+                        if c.dvt == DVT_SEM and c.votos > 0]
+    if com_voto_sem_dvt:
+        bad("DVT_AUSENTE_COM_VOTOS", CRITICAL,
+            "candidato com votos e sem destinacao do voto (dvt)",
+            f"{len(com_voto_sem_dvt)} candidato(s)")
+    novas = ({c.dvt for c in r.cargo.candidatos} - DVT_CONHECIDAS
+             - {DVT_SEM})
     if novas:
         bad("DVT_DESCONHECIDA", WARNING,
             "destinacao de voto fora do conjunto conhecido", str(sorted(novas)))
 
     # -- eleitorado e secoes ---------------------------------------------
-    if e.te != e.esi + e.esni:
-        bad("ELEITORADO_INSTALADAS", CRITICAL, "te != esi + esni",
-            f"{e.te} != {e.esi}+{e.esni}")
+    # Instalação só é conhecida nas seções já TOTALIZADAS. No simulado de
+    # 22/09 o arquivo "não recebido" veio com te=1.746.104 e esi=esni=0; a
+    # regra antiga (te = esi + esni) só valia com 100% totalizado, que era o
+    # único estado visto até então. Com tudo totalizado, est = te e as duas
+    # formas coincidem.
+    if e.est != e.esi + e.esni:
+        bad("ELEITORADO_INSTALADAS", CRITICAL, "est != esi + esni",
+            f"{e.est} != {e.esi}+{e.esni}")
     if e.esi != e.esa + e.esna:
         bad("ELEITORADO_APURADAS", CRITICAL, "esi != esa + esna",
             f"{e.esi} != {e.esa}+{e.esna}")
@@ -95,9 +111,11 @@ def check_ea20(r: Ea20, *, expected_seats: int | None = None,
         bad("COMPARECIMENTO_DENOMINADOR", CRITICAL,
             "c + a != esa (comparecimento nao bate com o eleitorado apurado)",
             f"{e.c}+{e.a}={e.c+e.a} != {e.esa}")
-    if s.ts != s.si + s.sni:
-        bad("SECOES_INSTALADAS", CRITICAL, "ts != si + sni",
-            f"{s.ts} != {s.si}+{s.sni}")
+    if s.st != s.si + s.sni:
+        # Mesma razão de ELEITORADO_INSTALADAS: instalação se conhece nas
+        # seções totalizadas, não no total.
+        bad("SECOES_INSTALADAS", CRITICAL, "st != si + sni",
+            f"{s.st} != {s.si}+{s.sni}")
     if s.ts != s.st + s.snt:
         bad("SECOES_TOTALIZADAS", CRITICAL, "ts != st + snt",
             f"{s.ts} != {s.st}+{s.snt}")
@@ -133,10 +151,10 @@ def check_ea20(r: Ea20, *, expected_seats: int | None = None,
 
     # -- barreira de ambiente ---------------------------------------------
     if official_env is not None:
-        if official_env and r.fase != "f":
+        if official_env and r.fase != FASE_OFICIAL:
             bad("AMBIENTE_CONTAMINADO", CRITICAL,
                 "payload de simulado no ambiente oficial", f"f={r.fase!r}")
-        if not official_env and r.fase == "f":
+        if not official_env and r.fase == FASE_OFICIAL:
             bad("AMBIENTE_CONTAMINADO", CRITICAL,
                 "payload oficial no ambiente de simulado", f"f={r.fase!r}")
 

@@ -1,59 +1,71 @@
 # Roteiro do telão — a sequência de telas que o projetor exibe sozinho.
 #
-# Cada item é uma tela. O telão passa de uma para a outra no tempo indicado e
-# volta ao começo. O operador pode pausar, avançar e voltar pelo teclado, ou
-# pular direto para uma tela pela janela de controle.
+# Pode ser editado aqui ou pela aba Telão do painel, que grava neste mesmo
+# arquivo e guarda a versão anterior em config/telao.anterior/.
 #
 # CAMPOS
 #   cargo       presidente | governador | senador        (obrigatório)
 #   uf          sigla, obrigatória para governador e senador
 #   municipio   código TSE (5 dígitos) ou IBGE (7), OU nome + uf
-#   camada      lider | apurar                           (opcional)
-#                 lider   quem lidera: cor do 1o, tom pela margem sobre o
-#                         2o, contorno amarelo se matematicamente definido
-#                         e verde se eleito segundo o TSE
-#                 apurar  onde falta apurar: quanto do eleitorado ainda
-#                         nao entrou na conta (escuro = falta mais)
+#   tipo        mapa | politico | composicao    (opcional, padrão mapa)
+#                 mapa        a tela de apuração de sempre
+#                 politico    presidente ou governador: mapa por partido e
+#                             mapa ideológico lado a lado, votos e governos
+#                             por bloco. Governador sem `uf`: os 27 estados
+#                 composicao  hemiciclo; exige `casa: senado` ou
+#                             `casa: camara` e dispensa `cargo`
+#   abrangencia mu | uf        (tipo politico) presidente por município ou
+#                              por estado; padrão mu
+#   camada      lider | apurar | partido | ideologia       (tipo mapa)
+#                 lider     quem lidera: cor do 1o, tom pela margem sobre o
+#                           2o, contorno amarelo se matematicamente definido
+#                           e verde se eleito segundo o TSE
+#                 apurar    onde falta apurar (escuro = falta mais)
+#                 partido   cor do partido de quem lidera
+#                 ideologia classificação do partido de quem lidera (só
+#                           com a curadoria assinada; senão, hachura)
 #               Os nomes antigos (definicao, margem, cobertura) continuam
-#               aceitos e sao traduzidos: definicao e margem viram lider,
-#               cobertura vira apurar.
-#   segundos    tempo da tela; usa `padrao_segundos` se omitido
+#               aceitos: definicao e margem viram lider, cobertura vira
+#               apurar.
+#   segundos    tempo da tela, de 5 a 300; usa `padrao_segundos` se omitido
 #   titulo      rótulo livre; se omitido, é montado a partir do recorte
 #
 # SOBRE RECORTE MUNICIPAL
-# "Presidente em Belém" é recorte do VOTO, não a unidade que elege. Presidente
-# se decide no total do Brasil; governador e senador, no total da UF. O telão
-# marca essas telas com aviso próprio, e isso não é configurável de propósito
-# (§3).
+# "Presidente em Belém" é recorte do VOTO, não a unidade que elege. O telão
+# marca essas telas com aviso próprio, e isso não é configurável (§3).
 #
 # SOBRE NOME DE MUNICÍPIO
-# Nome não é chave: PAU D'ARCO existe em PA e em TO. Por isso nome exige `uf`,
-# e ambiguidade dentro da mesma UF é recusada com a lista de candidatos em vez
-# de resolvida por adivinhação (§2.1). Código dispensa a UF.
+# Nome não é chave: PAU D'ARCO existe em PA e em TO. Nome exige `uf`, e
+# ambiguidade é recusada em vez de resolvida por adivinhação (§2.1).
+#
+# Gravado pelo painel em 04/10/2026 21:48:33.
 
 padrao_segundos: 20
 camada_padrao: lider
-
 roteiro:
-  - cargo: presidente
-    titulo: Presidente — Brasil
-    segundos: 30
-
-  - cargo: presidente
-    camada: apurar
-    titulo: Presidente — onde ainda falta apurar
-    segundos: 15
-
-  - cargo: governador
-    uf: pa
-    segundos: 20
-
-  - cargo: senador
-    uf: sp
-    segundos: 25
-
-  - cargo: presidente
-    uf: pa
-    municipio: Belém
-    titulo: Presidente — recorte de Belém
-    segundos: 15
+- cargo: presidente
+  camada: partido
+  segundos: 20
+- tipo: politico
+  cargo: governador
+  segundos: 20
+- cargo: governador
+  uf: pa
+  camada: lider
+  segundos: 20
+- cargo: senador
+  uf: pa
+  camada: lider
+  segundos: 20
+- tipo: recordes
+  segundos: 25
+- tipo: composicao
+  casa: senado
+  segundos: 25
+- tipo: composicao
+  casa: camara
+  segundos: 25
+- cargo: governador
+  uf: sp
+  camada: lider
+  segundos: 20

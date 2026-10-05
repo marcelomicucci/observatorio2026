@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..tse.parsers.ea20 import Ea20
+from ..tse.parsers.ea20 import DVT_ANULADO_SJ, Ea20
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,22 +148,32 @@ class Observed:
 
 
 def observed_of(r: Ea20) -> Observed:
-    """Extrai o observado usando apenas candidatos com destinação 'Válido'.
+    """Extrai o observado: candidatos com destinação 'Válido' e sub judice.
 
-    Candidatos anulados e sub judice ficam fora da preferência: eles não
-    compõem `vv`, e projetar preferência sobre eles produziria voto que a
-    totalização não vai aceitar. Os votos deles continuam registrados no
-    observado bruto e aparecem em cenário de sensibilidade (§4.7).
+    Anulado definitivo fica fora da preferência — esses votos não voltam.
+    Sub judice entra desde 22/09/2026: a projeção passa a ser o cenário "se
+    os votos forem validados", e a tela marca o candidato como sub judice.
+    Antes ele ficava fora, e o simulado mostrou o problema: o primeiro
+    colocado da contagem aparecia no telão sem projeção nenhuma.
     """
     validos_por_cand = {
         c.sqcand: c.votos for c in r.cargo.candidatos if c.conta_como_valido
     }
+    # Sub judice entra na projeção (decisão de 22/09/2026): o voto está
+    # pendente, não anulado, e a projeção é o cenário "se for validado".
+    # Se a Justiça anular, o TSE tira os votos da base e a projeção seguinte
+    # se ajusta sozinha. Os votos saem dos `anulados` na mesma medida, para
+    # o total de votos a concorrentes (a base da maioria) não contar duas
+    # vezes. O "Anulado" definitivo continua fora.
+    sub_judice = {c.sqcand: c.votos for c in r.cargo.candidatos
+                  if c.dvt == DVT_ANULADO_SJ}
+    sj_total = sum(sub_judice.values())
     return Observed(
         unit=r.unit_key,
-        votos_por_candidato=validos_por_cand,
-        validos=r.votes.vv,
+        votos_por_candidato={**validos_por_cand, **sub_judice},
+        validos=r.votes.vv + sj_total,
         nominal_tse=sum(c.votos for c in r.cargo.candidatos),
-        anulados=r.votes.van + r.votes.vansj,
+        anulados=max(0, r.votes.van + r.votes.vansj - sj_total),
         brancos=r.votes.vb,
         nulos=r.votes.tvn,
         total_votos=r.votes.tv,

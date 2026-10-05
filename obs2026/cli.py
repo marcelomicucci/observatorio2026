@@ -10,7 +10,7 @@ Comandos de operação:
     obs2026 prever          projeta uma disputa e REGISTRA o que foi dito
     obs2026 previsoes       lista o historico de projecoes
     obs2026 auditar-previsoes  confronta as projecoes com o resultado final
-    obs2026 preparar        baixa perfis, fotos e malha para rodar sem rede
+    obs2026 preparar        baixa perfis, fotos, malha e Senado para rodar sem rede
 """
 
 from __future__ import annotations
@@ -38,7 +38,11 @@ from .quality.checks import CRITICAL, check_ea20, summarize
 app = typer.Typer(add_completion=False, help="Observatório Eleitoral 2026")
 con = Console()
 
-ENV_OPT = typer.Option("simulado2026", "--env", "-e", help="ambiente")
+#: Padrão desde 04/10/2026: o oficial. Com o simulado como padrão, um
+#: `servir` sem `--env` no dia da eleição pôs no ar os dados de teste de
+#: setembro. O simulado do TSE já responde 403; quem quiser o banco antigo
+#: pede `--env simulado2026`.
+ENV_OPT = typer.Option("oficial2026", "--env", "-e", help="ambiente")
 
 
 def br(n) -> str:
@@ -86,6 +90,11 @@ async def _discover(env, cfg, client: TseClient, archive: RawArchive):
     ea12s = {}
     alvo = {c.cd for c in env.cargos.values()}
     for p in ea11.pleitos:
+        # O catálogo de produção traz pleitos de outro ciclo (suplementares
+        # de ele2024, uma delas de Governador): pedir o EA12 delas na árvore
+        # de ele2026 é 404 certo, e 404 em série custa bloqueio de IP.
+        if p.ciclo != urls.ciclo:
+            continue
         for e in p.eleicoes:
             if not any(e.tem_cargo(cd) for cd in alvo):
                 continue
@@ -124,7 +133,7 @@ def descobrir(env_name: str = ENV_OPT):
 
     con.print(f"\n[bold]{env.label}[/]")
     con.print(f"fase do catalogo: [bold]{cat.ea11.fase}[/] "
-              f"('s'=simulado, 'f'=oficial)  ·  "
+              f"('s'=simulado, 'o'=oficial)  ·  "
               f"gerado em {cat.ea11.generated_at}")
 
     t = Table("pleito", "eleicao", "turno", "2º turno", "nome")
@@ -322,6 +331,10 @@ def coletar(env_name: str = ENV_OPT,
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     env, cfg = load_environment(env_name), load_collector()
+    if env.demonstracao:
+        con.print(f"[red]{env.name} é ambiente de demonstração, montado de "
+                  "arquivo histórico: não há o que coletar no TSE.[/]")
+        raise typer.Exit(1)
     thr = load_thresholds()
     archive = RawArchive(DATA_DIR / "raw", env.name)
     counters = {"results": 0, "critical": 0}
@@ -346,7 +359,13 @@ def coletar(env_name: str = ENV_OPT,
                 n_accompaniment=len(cat.accompaniment_targets()),
                 n_control=len(cat.control_targets()),
                 n_municipal=len(cat.result_targets()),
+                proporcional_rps=sum(1.0 / iv for _, iv, _ in
+                                     cat.proporcional_targets()),
             )
+            n_prop = len(cat.proporcional_targets())
+            if n_prop:
+                con.print(f"deputado federal: {n_prop} arquivos de UF, so o "
+                          "resultado (sem projecao, sem municipios)")
             con.print(f"catalogo: {len(cat.contests)} disputas, "
                       f"{br(len(cat.result_targets()))} arquivos municipais")
             con.print(f"orcamento: piso {b['piso_rps']:.1f} req/s, "
@@ -359,6 +378,9 @@ def coletar(env_name: str = ENV_OPT,
             # cego para as mudanças reais nesse intervalo.
             if pular_finalizados is not None:
                 col.pular_finalizados = pular_finalizados
+                col.pular_fixo = True
+            else:
+                col.aplicar_operacao()
             rest = await asyncio.to_thread(col.restaurar_do_arquivo)
             if rest["etags"]:
                 con.print(f"retomada: {br(rest['etags'])} fontes com ETag, "
@@ -426,6 +448,29 @@ def coletar(env_name: str = ENV_OPT,
         stats, extras = asyncio.run(run())
     saida = {**stats, **counters, **extras}
     con.print(json.dumps(saida, ensure_ascii=False, indent=2))
+
+
+@app.command("servir")
+def servir(env_name: str = ENV_OPT,
+           porta: int = typer.Option(8026, "--porta", "-p")):
+    """Sobe o painel e o telão para um ambiente.
+
+    `--env demo2022 --porta 8027` serve a demonstração ao lado do simulado;
+    na noite, `--env oficial2026`."""
+    import os
+    import socket
+    import uvicorn
+    env = load_environment(env_name)
+    with socket.socket() as sk:
+        if sk.connect_ex(("127.0.0.1", porta)) == 0:
+            con.print(f"[red]A porta {porta} já está em uso — provavelmente "
+                      f"um servidor do Observatório já está no ar. Abra "
+                      f"http://localhost:{porta} ou feche o outro antes.[/]")
+            raise typer.Exit(1)
+    os.environ["OBS2026_ENV"] = env.name
+    con.print(f"servindo {env.label} em http://localhost:{porta}")
+    uvicorn.run("obs2026.api.app:app", host="127.0.0.1", port=porta,
+                log_level="warning")
 
 
 @app.command("auditar-csv")
@@ -500,11 +545,13 @@ from .cli_prever import (registrar as _registrar_previsao,  # noqa: E402
                          registrar_ensaio as _registrar_ensaio,
                          registrar_preparo as _registrar_preparo)
 from .cli_compartilhar import registrar as _registrar_compartilhar  # noqa: E402
+from .cli_politico import registrar as _registrar_politico  # noqa: E402
 
 _registrar_previsao(app, ENV_OPT)
 _registrar_ensaio(app, ENV_OPT)
 _registrar_preparo(app, ENV_OPT)
 _registrar_compartilhar(app, ENV_OPT)
+_registrar_politico(app)
 
 
 if __name__ == "__main__":

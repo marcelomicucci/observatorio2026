@@ -415,6 +415,31 @@ class CargaManifesto(Base):
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class CargaPendente(Base):
+    """Arquivo do bruto que a carga não conseguiu ler — e vai tentar de novo.
+
+    Existe desde o simulado de 22/09: os arquivos "não recebidos" vieram sem
+    um campo que o leitor exigia, foram recusados, e a carga seguiu adiante.
+    Corrigido o leitor, nada voltava sozinho: o ponto de retomada já tinha
+    passado por eles, e o painel ficou mostrando o sábado até o marcador ser
+    apagado à mão. Agora a falha fica registrada aqui, e a carga relê os
+    pendentes ao iniciar e periodicamente. A leitura é idempotente, então
+    reler não duplica nada.
+    """
+
+    __tablename__ = "carga_pendente"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    #: sha256 + captured_at + chave: a mesma captura nunca entra duas vezes
+    ident: Mapped[str] = mapped_column(String(256), unique=True)
+    dia: Mapped[str] = mapped_column(String(10), index=True)
+    ref_json: Mapped[str] = mapped_column(Text)
+    motivo: Mapped[str] = mapped_column(Text)
+    tentativas: Mapped[int] = mapped_column(Integer, default=1)
+    primeira_falha_em: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ultima_tentativa_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True))
+
+
 class AuditEvent(Base):
     """Auditoria de toda mudança de premissa ou classificação (§10)."""
 

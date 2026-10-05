@@ -49,10 +49,42 @@ def test_teto_interno_nunca_passa_do_limite_do_tse():
     assert load_collector().max_rps <= 100.0
 
 
-def test_ambiente_de_producao_recusa_operar_sem_codigos_oficiais():
-    """O TSE ainda não publicou os códigos de produção."""
+def test_ambiente_sem_codigos_recusa_operar(tmp_path):
+    """Ambiente com base/ambiente nulos é recusado, nunca adivinhado."""
+    (tmp_path / "sources.yaml").write_text(
+        "environments:\n  vazio:\n    base: null\n    ambiente: null\n"
+        "    seed: {ciclo: null, cd_pleito: null, elections: []}\n",
+        encoding="utf-8")
     with pytest.raises(ConfigError, match="incompleto"):
-        load_environment("oficial2026")
+        load_environment("vazio", tmp_path)
+
+
+def test_ambiente_de_producao_usa_os_codigos_publicados_pelo_tse():
+    """Códigos do catálogo de produção, publicados em 02/10/2026."""
+    env = load_environment("oficial2026")
+    assert env.official and not env.demonstracao
+    assert (env.base, env.ambiente) == ("https://resultados.tse.jus.br",
+                                        "oficial")
+    assert env.ciclo == "ele2026"
+    assert {"6257", "6259"} <= set(env.seed_elections)
+
+
+def test_fase_oficial_do_tse_e_o():
+    """Produção manda f='o'; simulado, f='s'. A barreira de ambiente
+    recusa o cruzamento nos dois sentidos."""
+    from dataclasses import replace
+    from obs2026.quality.checks import check_ea20
+    r = ea20.parse(json.loads(
+        (FIX / "ea20_br_pres.json").read_text(encoding="utf-8")))
+    cod = lambda fs: {f.code for f in fs}                    # noqa: E731
+    assert "AMBIENTE_CONTAMINADO" in cod(check_ea20(r, official_env=True))
+    assert "AMBIENTE_CONTAMINADO" not in cod(
+        check_ea20(r, official_env=False))
+    oficial = replace(r, fase="o")
+    assert "AMBIENTE_CONTAMINADO" not in cod(
+        check_ea20(oficial, official_env=True))
+    assert "AMBIENTE_CONTAMINADO" in cod(
+        check_ea20(oficial, official_env=False))
 
 
 # ----------------------------------------------------------------- fila ----
@@ -175,12 +207,24 @@ def test_gate_recusa_quando_m1_nao_supera_m0():
 
 # -------------------------------------------------------- classificação ----
 
-def test_mapa_ideologico_nasce_desabilitado():
-    """Preencher a classificação por conta própria seria inventar autoria."""
+def test_mapa_ideologico_sem_assinatura_fica_desabilitado(monkeypatch,
+                                                           tmp_path):
+    """Proposta sem autor não liga o mapa: assinar por alguém seria inventar
+    autoria. Testado sobre uma proposta controlada, não sobre o arquivo
+    vivo — que pode estar assinado."""
+    f = tmp_path / "c.yaml"
+    f.write_text(
+        "versao: '2026.1-proposta'\nano: 2026\ncurador: null\n"
+        "publicada_em: null\nentradas:\n"
+        "  - {entidade_tipo: partido, entidade_id: PT, numero: '13',\n"
+        "     ideologia: esquerda, grau_controversia: 1, autor: null,\n"
+        "     fonte: survey, justificativa: teste}\n", encoding="utf-8")
+    monkeypatch.setenv("OBS2026_CLASSIFICACAO", str(f))
     m = CL.metodologia()
     assert m["estado"] == "curadoria_pendente"
     assert m["motivo"]
-    assert m["entradas"] == 0
+    assert m["entradas"] == 1
+    assert any("autor vazio" in p for p in m["problemas"])
 
 
 def test_ausencia_de_classificacao_nao_e_centro():
@@ -261,7 +305,15 @@ def test_base_nominal_reproduz_o_percentual_do_tse(cliente):
     assert topo["pct"] == pytest.approx(8.712251427, abs=1e-6)
 
 
-def test_forecast_nao_publica_probabilidade_sem_homologacao(cliente):
+def test_forecast_nao_publica_probabilidade_sem_homologacao(cliente,
+                                                          monkeypatch):
+    # Independe da homologação real (assinada em 22/09): o teste é sobre o
+    # comportamento SEM ela.
+    import dataclasses
+    from obs2026.api import app as M
+    real = M.load_thresholds
+    monkeypatch.setattr(M, "load_thresholds", lambda *a, **k:
+                        dataclasses.replace(real(*a, **k), homologated=False))
     d = cliente.get("/api/v1/forecasts?cargo=1").json()
     assert d["status"] == "cenario_exploratorio"
     assert d["dados"] is None
@@ -364,14 +416,24 @@ def test_nomes_antigos_de_camada_viram_nomes_atuais():
     assert APELIDOS_CAMADA["cobertura"] == "apurar"
 
 
-def test_roteiro_so_entrega_nomes_atuais_de_camada(cliente):
-    """O telao nao pode receber nome que o mapa nao conhece."""
+def test_roteiro_so_entrega_nomes_atuais_de_camada(cliente,
+                                                   roteiro_preservado):
+    """O telao nao pode receber nome que o mapa nao conhece.
+
+    O nome antigo de camada ("cobertura") vira o atual ("apurar") na
+    leitura. O teste GRAVA a tela que precisa — antes ele dependia de o
+    roteiro de produção conter a tela "onde ainda falta apurar", e quebrou
+    quando o usuário a tirou do roteiro dele, em 23/09. Configuração de
+    operação é do operador; o teste traz a sua."""
     from obs2026.api.telao import CAMADAS
+    r = cliente.post("/api/v1/telao/roteiro", headers=JSON, json={"roteiro": [
+        {"cargo": "1", "camada": "cobertura", "segundos": 15,
+         "titulo": "Presidente — onde ainda falta apurar"}]})
+    assert r.status_code == 200
     d = cliente.get("/api/v1/telao/roteiro").json()
     for t in d["dados"]:
         if not t["erro"]:
             assert t["camada"] in CAMADAS, t
-    # A tela "onde ainda falta apurar" tem que chegar como tal.
     falta = [t for t in d["dados"] if "falta apurar" in t["titulo"]]
     assert falta and falta[0]["camada"] == "apurar"
 
@@ -380,12 +442,17 @@ def test_roteiro_so_entrega_nomes_atuais_de_camada(cliente):
 
 @pytest.fixture
 def roteiro_preservado():
-    """Os testes gravam no config/telao.yaml de verdade; este fixture põe o
-    arquivo de volta exatamente como estava, e apaga as cópias de segurança
-    criadas durante o teste."""
+    """Roteiro usado nos testes — uma CÓPIA, nunca o de produção.
+
+    O conftest aponta `OBS2026_TELAO` para um arquivo temporário; aqui o
+    conteúdo volta ao original a cada teste, para um teste não ver o que o
+    outro gravou."""
+    import os
+
     from obs2026.config import CONFIG_DIR
-    arq = Path(CONFIG_DIR) / "telao.yaml"
-    pasta = Path(CONFIG_DIR) / "telao.anterior"
+    arq = Path(os.environ.get("OBS2026_TELAO")
+               or Path(CONFIG_DIR) / "telao.yaml")
+    pasta = arq.parent / "telao.anterior"
     original = arq.read_bytes()
     antes = set(pasta.glob("*")) if pasta.exists() else set()
     yield arq
@@ -422,12 +489,12 @@ def test_gravar_roteiro_valido_escreve_o_arquivo(cliente, roteiro_preservado):
 
 
 def test_gravar_guarda_a_versao_anterior(cliente, roteiro_preservado):
-    from obs2026.config import CONFIG_DIR
     original = roteiro_preservado.read_bytes()
     r = cliente.post("/api/v1/telao/roteiro", headers=JSON,
                      json={"roteiro": [{"cargo": "1", "segundos": 20}]})
     assert r.status_code == 200
-    copias = sorted((Path(CONFIG_DIR) / "telao.anterior").glob("*.yaml"))
+    copias = sorted((roteiro_preservado.parent / "telao.anterior")
+                    .glob("*.yaml"))
     assert copias and copias[-1].read_bytes() == original
 
 

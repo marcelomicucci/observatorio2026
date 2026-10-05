@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..config import CargoConfig, Environment
-from .parsers.ea11 import Ea11, Eleicao
+from .parsers.ea11 import FASE_OFICIAL, Ea11, Eleicao
 from .parsers.ea12 import Ea12, Municipio
 from .urls import Target, UF_DISPUTAS, UrlBuilder
 
@@ -85,6 +85,24 @@ class Catalog:
                     out.append(self.urls.ea20_uf(c.election, c.cargo.cd, uf))
         return out
 
+    def proporcional_targets(self) -> list[tuple[str, float, Target]]:
+        """Totais de UF dos cargos proporcionais: `(chave, intervalo, alvo)`.
+
+        Só o arquivo da UF — o resultado de deputado é da UF, e o arquivo
+        municipal não acrescenta nada à contagem de cadeiras. Só 1º turno:
+        não existe 2º turno proporcional."""
+        out: list[tuple[str, float, Target]] = []
+        for chave, prop in sorted(self.env.proporcionais.items()):
+            for p in self.ea11.pleitos:
+                for e in p.eleicoes:
+                    if (e.turno != "1" or e.cd not in self.ea12_por_eleicao
+                            or not e.tem_cargo(prop["cd"])):
+                        continue
+                    for uf in sorted(UF_DISPUTAS):
+                        out.append((chave, prop["intervalo_s"],
+                                    self.urls.ea20_uf(e.cd, prop["cd"], uf)))
+        return out
+
     def accompaniment_targets(self) -> list[Target]:
         """EA14 + EA15: o mecanismo barato de detecção de mudança."""
         out: list[Target] = []
@@ -124,22 +142,25 @@ def build(env: Environment, urls: UrlBuilder, ea11: Ea11,
           ea12s: dict[str, Ea12]) -> Catalog:
     flags: list[str] = []
 
-    # Barreira de ambiente: 'f' = oficial, 's' = simulado.
-    if env.official and ea11.fase != "f":
+    # Barreira de ambiente: 'o' = oficial, 's' = simulado.
+    if env.official and ea11.fase != FASE_OFICIAL:
         raise RuntimeError(
             f"ambiente configurado como oficial mas o ele-c.json veio com "
             f"f={ea11.fase!r}. Coleta recusada para nao contaminar o oficial."
         )
-    if not env.official and ea11.fase == "f":
+    if not env.official and ea11.fase == FASE_OFICIAL:
         raise RuntimeError(
             "ambiente configurado como simulado mas o ele-c.json veio com "
-            "f='f' (oficial). Coleta recusada."
+            f"f={ea11.fase!r} (oficial). Coleta recusada."
         )
 
     problems = urls.check_declared_dirs(list(ea11.diretorios))
     flags.extend(problems)
 
-    catalogadas = {e.cd for p in ea11.pleitos for e in p.eleicoes}
+    # Só o ciclo coletado: o catálogo de produção carrega também as dezenas
+    # de suplementares de ele2024, que não são divergência do seed.
+    catalogadas = {e.cd for p in ea11.pleitos if p.ciclo == urls.ciclo
+                   for e in p.eleicoes}
     for seed in env.seed_elections:
         if seed not in catalogadas:
             flags.append(
@@ -151,6 +172,8 @@ def build(env: Environment, urls: UrlBuilder, ea11: Ea11,
 
     contests: list[Contest] = []
     for p in ea11.pleitos:
+        if p.ciclo != urls.ciclo:
+            continue
         for e in p.eleicoes:
             ea12 = ea12s.get(e.cd)
             if ea12 is None:

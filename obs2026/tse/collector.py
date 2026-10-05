@@ -52,6 +52,9 @@ log = logging.getLogger("obs2026.collector")
 #: Tique da varredura rotativa. Curto de proposito: o custo medio depende de
 #: `reconcile_interval_s`, e o tique so controla o quanto a carga fica plana.
 RECONCILE_TICK_S = 5.0
+#: Depois que o TSE encerra Brasil e todas as UFs, espera este tanto antes
+#: de se desligar: os últimos EA20 (municípios, deputados) ainda chegam.
+CARENCIA_ENCERRAMENTO_S = 600.0
 
 
 #: Níveis da fila. O nível decide antes do peso: nada de nível mais baixo
@@ -186,6 +189,37 @@ class Collector:
         #: alvos reabertos: só voltam a finalizados com um EA20 gerado depois
         #: desta hora (a da totalização que os reabriu)
         self._exige_gerado_apos: dict[str, datetime | None] = {}
+        #: Totais de UF dos cargos proporcionais (deputado federal). Têm
+        #: cadência própria e não passam por `on_result`: vão para o arquivo
+        #: bruto e são lidos de lá, sem banco e sem motor.
+        prop = getattr(catalog, "proporcional_targets", None)
+        self._proporcionais = prop() if prop else []
+        self._cds_proporcionais = {t.cargo for _, _, t in self._proporcionais}
+        self._prox_proporcional: dict[str, float] = {}
+        #: Chaves de operação (aba Configuração). `pular_finalizados` passado
+        #: pela linha de comando fica fixo; senão vale o arquivo, relido a
+        #: cada volta.
+        self.pular_fixo = False
+        self.deputados_ativos = True
+        self._env_nome = getattr(getattr(catalog, "env", None), "name",
+                                 "sem-ambiente")
+        from .. import operacao as _op
+        self._op = _op
+        cmd = _op.ler_comando(self._env_nome)
+        #: Comandos anteriores a este processo não são reexecutados: um
+        #: "forçar varredura" de ontem não pode disparar num reinício.
+        self._cmd_visto = (cmd or {}).get("id", 0)
+        self._prox_batimento = 0.0
+        #: Parada ao fim da apuração (pedido de 22/09/2026). Andamento de
+        #: Brasil e de cada UF por eleição, do EA14/EA15. Só encerra se
+        #: esta execução viu a apuração aberta: sem isso, ligar o coletor
+        #: com os arquivos de um ciclo já fechado o desligaria na hora.
+        self.encerrar_ao_finalizar = True
+        self._andamento_totais: dict[str, str] = {}
+        self._viu_aberto = False
+        self._tudo_final_desde: float | None = None
+        self.encerrado_por_fim = False
+        self.parado_pelo_painel = False
 
     def restaurar_do_arquivo(self) -> dict:
         """Recupera do arquivo bruto o que o coletor já sabia.
@@ -346,7 +380,9 @@ class Collector:
 
     def _reabrir_totais(self, eleicao: str, escopo: str,
                         totalizado_em: datetime | None = None) -> None:
-        for t in self.catalog.control_targets():
+        alvos = self.catalog.control_targets() + [
+            t for _, _, t in self._proporcionais]
+        for t in alvos:
             if t.election == eleicao and self._escopo_total(t) == escopo:
                 self._reabrir(t.key, totalizado_em)
 
@@ -446,6 +482,9 @@ class Collector:
                     # assinatura dele mudar — re-totalização.
                     escopo = (f"{t.election}:br" if unit.tpabr == "br"
                               else f"{t.election}:uf:{unit.cdabr.lower()}")
+                    self._andamento_totais[escopo] = unit.andamento
+                    if unit.andamento != "f":
+                        self._viu_aberto = True
                     tok = unit.change_token()
                     antes = self.tokens_totais.get(escopo)
                     self.tokens_totais[escopo] = tok
@@ -477,6 +516,23 @@ class Collector:
                         enqueued += 1
         return enqueued
 
+    def verificar_fim(self, agora: float) -> bool:
+        """True quando é hora de desligar: tudo encerrado há 10 min."""
+        vals = list(self._andamento_totais.values())
+        tudo_f = bool(vals) and all(v == "f" for v in vals)
+        if not (self.encerrar_ao_finalizar and self._viu_aberto and tudo_f):
+            if self._tudo_final_desde is not None and not tudo_f:
+                log.warning("apuração reaberta pelo TSE: coletor continua")
+            self._tudo_final_desde = None
+            return False
+        if self._tudo_final_desde is None:
+            self._tudo_final_desde = agora
+            log.warning("TSE encerrou Brasil e todas as UFs; o coletor se "
+                        "desliga em %.0f min (últimos arquivos)",
+                        CARENCIA_ENCERRAMENTO_S / 60)
+            return False
+        return agora - self._tudo_final_desde >= CARENCIA_ENCERRAMENTO_S
+
     # -- laço de controle -------------------------------------------------
 
     async def cycle_control(self) -> None:
@@ -486,6 +542,108 @@ class Collector:
                 continue
             self.queue.push(t, self.cfg.control_weight, reason="controle",
                             nivel=NIVEL_TOTAIS)
+
+    async def cycle_proporcional(self, agora: float) -> int:
+        """Deputado federal: os 27 arquivos de UF, cada cargo no seu ritmo.
+
+        Nível dos totais, peso abaixo do controle: sai antes de qualquer
+        município, mas nunca na frente do total de presidente, governador
+        ou senador. Custo: 27 arquivos a cada `intervalo_s` (120 s = 0,23
+        req/s), e o finalizado sai das buscas como os outros totais."""
+        n = 0
+        if not self.deputados_ativos:
+            return 0
+        for chave, intervalo, t in self._proporcionais:
+            if agora < self._prox_proporcional.get(chave, 0.0):
+                continue
+            if self._pular(t):
+                continue
+            if self.queue.push(t, self.cfg.control_weight * 0.5,
+                               reason="proporcional", nivel=NIVEL_TOTAIS):
+                n += 1
+        for chave, intervalo, _ in self._proporcionais:
+            if agora >= self._prox_proporcional.get(chave, 0.0):
+                self._prox_proporcional[chave] = agora + intervalo
+        return n
+
+    # -- chaves e comandos do painel -------------------------------------
+
+    def aplicar_operacao(self) -> None:
+        """Relê `config/operacao.yaml` (barato: só se a data mudou)."""
+        try:
+            op = self._op.carregar()
+        except Exception:                          # noqa: BLE001
+            return
+        if not self.pular_fixo:
+            self.pular_finalizados = bool(op["coleta"]["pular_finalizados"])
+        self.deputados_ativos = bool(op["coleta"]["deputados_federais"])
+        self.encerrar_ao_finalizar = bool(
+            op["coleta"].get("encerrar_ao_finalizar", True))
+
+    def atender_comandos(self) -> dict | None:
+        """Executa o pedido do painel, se houver um novo.
+
+        `forcar_totais` enfileira todos os totais (e os deputados) no nível
+        dos totais, **inclusive os finalizados** — é para isso que o botão
+        existe: desconfiar do que está na tela. `forcar_tudo` acrescenta a
+        varredura municipal completa com prioridade baixa, atrás de tudo que
+        muda."""
+        cmd = self._op.ler_comando(self._env_nome)
+        if not cmd or cmd.get("id", 0) <= self._cmd_visto:
+            return None
+        self._cmd_visto = cmd["id"]
+        acao = cmd.get("acao")
+        n = 0
+        if acao == "parar":
+            log.warning("comando parar (#%s): coletor desligando a pedido "
+                        "do painel", cmd["id"])
+            self.parado_pelo_painel = True
+            self.stop()
+        if acao in ("forcar_totais", "forcar_tudo"):
+            for t in self.catalog.control_targets():
+                self.finalizados.discard(t.key)
+                if self.queue.push(t, self.cfg.control_weight,
+                                   reason="forcado", nivel=NIVEL_TOTAIS):
+                    n += 1
+            for _, _, t in self._proporcionais:
+                self.finalizados.discard(t.key)
+                if self.queue.push(t, self.cfg.control_weight * 0.5,
+                                   reason="forcado", nivel=NIVEL_TOTAIS):
+                    n += 1
+            self._prox_proporcional.clear()
+        if acao == "forcar_tudo":
+            for t in self._reconcile_targets():
+                self.finalizados.discard(t.key)
+                if self.queue.push(t, 0.0005, reason="forcado"):
+                    n += 1
+        log.info("comando %s (#%s): %d alvos enfileirados", acao,
+                 cmd["id"], n)
+        self._op.gravar_estado_coletor(
+            self._env_nome, ultimo_comando_id=cmd["id"],
+            ultimo_comando=acao, ultimo_comando_alvos=n,
+            ultimo_comando_atendido_em=datetime.now(timezone.utc).isoformat())
+        return {"acao": acao, "alvos": n}
+
+    def batimento(self, agora: float) -> None:
+        if agora < self._prox_batimento:
+            return
+        self._prox_batimento = agora + 5.0
+        try:
+            self._op.gravar_estado_coletor(
+                self._env_nome, fila=len(self.queue),
+                req_s=round(self.client.stats["requests"]
+                            / max(1e-6, time.monotonic()
+                                  - self.stats.started_at), 2),
+                pular_finalizados=self.pular_finalizados,
+                deputados_federais=self.deputados_ativos,
+                finalizados=len(self.finalizados),
+                encerrar_ao_finalizar=self.encerrar_ao_finalizar,
+                encerra_em_s=(None if self._tudo_final_desde is None else
+                              max(0, round(CARENCIA_ENCERRAMENTO_S
+                                           - (agora
+                                              - self._tudo_final_desde)))))
+        except OSError:
+            pass
 
     # -- varredura de reconciliação --------------------------------------
 
@@ -555,7 +713,7 @@ class Collector:
                 # Ainda contando, ou a versão nova ainda não saiu: segue
                 # sendo buscado.
                 self.finalizados.discard(t.key)
-        if self.on_result:
+        if self.on_result and t.cargo not in self._cds_proporcionais:
             self.on_result(result, ref, t)
 
     async def drain(self, budget: int) -> int:
@@ -626,10 +784,15 @@ class Collector:
                 if max_seconds and (now - t0) >= max_seconds:
                     break
                 self.stats.cycles += 1
+                self.aplicar_operacao()
+                self.atender_comandos()
+                self.batimento(now)
 
                 if now >= next_ctl:
                     await self.cycle_control()
                     next_ctl = now + self.cfg.control_interval_s
+                if self._proporcionais:
+                    await self.cycle_proporcional(now)
                 if now >= next_acc:
                     await self.cycle_accompaniment()
                     next_acc = time.monotonic() + \
@@ -641,9 +804,28 @@ class Collector:
                 self.queue.age()
                 await self.drain(self.cfg.max_inflight_results)
 
+                if self.verificar_fim(time.monotonic()):
+                    self.encerrado_por_fim = True
+                    log.warning("APURAÇÃO ENCERRADA PELO TSE — coletor "
+                                "desligado. Painel e telão continuam no "
+                                "ar com o resultado final.")
+                    break
+
                 if len(self.queue) == 0:
                     await asyncio.sleep(0.5)
         except BlockedError as exc:
             # Parar é a resposta correta: insistir reinicia o bloqueio do TSE.
             log.error("COLETA PAUSADA POR BLOQUEIO: %s", exc)
+            motivo = "bloqueio do TSE"
+        else:
+            motivo = ("apuração encerrada pelo TSE" if self.encerrado_por_fim
+                      else "pedido do painel" if self.parado_pelo_painel
+                      else "fim do tempo ou interrupção")
+        # A aba Configuração mostra por que parou, em vez de só "parado".
+        try:
+            self._op.gravar_estado_coletor(
+                self._env_nome, parado_em=datetime.now(timezone.utc)
+                .isoformat(), motivo_parada=motivo)
+        except OSError:
+            pass
         return self.stats.as_dict(self.client, self.queue)

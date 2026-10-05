@@ -1,0 +1,705 @@
+{
+ "fonte": "IBGE, Arranjos Populacionais e Concentracoes Urbanas do Brasil, 2a ed., tabela 1.1; cruzado com o cadastro de municipios do TSE (eleicao 544)",
+ "regra": "capital + municipios do arranjo da capital na mesma UF",
+ "ufs": {
+  "ac": {
+   "capital": "01392",
+   "nome": "RIO BRANCO",
+   "arranjo": null,
+   "membros": [
+    "01392"
+   ],
+   "nomes": [
+    "RIO BRANCO"
+   ]
+  },
+  "al": {
+   "capital": "27855",
+   "nome": "MACEIÓ",
+   "arranjo": "Maceió/AL",
+   "membros": [
+    "27006",
+    "27090",
+    "27430",
+    "27855",
+    "27936",
+    "28037",
+    "28533",
+    "28576",
+    "28770"
+   ],
+   "nomes": [
+    "BARRA DE SANTO ANTÔNIO",
+    "COQUEIRO SECO",
+    "MACEIÓ",
+    "MARECHAL DEODORO",
+    "MESSIAS",
+    "PARIPUEIRA",
+    "RIO LARGO",
+    "SANTA LUZIA DO NORTE",
+    "SATUBA"
+   ]
+  },
+  "am": {
+   "capital": "02550",
+   "nome": "MANAUS",
+   "arranjo": null,
+   "membros": [
+    "02550"
+   ],
+   "nomes": [
+    "MANAUS"
+   ]
+  },
+  "ap": {
+   "capital": "06050",
+   "nome": "MACAPÁ",
+   "arranjo": "Macapá/AP",
+   "membros": [
+    "06050",
+    "06157"
+   ],
+   "nomes": [
+    "MACAPÁ",
+    "SANTANA"
+   ]
+  },
+  "ba": {
+   "capital": "38490",
+   "nome": "SALVADOR",
+   "arranjo": "Salvador/BA",
+   "membros": [
+    "30872",
+    "34134",
+    "34290",
+    "36854",
+    "37214",
+    "38490",
+    "38830",
+    "38890",
+    "39136",
+    "39748"
+   ],
+   "nomes": [
+    "CAMAÇARI",
+    "CANDEIAS",
+    "DIAS D&apos;ÁVILA",
+    "LAURO DE FREITAS",
+    "MADRE DE DEUS",
+    "MATA DE SÃO JOÃO",
+    "SALVADOR",
+    "SIMÕES FILHO",
+    "SÃO FRANCISCO DO CONDE",
+    "SÃO SEBASTIÃO DO PASSÉ"
+   ]
+  },
+  "ce": {
+   "capital": "13897",
+   "nome": "FORTALEZA",
+   "arranjo": "Fortaleza/CE",
+   "membros": [
+    "13196",
+    "13226",
+    "13480",
+    "13730",
+    "13897",
+    "14559",
+    "14958",
+    "15857"
+   ],
+   "nomes": [
+    "AQUIRAZ",
+    "CAUCAIA",
+    "EUSÉBIO",
+    "FORTALEZA",
+    "ITAITINGA",
+    "MARACANAÚ",
+    "MARANGUAPE",
+    "PACATUBA"
+   ]
+  },
+  "df": {
+   "capital": "97012",
+   "nome": "BRASÍLIA",
+   "arranjo": "Brasília/DF",
+   "membros": [
+    "97012"
+   ],
+   "nomes": [
+    "BRASÍLIA"
+   ]
+  },
+  "es": {
+   "capital": "57053",
+   "nome": "VITÓRIA",
+   "arranjo": "Vitória/ES",
+   "membros": [
+    "56251",
+    "56430",
+    "56995",
+    "57010",
+    "57037",
+    "57053"
+   ],
+   "nomes": [
+    "CARIACICA",
+    "FUNDÃO",
+    "SERRA",
+    "VIANA",
+    "VILA VELHA",
+    "VITÓRIA"
+   ]
+  },
+  "go": {
+   "capital": "93734",
+   "nome": "GOIÂNIA",
+   "arranjo": "Goiânia/GO",
+   "membros": [
+    "92029",
+    "92274",
+    "92355",
+    "92703",
+    "92711",
+    "92908",
+    "93122",
+    "93360",
+    "93734",
+    "93750",
+    "93815",
+    "93890",
+    "94870",
+    "94978",
+    "96253"
+   ],
+   "nomes": [
+    "ABADIA DE GOIÁS",
+    "APARECIDA DE GOIÂNIA",
+    "ARAGOIÂNIA",
+    "BONFINÓPOLIS",
+    "BRAZABRANTES",
+    "CALDAZINHA",
+    "GOIANIRA",
+    "GOIÂNIA",
+    "GUAPÓ",
+    "HIDROLÂNDIA",
+    "NERÓPOLIS",
+    "NOVA VENEZA",
+    "SANTO ANTÔNIO DE GOIÁS",
+    "SENADOR CANEDO",
+    "TRINDADE"
+   ]
+  },
+  "ma": {
+   "capital": "09210",
+   "nome": "SÃO LUÍS",
+   "arranjo": "São Luís/MA",
+   "membros": [
+    "08168",
+    "08494",
+    "08893",
+    "09210"
+   ],
+   "nomes": [
+    "PAÇO DO LUMIAR",
+    "RAPOSA",
+    "SÃO JOSÉ DE RIBAMAR",
+    "SÃO LUÍS"
+   ]
+  },
+  "mg": {
+   "capital": "41238",
+   "nome": "BELO HORIZONTE",
+   "arranjo": "Belo Horizonte/MG",
+   "membros": [
+    "40320",
+    "40789",
+    "40800",
+    "41025",
+    "41238",
+    "41335",
+    "41629",
+    "41793",
+    "41920",
+    "41998",
+    "43710",
+    "44814",
+    "45950",
+    "46019",
+    "47511",
+    "48950",
+    "49859",
+    "50776",
+    "50911",
+    "50954",
+    "51330",
+    "51551",
+    "54259"
+   ],
+   "nomes": [
+    "BELO HORIZONTE",
+    "BETIM",
+    "BRUMADINHO",
+    "CAETÉ",
+    "CONFINS",
+    "CONTAGEM",
+    "ESMERALDAS",
+    "IBIRITÉ",
+    "IGARAPÉ",
+    "JUATUBA",
+    "LAGOA SANTA",
+    "MÁRIO CAMPOS",
+    "NOVA LIMA",
+    "PEDRO LEOPOLDO",
+    "RAPOSOS",
+    "RIBEIRÃO DAS NEVES",
+    "RIO ACIMA",
+    "SABARÁ",
+    "SANTA LUZIA",
+    "SARZEDO",
+    "SÃO JOAQUIM DE BICAS",
+    "SÃO JOSÉ DA LAPA",
+    "VESPASIANO"
+   ]
+  },
+  "ms": {
+   "capital": "90514",
+   "nome": "CAMPO GRANDE",
+   "arranjo": null,
+   "membros": [
+    "90514"
+   ],
+   "nomes": [
+    "CAMPO GRANDE"
+   ]
+  },
+  "mt": {
+   "capital": "90670",
+   "nome": "CUIABÁ",
+   "arranjo": "Cuiabá/MT",
+   "membros": [
+    "90670",
+    "91677"
+   ],
+   "nomes": [
+    "CUIABÁ",
+    "VÁRZEA GRANDE"
+   ]
+  },
+  "pa": {
+   "capital": "04278",
+   "nome": "BELÉM",
+   "arranjo": "Belém/PA",
+   "membros": [
+    "04154",
+    "04278",
+    "04294",
+    "04642"
+   ],
+   "nomes": [
+    "ANANINDEUA",
+    "BELÉM",
+    "BENEVIDES",
+    "MARITUBA"
+   ]
+  },
+  "pb": {
+   "capital": "20516",
+   "nome": "JOÃO PESSOA",
+   "arranjo": "João Pessoa/PB",
+   "membros": [
+    "19372",
+    "19658",
+    "19933",
+    "20516",
+    "20737",
+    "21750"
+   ],
+   "nomes": [
+    "BAYEUX",
+    "CABEDELO",
+    "CONDE",
+    "JOÃO PESSOA",
+    "LUCENA",
+    "SANTA RITA"
+   ]
+  },
+  "pe": {
+   "capital": "25313",
+   "nome": "RECIFE",
+   "arranjo": "Recife/PE",
+   "membros": [
+    "23205",
+    "23574",
+    "24350",
+    "24430",
+    "24511",
+    "24570",
+    "24872",
+    "24910",
+    "25119",
+    "25135",
+    "25313",
+    "25739",
+    "26298",
+    "26310",
+    "26336"
+   ],
+   "nomes": [
+    "ABREU E LIMA",
+    "ARAÇOIABA",
+    "CABO DE SANTO AGOSTINHO",
+    "CAMARAGIBE",
+    "IGARASSU",
+    "ILHA DE ITAMARACÁ",
+    "IPOJUCA",
+    "ITAPISSUMA",
+    "JABOATÃO DOS GUARARAPES",
+    "MORENO",
+    "OLINDA",
+    "PAUDALHO",
+    "PAULISTA",
+    "RECIFE",
+    "SÃO LOURENÇO DA MATA"
+   ]
+  },
+  "pi": {
+   "capital": "12190",
+   "nome": "TERESINA",
+   "arranjo": "Teresina/PI",
+   "membros": [
+    "12190"
+   ],
+   "nomes": [
+    "TERESINA"
+   ]
+  },
+  "pr": {
+   "capital": "75353",
+   "nome": "CURITIBA",
+   "arranjo": "Curitiba/PR",
+   "membros": [
+    "74071",
+    "74322",
+    "74357",
+    "74438",
+    "74446",
+    "74594",
+    "74772",
+    "74810",
+    "75043",
+    "75132",
+    "75205",
+    "75213",
+    "75353",
+    "76791",
+    "77690",
+    "77950",
+    "78212",
+    "78859"
+   ],
+   "nomes": [
+    "ALMIRANTE TAMANDARÉ",
+    "ARAUCÁRIA",
+    "BALSA NOVA",
+    "BOCAIÚVA DO SUL",
+    "CAMPINA GRANDE DO SUL",
+    "CAMPO LARGO",
+    "CAMPO MAGRO",
+    "COLOMBO",
+    "CONTENDA",
+    "CURITIBA",
+    "FAZENDA RIO GRANDE",
+    "ITAPERUÇU",
+    "MANDIRITUBA",
+    "PINHAIS",
+    "PIRAQUARA",
+    "QUATRO BARRAS",
+    "RIO BRANCO DO SUL",
+    "SÃO JOSÉ DOS PINHAIS"
+   ]
+  },
+  "rj": {
+   "capital": "60011",
+   "nome": "RIO DE JANEIRO",
+   "arranjo": "Rio de Janeiro/RJ",
+   "membros": [
+    "58041",
+    "58106",
+    "58122",
+    "58149",
+    "58335",
+    "58360",
+    "58378",
+    "58394",
+    "58424",
+    "58467",
+    "58491",
+    "58513",
+    "58530",
+    "58637",
+    "58653",
+    "58696",
+    "58718",
+    "58971",
+    "59013",
+    "59099",
+    "60011"
+   ],
+   "nomes": [
+    "BELFORD ROXO",
+    "DUQUE DE CAXIAS",
+    "GUAPIMIRIM",
+    "ITABORAÍ",
+    "ITAGUAÍ",
+    "JAPERI",
+    "MAGÉ",
+    "MANGARATIBA",
+    "MARICÁ",
+    "MESQUITA",
+    "NILÓPOLIS",
+    "NITERÓI",
+    "NOVA IGUAÇU",
+    "PARACAMBI",
+    "QUEIMADOS",
+    "RIO DE JANEIRO",
+    "SAQUAREMA",
+    "SEROPÉDICA",
+    "SÃO GONÇALO",
+    "SÃO JOÃO DE MERITI",
+    "TANGUÁ"
+   ]
+  },
+  "rn": {
+   "capital": "17612",
+   "nome": "NATAL",
+   "arranjo": "Natal/RN",
+   "membros": [
+    "16713",
+    "17418",
+    "17612",
+    "17795",
+    "18376"
+   ],
+   "nomes": [
+    "EXTREMOZ",
+    "MACAÍBA",
+    "NATAL",
+    "PARNAMIRIM",
+    "SÃO GONÇALO DO AMARANTE"
+   ]
+  },
+  "ro": {
+   "capital": "00035",
+   "nome": "PORTO VELHO",
+   "arranjo": "Porto Velho/RO",
+   "membros": [
+    "00035",
+    "00477"
+   ],
+   "nomes": [
+    "CANDEIAS DO JAMARI",
+    "PORTO VELHO"
+   ]
+  },
+  "rr": {
+   "capital": "03018",
+   "nome": "BOA VISTA",
+   "arranjo": null,
+   "membros": [
+    "03018"
+   ],
+   "nomes": [
+    "BOA VISTA"
+   ]
+  },
+  "rs": {
+   "capital": "88013",
+   "nome": "PORTO ALEGRE",
+   "arranjo": "Porto Alegre/RS",
+   "membros": [
+    "85111",
+    "85502",
+    "85618",
+    "85898",
+    "86240",
+    "86517",
+    "86835",
+    "86851",
+    "87246",
+    "88013",
+    "89010",
+    "89630"
+   ],
+   "nomes": [
+    "ALVORADA",
+    "CACHOEIRINHA",
+    "CANOAS",
+    "ELDORADO DO SUL",
+    "ESTEIO",
+    "GLORINHA",
+    "GRAVATAÍ",
+    "GUAÍBA",
+    "NOVA SANTA RITA",
+    "PORTO ALEGRE",
+    "SAPUCAIA DO SUL",
+    "VIAMÃO"
+   ]
+  },
+  "sc": {
+   "capital": "81051",
+   "nome": "FLORIANÓPOLIS",
+   "arranjo": "Florianópolis/SC",
+   "membros": [
+    "80110",
+    "80233",
+    "80454",
+    "81051",
+    "81116",
+    "81183",
+    "82333",
+    "82414",
+    "83097",
+    "83275"
+   ],
+   "nomes": [
+    "ANTÔNIO CARLOS",
+    "BIGUAÇU",
+    "FLORIANÓPOLIS",
+    "GOVERNADOR CELSO RAMOS",
+    "PALHOÇA",
+    "PAULO LOPES",
+    "SANTO AMARO DA IMPERATRIZ",
+    "SÃO JOSÉ",
+    "SÃO PEDRO DE ALCÂNTARA",
+    "ÁGUAS MORNAS"
+   ]
+  },
+  "se": {
+   "capital": "31054",
+   "nome": "ARACAJU",
+   "arranjo": "Aracaju/SE",
+   "membros": [
+    "31054",
+    "31119",
+    "31291",
+    "31399",
+    "31470",
+    "31712",
+    "31798",
+    "31950",
+    "32174",
+    "32212",
+    "32336",
+    "32433"
+   ],
+   "nomes": [
+    "ARACAJU",
+    "BARRA DOS COQUEIROS",
+    "CARMÓPOLIS",
+    "DIVINA PASTORA",
+    "GENERAL MAYNARD",
+    "LARANJEIRAS",
+    "MARUIM",
+    "NOSSA SENHORA DO SOCORRO",
+    "RIACHUELO",
+    "ROSÁRIO DO CATETE",
+    "SIRIRI",
+    "SÃO CRISTÓVÃO"
+   ]
+  },
+  "sp": {
+   "capital": "71072",
+   "nome": "SÃO PAULO",
+   "arranjo": "São Paulo/SP",
+   "membros": [
+    "61778",
+    "61905",
+    "62138",
+    "62316",
+    "62812",
+    "62855",
+    "63134",
+    "63614",
+    "63770",
+    "64017",
+    "64033",
+    "64157",
+    "64270",
+    "64297",
+    "64777",
+    "65455",
+    "65510",
+    "65633",
+    "66010",
+    "66710",
+    "66893",
+    "67130",
+    "67890",
+    "68837",
+    "68977",
+    "69671",
+    "69833",
+    "70017",
+    "70378",
+    "70475",
+    "70572",
+    "70750",
+    "70777",
+    "71072",
+    "71510",
+    "71579",
+    "72737"
+   ],
+   "nomes": [
+    "ARUJÁ",
+    "BARUERI",
+    "BIRITIBA MIRIM",
+    "CAIEIRAS",
+    "CAJAMAR",
+    "CARAPICUÍBA",
+    "COTIA",
+    "DIADEMA",
+    "EMBU DAS ARTES",
+    "EMBU-GUAÇU",
+    "FERRAZ DE VASCONCELOS",
+    "FRANCISCO MORATO",
+    "FRANCO DA ROCHA",
+    "GUARULHOS",
+    "ITAPECERICA DA SERRA",
+    "ITAPEVI",
+    "ITAQUAQUECETUBA",
+    "JANDIRA",
+    "MAIRIPORÃ",
+    "MAUÁ",
+    "MOGI DAS CRUZES",
+    "OSASCO",
+    "PIRAPORA DO BOM JESUS",
+    "POÁ",
+    "RIBEIRÃO PIRES",
+    "RIO GRANDE DA SERRA",
+    "SALESÓPOLIS",
+    "SANTA ISABEL",
+    "SANTANA DE PARNAÍBA",
+    "SANTO ANDRÉ",
+    "SUZANO",
+    "SÃO BERNARDO DO CAMPO",
+    "SÃO CAETANO DO SUL",
+    "SÃO LOURENÇO DA SERRA",
+    "SÃO PAULO",
+    "TABOÃO DA SERRA",
+    "VARGEM GRANDE PAULISTA"
+   ]
+  },
+  "to": {
+   "capital": "73440",
+   "nome": "PALMAS",
+   "arranjo": null,
+   "membros": [
+    "73440"
+   ],
+   "nomes": [
+    "PALMAS"
+   ]
+  }
+ }
+}

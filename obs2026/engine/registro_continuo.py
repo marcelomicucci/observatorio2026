@@ -34,6 +34,8 @@ alcançam o presente.
 
 from __future__ import annotations
 
+from ..config import load_thresholds
+
 import asyncio
 import logging
 import time
@@ -98,7 +100,9 @@ class RegistradorContinuo:
             return False
         try:
             R.executar(
-                self.env, self.thr, cargo=cargo, uf=uf,
+                # Relido a cada disputa (é um arquivo pequeno): homologar ou
+                # revogar o gate vale na rodada seguinte, sem reiniciar.
+                self.env, load_thresholds(), cargo=cargo, uf=uf,
                 n_sims=self.n_sims, archive=self.archive,
                 diario=self.diario, registrar=True, observacoes=obs,
             )

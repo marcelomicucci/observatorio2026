@@ -4,8 +4,14 @@
     {
       "name": "observatorio",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "uvicorn", "obs2026.api.app:app", "--port", "8026"],
+      "runtimeArgs": ["-m", "obs2026.cli", "servir", "--env", "oficial2026"],
       "port": 8026
+    },
+    {
+      "name": "observatorio-demo2022",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "obs2026.cli", "servir", "--env", "demo2022", "--porta", "8027"],
+      "port": 8027
     }
   ]
 }

@@ -1,0 +1,67 @@
+# Cadastro de partidos de 2026 — identidade, não ideologia.
+#
+# Aqui mora o que é FATO: número, sigla, nome e a cor usada no mapa por
+# partido. A classificação ideológica, que é ato editorial, fica em
+# `classificacao_2026.yaml`, com autoria. Uma coisa não depende da outra: o
+# mapa por partido funciona mesmo com a curadoria ideológica pendente.
+#
+# CHAVE = NÚMERO + SIGLA
+# O número é o que o TSE manda no EA20 (`par.n`), mas números são reusados
+# entre eleições: em 2022 o 14 era o PTB; em 2026 é o Missão. Por isso a
+# resolução exige que a sigla recebida bata com uma das `siglas` do número.
+# Número certo com sigla estranha vira "partido desconhecido" (hachura), não
+# o partido do cadastro — pintar o PTB de 2022 com a cor do Missão seria
+# exatamente o erro silencioso que o §2.1 proíbe.
+#
+# `siglas` lista as grafias conhecidas: a do TSE, a do G1 e a do Senado
+# (que escreve PODEMOS e REPUBLICANOS por extenso). A comparação ignora
+# acento e caixa.
+#
+# Lista conferida contra os 29 partidos com candidatura majoritária em 2026
+# (cache do enriquecimento, 20/09/2026) + PCdoB, que só disputa vagas
+# proporcionais. Partido fora desta lista aparece com cor gerada e rótulo
+# "fora do cadastro".
+#
+# CORES
+# Escolhidas para se distinguirem entre si sobre fundo escuro, puxando para
+# a cor com que cada partido costuma ser identificado quando isso não
+# compromete a distinção. Não carregam ideologia: o vermelho do PT não é o
+# vermelho da "esquerda" — a paleta ideológica é outra e mora no §6.
+# Exceção deliberada: nenhum partido usa amarelo perto do centro (#F2C94C) —
+# o PSOL (amarelo de marca) ficou magenta e o PSD, laranja: no hemiciclo, ao lado da
+# faixa de bloco, lia-se como "centro". Editável na aba Configuração.
+
+versao: "2026.1"
+referencia_em: 2026-09-21
+
+partidos:
+  - {numero: "13", sigla: PT,            nome: Partido dos Trabalhadores,            cor: "#E53935", siglas: [PT]}
+  - {numero: "22", sigla: PL,            nome: Partido Liberal,                      cor: "#1E4DB7", siglas: [PL]}
+  - {numero: "55", sigla: PSD,           nome: Partido Social Democrático,           cor: "#FB8C00", siglas: [PSD]}
+  - {numero: "15", sigla: MDB,           nome: Movimento Democrático Brasileiro,     cor: "#43A047", siglas: [MDB, PMDB]}
+  - {numero: "44", sigla: UNIÃO,         nome: União Brasil,                         cor: "#00ACC1", siglas: [UNIÃO, UNIAO, UNIÃO BRASIL, UB]}
+  - {numero: "11", sigla: PP,            nome: Progressistas,                        cor: "#8E24AA", siglas: [PP, PROGRESSISTAS]}
+  - {numero: "10", sigla: REPUBLICANOS,  nome: Republicanos,                         cor: "#9CCC65", siglas: [REPUBLICANOS, REP]}
+  - {numero: "40", sigla: PSB,           nome: Partido Socialista Brasileiro,        cor: "#F06292", siglas: [PSB]}
+  - {numero: "45", sigla: PSDB,          nome: Partido da Social Democracia Brasileira, cor: "#64B5F6", siglas: [PSDB]}
+  - {numero: "30", sigla: NOVO,          nome: Partido Novo,                         cor: "#FF5722", siglas: [NOVO]}
+  - {numero: "12", sigla: PDT,           nome: Partido Democrático Trabalhista,      cor: "#AD1457", siglas: [PDT]}
+  - {numero: "50", sigla: PSOL,          nome: Partido Socialismo e Liberdade,       cor: "#E040FB", siglas: [PSOL]}
+  - {numero: "20", sigla: PODE,          nome: Podemos,                              cor: "#9575CD", siglas: [PODE, PODEMOS]}
+  - {numero: "77", sigla: SOLIDARIEDADE, nome: Solidariedade,                        cor: "#FFB74D", siglas: [SOLIDARIEDADE, SD]}
+  - {numero: "65", sigla: PCdoB,         nome: Partido Comunista do Brasil,          cor: "#B71C1C", siglas: [PCdoB, PC do B]}
+  - {numero: "43", sigla: PV,            nome: Partido Verde,                        cor: "#2E7D32", siglas: [PV]}
+  - {numero: "18", sigla: REDE,          nome: Rede Sustentabilidade,                cor: "#00897B", siglas: [REDE]}
+  - {numero: "23", sigla: CIDADANIA,     nome: Cidadania,                            cor: "#BA68C8", siglas: [CIDADANIA, CID]}
+  - {numero: "70", sigla: AVANTE,        nome: Avante,                               cor: "#A1887F", siglas: [AVANTE]}
+  - {numero: "14", sigla: MISSÃO,        nome: Missão,                               cor: "#90A4AE", siglas: [MISSÃO, MISSAO]}
+  - {numero: "25", sigla: PRD,           nome: Partido Renovação Democrática,        cor: "#5C6BC0", siglas: [PRD]}
+  - {numero: "36", sigla: AGIR,          nome: Agir,                                 cor: "#80CBC4", siglas: [AGIR]}
+  - {numero: "27", sigla: DC,            nome: Democracia Cristã,                    cor: "#8D6E63", siglas: [DC]}
+  - {numero: "28", sigla: PRTB,          nome: Partido Renovador Trabalhista Brasileiro, cor: "#558B2F", siglas: [PRTB]}
+  - {numero: "33", sigla: MOBILIZA,      nome: Mobiliza,                             cor: "#CE93D8", siglas: [MOBILIZA, MOB]}
+  - {numero: "35", sigla: DEMOCRATA,     nome: Democrata,                            cor: "#BCAAA4", siglas: [DEMOCRATA, PMB]}
+  - {numero: "29", sigla: PCO,           nome: Partido da Causa Operária,            cor: "#880E4F", siglas: [PCO]}
+  - {numero: "16", sigla: PSTU,          nome: Partido Socialista dos Trabalhadores Unificado, cor: "#D84315", siglas: [PSTU]}
+  - {numero: "21", sigla: PCB,           nome: Partido Comunista Brasileiro,         cor: "#BF360C", siglas: [PCB]}
+  - {numero: "80", sigla: UP,            nome: Unidade Popular,                      cor: "#E57373", siglas: [UP]}

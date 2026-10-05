@@ -41,7 +41,7 @@ def register(app) -> None:
         # "Presidente no PA", que nao sao a unidade que decide (§3).
         abr = M._abrangencia_do_recorte(ct, uf, municipio)
 
-        gq = select(Geography).where(Geography.environment == M._ENV_NAME,
+        gq = select(Geography).where(Geography.environment == M.env_atual(),
                                      Geography.tipo == abr)
         if uf:
             gq = gq.where(Geography.uf == uf.lower())
@@ -60,6 +60,20 @@ def register(app) -> None:
             SourceSnapshot.id.in_([t.snapshot_id for t in totais]))
         ).scalars().all()
 
+        # O enriquecimento é a lista de candidatos de 2026. Aplicá-lo a
+        # outra eleição casa pessoas diferentes pelo número: na demonstração
+        # de 2022, o 22-PL (Jair Bolsonaro) saía com nome e foto do 22-PL de
+        # 2026 (Flávio Bolsonaro). Fora de 2026, só o dado oficial do TSE.
+        from ..storage.models import Election
+        el = s.get(Election, ct.election_id)
+        ano = el.data.year if el is not None and el.data is not None else None
+        if ano is None and el is not None:
+            # Sem data no catálogo, vale o ciclo ('ele2026' → 2026): a
+            # ausência de data não pode desligar as fotos na noite oficial.
+            dig = "".join(ch for ch in (el.ciclo or "") if ch.isdigit())
+            ano = int(dig) if len(dig) == 4 else None
+        if ano != OS.ANO_ENRIQUECIMENTO:
+            enriquecer = False
         perfis, meta = ([], {"desligado": True}) if not enriquecer \
             else OS.buscar(ct.cargo_cd, cache=cache)
         indice = OS.Indice.de(perfis)
@@ -138,7 +152,7 @@ def register(app) -> None:
             saida.append({
                 "geografia": {"tipo": g.tipo, "uf": g.uf, "nome": g.nome},
                 "vagas": ct.vagas,
-                "tem_segundo_turno": ct.vagas == 1,
+                "tem_segundo_turno": M.tem_segundo_turno(s, ct),
                 "votos_a_concorrentes": t.validos_computados,
                 "candidatos": lista,
             })

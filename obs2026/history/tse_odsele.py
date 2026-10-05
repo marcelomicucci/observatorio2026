@@ -60,9 +60,15 @@ COLS_CANDIDATO = (
     "ANO_ELEICAO", "NR_TURNO", "CD_ELEICAO", "SG_UF", "SG_UE", "CD_MUNICIPIO",
     "NM_MUNICIPIO", "NR_ZONA", "CD_CARGO", "DS_CARGO", "SQ_CANDIDATO",
     "NR_CANDIDATO", "NM_URNA_CANDIDATO", "NR_PARTIDO", "SG_PARTIDO",
-    "ST_VOTO_EM_TRANSITO", "QT_VOTOS_NOMINAIS", "NM_TIPO_DESTINACAO_VOTOS",
-    "DS_SIT_TOT_TURNO",
+    "ST_VOTO_EM_TRANSITO", "QT_VOTOS_NOMINAIS", "DS_SIT_TOT_TURNO",
 )
+
+#: A destinação do voto só existe a partir de 2016. Em 2014 o arquivo traz a
+#: situação da candidatura (`DS_SITUACAO_CANDIDATURA`: APTO / INAPTO), que é
+#: de onde a destinação é derivada: candidato apto → voto válido; inapto →
+#: anulado. Um dos dois tem de existir — sem nenhum, a importação recusa.
+COL_DESTINACAO = "NM_TIPO_DESTINACAO_VOTOS"
+COL_SITUACAO_CAND = "DS_SITUACAO_CANDIDATURA"
 
 #: Colunas exigidas em `detalhe_votacao_munzona`.
 #:
@@ -244,6 +250,73 @@ class DetalheHistorico:
                 if self.total_votos else None)
 
 
+#: Códigos das eleições ORDINÁRIAS, por ano e turno (federal, estadual).
+#:
+#: Os zips do TSE de um ano trazem também as eleições suplementares
+#: realizadas depois dele: o de 2018 tem a suplementar de 2020 para o
+#: Senado em Mato Grosso (código 438), que elegeu Fávaro depois da cassação
+#: da eleita. Lida junto, ela duplicava o candidato e punha em 2018 quem só
+#: se elegeu em 2020 (visto em 24/09). Filtrar pelo código é a única forma
+#: segura: a suplementar tem o mesmo ano, turno e cargo.
+ELEICOES_ORDINARIAS: dict[int, dict[str, frozenset[str]]] = {
+    # 2014: um código só para federal e estadual; 268/269 no mesmo zip é a
+    # suplementar de governador do Amazonas (2017).
+    2014: {"1": frozenset({"143"}), "2": frozenset({"144"})},
+    2018: {"1": frozenset({"295", "297"}), "2": frozenset({"296", "298"})},
+    2022: {"1": frozenset({"544", "546"}), "2": frozenset({"545", "547"})},
+}
+
+
+def ordinarias(ano: int, turno: str) -> frozenset[str] | None:
+    """Códigos da eleição ordinária daquele ano e turno, ou None se o ano
+    não está na tabela (aí o chamador decide; nada é filtrado às cegas)."""
+    return (ELEICOES_ORDINARIAS.get(ano) or {}).get(str(turno))
+
+
+def _da_eleicao(r: dict, eleicoes, turno: str) -> bool:
+    """A linha pertence às eleições pedidas? Ano fora da tabela de
+    ordinárias não é filtrado: não se adivinha código."""
+    if eleicoes is None:
+        return True
+    if eleicoes == "ordinaria":
+        try:
+            ords = ordinarias(int(r["ANO_ELEICAO"]), turno)
+        except (TypeError, ValueError):
+            return True
+        return ords is None or r["CD_ELEICAO"] in ords
+    return r["CD_ELEICAO"] in eleicoes
+
+
+#: Pasta do projeto que guarda os dados históricos (`eleicao2026/`).
+RAIZ_PROJETO = Path(__file__).resolve().parents[3]
+
+
+def arquivo(nome: str, ano: int | None = None) -> Path:
+    """Localiza um arquivo histórico do TSE.
+
+    Organização adotada em 22/09/2026: `eleicao2026/Dados/<ano>/<arquivo>`
+    (o eleitorado fica em `Dados/`). Os lugares antigos (a raiz de
+    `eleicao2026/`) continuam valendo, e `OBS2026_DADOS` aponta outra pasta.
+    Se não achar em lugar nenhum, devolve o caminho da organização nova — o
+    erro de "arquivo não existe" diz onde colocá-lo.
+    """
+    import os
+    bases = []
+    if os.environ.get("OBS2026_DADOS"):
+        bases.append(Path(os.environ["OBS2026_DADOS"]))
+    bases += [RAIZ_PROJETO / "Dados", RAIZ_PROJETO / "dados"]
+    candidatos = []
+    for b in bases:
+        if ano is not None:
+            candidatos.append(b / str(ano) / nome)
+        candidatos.append(b / nome)
+    candidatos.append(RAIZ_PROJETO / nome)
+    for c in candidatos:
+        if c.exists():
+            return c
+    return candidatos[0]
+
+
 def _abrir(caminho: Path) -> zipfile.ZipFile:
     try:
         return zipfile.ZipFile(caminho)
@@ -278,6 +351,9 @@ def _linhas(caminho: Path, membro: str,
             rd = csv.DictReader(texto, delimiter=DELIM)
             campos = {(c or "").strip().upper() for c in (rd.fieldnames or [])}
             faltando = [c for c in exigidas if c not in campos]
+            if (exigidas is COLS_CANDIDATO and COL_DESTINACAO not in campos
+                    and COL_SITUACAO_CAND not in campos):
+                faltando.append(f"{COL_DESTINACAO} (ou {COL_SITUACAO_CAND})")
             if faltando:
                 raise HistoryError(
                     f"{caminho.name}/{membro}: colunas ausentes {faltando}. "
@@ -288,20 +364,39 @@ def _linhas(caminho: Path, membro: str,
                        for k, v in linha.items() if k}
 
 
+def _destinacao(r: dict) -> str:
+    """Destinação do voto; derivada da situação da candidatura quando o
+    arquivo é anterior à coluna (2014)."""
+    if COL_DESTINACAO in r:
+        return as_text(r.get(COL_DESTINACAO))
+    sit = fold(r.get(COL_SITUACAO_CAND) or "")
+    return "Válido" if sit == "APTO" else "Anulado"
+
+
 def ler_votos(caminho: Path, uf: str, *,
               cargos: tuple[str, ...] = ("1", "3", "5"),
               turno: str = "1",
-              incluir_transito: bool = True) -> Iterator[VotoHistorico]:
+              incluir_transito: bool = True,
+              eleicoes: frozenset[str] | str | None = "ordinaria"
+              ) -> Iterator[VotoHistorico]:
     """Votos por candidato de uma UF, filtrando cargo e turno.
 
     `incluir_transito=False` remove as linhas de voto em trânsito. Esses
     votos existem e contam no total da disputa; o que eles não fazem é
     pertencer ao município onde o eleitor mora. Para estimar preferência
     territorial, removê-los é o correto; para conferir totais, não.
+
+    `eleicoes`: por padrão só a eleição ORDINÁRIA do ano (ver
+    `ELEICOES_ORDINARIAS`) — o zip traz também suplementares posteriores
+    (MT/Senado/2020 no de 2018; RR/Governador no de 2022), e lê-las junto
+    duplica candidato e infla total. Um conjunto de códigos restringe a ele;
+    `None` lê tudo, e é escolha explícita de quem precisa das suplementares.
     """
     for membro in membros(caminho, uf):
         for r in _linhas(caminho, membro, COLS_CANDIDATO):
             if r["CD_CARGO"] not in cargos or r["NR_TURNO"] != turno:
+                continue
+            if not _da_eleicao(r, eleicoes, turno):
                 continue
             transito = str(r.get("ST_VOTO_EM_TRANSITO", "N")).strip() == "S"
             if transito and not incluir_transito:
@@ -324,14 +419,16 @@ def ler_votos(caminho: Path, uf: str, *,
                 nr_partido=r["NR_PARTIDO"].strip(),
                 sg_partido=as_text(r["SG_PARTIDO"]),
                 votos=votos, em_transito=transito,
-                destinacao=as_text(r.get("NM_TIPO_DESTINACAO_VOTOS")),
+                destinacao=_destinacao(r),
                 situacao=as_text(r.get("DS_SIT_TOT_TURNO")),
             )
 
 
 def ler_detalhe(caminho: Path, uf: str, *,
                 cargos: tuple[str, ...] = ("1", "3", "5"),
-                turno: str = "1") -> Iterator[DetalheHistorico]:
+                turno: str = "1",
+                eleicoes: frozenset[str] | str | None = "ordinaria"
+                ) -> Iterator[DetalheHistorico]:
     obrig = ("QT_APTOS", "QT_COMPARECIMENTO", "QT_ABSTENCOES",
              "QT_VOTOS", "QT_VOTOS_CONCORRENTES", "QT_TOTAL_VOTOS_VALIDOS",
              "QT_TOTAL_VOTOS_ANULADOS", "QT_TOTAL_VOTOS_ANUL_SUBJUD",
@@ -341,6 +438,8 @@ def ler_detalhe(caminho: Path, uf: str, *,
     for membro in membros(caminho, uf):
         for r in _linhas(caminho, membro, COLS_DETALHE):
             if r["CD_CARGO"] not in cargos or r["NR_TURNO"] != turno:
+                continue
+            if not _da_eleicao(r, eleicoes, turno):
                 continue
             campos = {k: num(r[k], k) for k in obrig}
             if any(v is None for v in campos.values()):

@@ -24,22 +24,65 @@ total do estado não espera a fila: é o número que a sala está olhando, e os
 municípios são detalhe dele. O ponto de retomada só avança quando a janela
 inteira foi gravada; se o processo cair entre as duas etapas, a janela é
 relida, e a gravação é idempotente.
+
+## Nada fica para trás em silêncio
+
+Arquivo que o leitor recusa não é pulado: vai para `carga_pendente`, e a
+carga relê os pendentes ao iniciar e a cada `RELER_PENDENTES_S`. Corrigido o
+leitor e reiniciado o coletor, o que ficou para trás entra sozinho. Foi o que
+faltou no simulado de 22/09 (ver `models.CargaPendente`).
 """
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from ..tse.parsers import ea20 as ea20_parser
 from .ingest import ingest_ea20
-from .models import CargaManifesto
-from .raw import RawArchive
+from .models import CargaManifesto, CargaPendente
+from .raw import RawArchive, SnapshotRef
 
 #: Linhas do manifesto por janela. Grande o bastante para uma rajada caber
 #: inteira, pequena o bastante para o total do estado não esperar muito.
 JANELA = 2000
+
+#: De quanto em quanto tempo a carga contínua relê os pendentes. Uma falha de
+#: leitura persiste até o código mudar (o que exige reiniciar), então reler a
+#: cada passada de 5 s só gastaria processador; na partida e a cada 10 min
+#: basta.
+RELER_PENDENTES_S = 600.0
+
+
+def _ident(ref) -> str:
+    return f"{ref.sha256}|{ref.captured_at}|{ref.key}"[:256]
+
+
+def reler_pendentes(s: Session, env, archive: RawArchive,
+                    limite: int = 5000) -> dict:
+    """Tenta de novo os arquivos que a leitura recusou. Devolve contagens."""
+    agora = datetime.now(timezone.utc)
+    out = {"tentados": 0, "gravados": 0, "ainda_falham": 0}
+    for pend in (s.query(CargaPendente).order_by(CargaPendente.id)
+                 .limit(limite).all()):
+        out["tentados"] += 1
+        ref = SnapshotRef(**json.loads(pend.ref_json))
+        try:
+            r = ea20_parser.parse(archive.load(ref))
+        except Exception as exc:                      # noqa: BLE001
+            pend.tentativas += 1
+            pend.ultima_tentativa_em = agora
+            pend.motivo = f"{type(exc).__name__}: {exc}"[:2000]
+            out["ainda_falham"] += 1
+            continue
+        ingest_ea20(s, env, ref, r)
+        s.delete(pend)
+        out["gravados"] += 1
+    s.commit()
+    return out
 
 
 def carregar_novos(s: Session, env, archive: RawArchive, *,
@@ -51,7 +94,7 @@ def carregar_novos(s: Session, env, archive: RawArchive, *,
     ponto = {c.dia: c for c in s.query(CargaManifesto).all()}
 
     tot = {"linhas": 0, "ea20": 0, "grandes": 0, "snapshot": 0,
-           "candidates": 0, "results": 0}
+           "candidates": 0, "results": 0, "pendentes": 0}
     flags: dict[str, int] = {}
 
     def gravar(ref) -> None:
@@ -60,6 +103,18 @@ def carregar_novos(s: Session, env, archive: RawArchive, *,
         except Exception as exc:                       # noqa: BLE001
             k = f"parse:{type(exc).__name__}"
             flags[k] = flags.get(k, 0) + 1
+            # Não se pula: fica pendente, e volta quando o leitor for
+            # corrigido (ver `reler_pendentes`).
+            ident = _ident(ref)
+            if not s.query(CargaPendente).filter_by(ident=ident).first():
+                agora = datetime.now(timezone.utc)
+                s.add(CargaPendente(
+                    ident=ident, dia=ref.captured_at[:10],
+                    ref_json=json.dumps(asdict(ref), ensure_ascii=False),
+                    motivo=f"{type(exc).__name__}: {exc}"[:2000],
+                    tentativas=1, primeira_falha_em=agora,
+                    ultima_tentativa_em=agora))
+            tot["pendentes"] += 1
             return
         out = ingest_ea20(s, env, ref, r)
         for k in ("snapshot", "candidates", "results"):
@@ -91,6 +146,11 @@ def carregar_novos(s: Session, env, archive: RawArchive, *,
         c.atualizado_em = datetime.now(timezone.utc)
         s.commit()
 
+    # Deputado federal vai para o bruto e é lido de lá (politics/camara.py):
+    # não tem disputa no banco e não deve gerar aviso de "fora do catálogo".
+    proporcionais = {p["cd"] for p in
+                     (getattr(env, "proporcionais", None) or {}).values()}
+
     for dia in archive.days():
         inicio = ponto[dia].deslocamento if dia in ponto else 0
         refs: list = []
@@ -98,7 +158,8 @@ def carregar_novos(s: Session, env, archive: RawArchive, *,
         for ref, fim_linha in archive.manifest_desde(dia, inicio):
             tot["linhas"] += 1
             fim = fim_linha
-            if ref.kind == "ea20" and ref.path:
+            if (ref.kind == "ea20" and ref.path
+                    and ref.cargo not in proporcionais):
                 refs.append(ref)
             if len(refs) >= janela:
                 fechar_janela(dia, fim, refs)
@@ -131,7 +192,10 @@ class CargaContinua:
         self._Sess = make_session_factory(eng)
         self._parar = asyncio.Event()
         self.stats = {"passadas": 0, "ea20": 0, "grandes": 0, "falhas": 0,
-                      "ultima_s": 0.0}
+                      "ultima_s": 0.0, "pendentes_novos": 0,
+                      "pendentes_recuperados": 0}
+        #: 0 = reler os pendentes já na primeira passada
+        self._proxima_releitura = 0.0
 
     def sincronizar_catalogo(self, cat) -> dict:
         """Geografias e disputas no banco, uma vez, antes da primeira
@@ -144,7 +208,18 @@ class CargaContinua:
         import time
         t0 = time.monotonic()
         with self._Sess() as s:
+            if time.monotonic() >= self._proxima_releitura:
+                self._proxima_releitura = time.monotonic() + RELER_PENDENTES_S
+                rp = reler_pendentes(s, self.env, self.archive)
+                self.stats["pendentes_recuperados"] += rp["gravados"]
+                if rp["tentados"]:
+                    import logging
+                    logging.getLogger("obs2026.carga").info(
+                        "carga: %s pendentes relidos, %s gravados, %s ainda "
+                        "falham", rp["tentados"], rp["gravados"],
+                        rp["ainda_falham"])
             tot = carregar_novos(s, self.env, self.archive)
+        self.stats["pendentes_novos"] += tot["pendentes"]
         self.stats["passadas"] += 1
         self.stats["ea20"] += tot["ea20"]
         self.stats["grandes"] += tot["grandes"]

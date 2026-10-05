@@ -52,12 +52,23 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..tse.urls import UF_DISPUTAS
 from .local import LOCAIS, somente_local  # noqa: F401
 
 CARGOS = {"presidente": "1", "governador": "3", "senador": "5"}
 CARGO_NOME = {v: k for k, v in CARGOS.items()}
+#: Só o comparativo aceita deputado federal (a bancada ano a ano) e o
+#: resumo (os quatro cargos numa tela). Nas outras telas nenhum dos dois tem
+#: mapa nem disputa, e ficam fora de CARGOS.
+CARGOS_COMPARATIVO = {**CARGOS, "deputado federal": "6", "resumo": "R"}
+CARGO_NOME_COMPARATIVO = {v: k for k, v in CARGOS_COMPARATIVO.items()}
 ABRANGENCIA = {"1": "br", "3": "uf", "5": "uf"}
-CAMADAS = ("lider", "apurar")
+CAMADAS = ("lider", "apurar", "partido", "ideologia")
+#: Tipos de tela. `mapa` é a de apuração; `politico` põe lado a lado o mapa
+#: por partido e o ideológico (presidente ou governador); `composicao` é o
+#: hemiciclo do Senado ou da Câmara.
+TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo")
+CASAS = ("senado", "camara")
 #: Nomes de antes da fusão das camadas do mapa. Continuam aceitos para que
 #: nenhum roteiro já escrito quebre, mas são traduzidos aqui — o telão
 #: recebe sempre o nome atual. Sem isto, `cobertura` chegava ao mapa como
@@ -84,12 +95,23 @@ CABECALHO = """\
 #   cargo       presidente | governador | senador        (obrigatório)
 #   uf          sigla, obrigatória para governador e senador
 #   municipio   código TSE (5 dígitos) ou IBGE (7), OU nome + uf
-#   camada      lider | apurar                           (opcional)
-#                 lider   quem lidera: cor do 1o, tom pela margem sobre o
-#                         2o, contorno amarelo se matematicamente definido
-#                         e verde se eleito segundo o TSE
-#                 apurar  onde falta apurar: quanto do eleitorado ainda
-#                         nao entrou na conta (escuro = falta mais)
+#   tipo        mapa | politico | composicao    (opcional, padrão mapa)
+#                 mapa        a tela de apuração de sempre
+#                 politico    presidente ou governador: mapa por partido e
+#                             mapa ideológico lado a lado, votos e governos
+#                             por bloco. Governador sem `uf`: os 27 estados
+#                 composicao  hemiciclo; exige `casa: senado` ou
+#                             `casa: camara` e dispensa `cargo`
+#   abrangencia mu | uf        (tipo politico) presidente por município ou
+#                              por estado; padrão mu
+#   camada      lider | apurar | partido | ideologia       (tipo mapa)
+#                 lider     quem lidera: cor do 1o, tom pela margem sobre o
+#                           2o, contorno amarelo se matematicamente definido
+#                           e verde se eleito segundo o TSE
+#                 apurar    onde falta apurar (escuro = falta mais)
+#                 partido   cor do partido de quem lidera
+#                 ideologia classificação do partido de quem lidera (só
+#                           com a curadoria assinada; senão, hachura)
 #               Os nomes antigos (definicao, margem, cobertura) continuam
 #               aceitos: definicao e margem viram lider, cobertura vira
 #               apurar.
@@ -117,7 +139,19 @@ def register(app) -> None:
     from ..storage.models import Geography
     from ..tse.parsers.common import fold
 
-    caminho = Path(CONFIG_DIR) / "telao.yaml"
+    # `OBS2026_TELAO` aponta o roteiro para outro arquivo. Existe para os
+    # testes: eles gravam roteiro de verdade, e em 23/09 uma bateria rodando
+    # junto com o painel deixou o arquivo de produção com três telas a menos.
+    # Roteiro do telão é operação, não fixture — teste não escreve nele.
+    # Lido A CADA USO, não uma vez na importação: em 24/09 um arquivo de
+    # teste importou o app durante a coleta, antes de o conftest apontar
+    # para a cópia, e o caminho congelado no de produção fez a bateria
+    # gravar no roteiro de verdade.
+    import os
+
+    def _caminho() -> Path:
+        return Path(os.environ.get("OBS2026_TELAO")
+                    or Path(CONFIG_DIR) / "telao.yaml")
 
     def resolver(cfg: dict, s: Session) -> list[dict]:
         """Transforma o roteiro cru em telas resolvidas, cada uma com erro
@@ -168,6 +202,11 @@ def register(app) -> None:
                 telas.append({"indice": i, "titulo": f"tela {i + 1}",
                               "erro": "item do roteiro não é um objeto"})
                 continue
+            tipo = str(item.get("tipo") or "mapa").strip().lower()
+            casa = (str(item.get("casa")).strip().lower()
+                    if item.get("casa") else None)
+            abrangencia = (str(item.get("abrangencia")).strip().lower()
+                           if item.get("abrangencia") else None)
             cargo_nome = str(item.get("cargo", "")).strip().lower()
             cd = CARGOS.get(cargo_nome)
             uf = (str(item.get("uf")).strip().lower()
@@ -175,14 +214,61 @@ def register(app) -> None:
             erro = None
             municipio_cd = None
             municipio_nome = None
+            # Eleição passada (seletor de anos): só mapa e composição, e só
+            # com banco congelado montado. Sem isso a tela sairia com o
+            # rótulo de 2022 e os dados de 2026.
+            eleicao = (str(item.get("eleicao")).strip()
+                       if item.get("eleicao") else None)
 
-            if cd is None:
+            if tipo not in TIPOS:
+                erro = f"tipo {tipo!r} desconhecido; use um de {list(TIPOS)}"
+            elif eleicao and tipo not in ("mapa", "composicao"):
+                erro = ("eleição passada só vale em mapa e composição; a "
+                        "comparação tem os próprios anos")
+            elif eleicao and not M.ambiente_congelado(eleicao):
+                erro = (f"eleição {eleicao!r} não montada: rode "
+                        "`obs2026 montar-ano`")
+            elif tipo == "composicao":
+                if casa not in CASAS:
+                    erro = ("tela de composição exige `casa: senado` ou "
+                            "`casa: camara`")
+                # Câmara com `uf`: a lista de deputados daquele estado
+                # (04/10/2026). No Senado a UF não significa nada.
+                cd, cargo_nome = None, ""
+                if casa != "camara" or uf not in UF_DISPUTAS:
+                    uf = None
+            elif tipo == "recordes":
+                # Nacional, sem cargo: junta governador, senador, deputado e
+                # a apuração numa tela só.
+                cd, cargo_nome, uf = None, "", None
+            elif tipo == "comparativo":
+                # Mesmo território em várias eleições. Governador e senador
+                # exigem UF, como em qualquer disputa estadual; deputado
+                # federal é a bancada nacional, sem UF.
+                cd = CARGOS_COMPARATIVO.get(cargo_nome)
+                if cd is None:
+                    erro = (f"cargo {item.get('cargo')!r} desconhecido; "
+                            f"use um de {sorted(CARGOS_COMPARATIVO)}")
+                elif cd in ("6", "R"):
+                    uf = None
+                elif cd in ("3", "5") and not uf:
+                    erro = f"{cargo_nome} é decidido por UF; informe `uf`"
+            elif cd is None:
                 erro = (f"cargo {item.get('cargo')!r} desconhecido; "
                         f"use um de {sorted(CARGOS)}")
+            elif tipo == "politico":
+                if cd not in ("1", "3"):
+                    erro = ("tela política é de presidente ou governador; "
+                            "o Senado tem a tela de composição")
+                if item.get("municipio") or uf:
+                    erro = erro or ("tela política é nacional: sem `uf` e "
+                                    "sem `municipio`")
+                if abrangencia not in (None, "mu", "uf"):
+                    erro = erro or "abrangencia deve ser mu ou uf"
             elif ABRANGENCIA[cd] == "uf" and not uf:
                 erro = (f"{cargo_nome} é decidido por UF; informe `uf`")
 
-            if not erro and item.get("municipio"):
+            if not erro and tipo == "mapa" and item.get("municipio"):
                 g, e = resolver_municipio(item["municipio"], uf)
                 if e:
                     erro = e
@@ -210,6 +296,22 @@ def register(app) -> None:
                             if item.get("titulo") else None)
             if titulo_livre:
                 titulo = titulo_livre
+            elif tipo == "recordes":
+                titulo = "Recordes da noite"
+            elif tipo == "comparativo" and cd == "6":
+                titulo = "Câmara — bancadas ao longo das eleições"
+            elif tipo == "comparativo" and cd == "R":
+                titulo = "O país eleição a eleição — resumo"
+            elif tipo == "comparativo":
+                titulo = (f"{cargo_nome.title()} — "
+                          + (uf.upper() if uf else "Brasil")
+                          + " ao longo das eleições")
+            elif tipo == "composicao":
+                titulo = ("Senado — composição" if casa == "senado"
+                          else f"Deputados federais — {uf.upper()}" if uf
+                          else "Câmara — composição")
+            elif tipo == "politico":
+                titulo = f"{cargo_nome.title()} — partido e ideologia"
             elif municipio_nome:
                 titulo = (f"{cargo_nome.title()} — "
                           f"{municipio_nome}/{(uf or '').upper()}")
@@ -218,8 +320,17 @@ def register(app) -> None:
             else:
                 titulo = f"{cargo_nome.title()} — Brasil"
 
+            if eleicao and not titulo_livre:
+                titulo += f" ({eleicao[3:7]})"
+
             telas.append({
                 "indice": i,
+                "tipo": tipo,
+                "casa": casa if tipo == "composicao" else None,
+                "eleicao": eleicao,
+                "anos": (str(item.get("anos") or "2018,2022,2026")
+                         if tipo == "comparativo" else None),
+                "abrangencia": abrangencia if tipo == "politico" else None,
                 "titulo": titulo,
                 # O título escrito à mão, separado do montado: sem isso, gravar
                 # de volta congelaria no arquivo um título automático que
@@ -265,6 +376,7 @@ def register(app) -> None:
     @app.get("/api/v1/telao/roteiro")
     def roteiro(s: Session = Depends(M.get_session)):
         """Roteiro resolvido e validado, pronto para o telão consumir."""
+        caminho = _caminho()
         if not caminho.exists():
             return M.envelope([], snapshots=[], estado="sem_roteiro",
                               motivo="config/telao.yaml não existe")
@@ -295,12 +407,29 @@ def register(app) -> None:
                 raise HTTPException(400, f"tela {i + 1} não é um objeto")
             cargo = CARGO_NOME.get(str(it.get("cargo", "")),
                                    str(it.get("cargo", "")).strip().lower())
-            d: dict = {"cargo": cargo}
+            tipo = str(it.get("tipo") or "mapa").strip().lower()
+            d: dict = {}
+            if tipo != "mapa":
+                d["tipo"] = tipo
+            if tipo == "composicao":
+                d["casa"] = str(it.get("casa") or "").strip().lower()
+            elif tipo == "recordes":
+                pass
+            elif tipo == "comparativo":
+                d["cargo"] = CARGO_NOME_COMPARATIVO.get(
+                    str(it.get("cargo", "")), cargo)
+            else:
+                d["cargo"] = cargo
+            if tipo == "politico" and it.get("abrangencia"):
+                d["abrangencia"] = str(it["abrangencia"]).strip().lower()
             if it.get("uf"):
                 d["uf"] = str(it["uf"]).strip().lower()[:2]
             if it.get("municipio"):
                 d["municipio"] = str(it["municipio"]).strip()[:7]
-            d["camada"] = _normalizar_camada(it.get("camada") or "lider")
+            if tipo == "mapa":
+                d["camada"] = _normalizar_camada(it.get("camada") or "lider")
+            if it.get("eleicao"):
+                d["eleicao"] = str(it["eleicao"]).strip()
             try:
                 seg = int(it.get("segundos") or 20)
             except (TypeError, ValueError) as exc:
@@ -324,6 +453,7 @@ def register(app) -> None:
                                       "erros": erros})
 
         agora = datetime.now(BRT)
+        caminho = _caminho()
         if caminho.exists():
             pasta = caminho.parent / "telao.anterior"
             pasta.mkdir(exist_ok=True)

@@ -48,6 +48,9 @@ DVT_VALIDO = "Válido"
 DVT_ANULADO = "Anulado"
 DVT_ANULADO_SJ = "Anulado sub judice"
 DVT_CONHECIDAS = frozenset({DVT_VALIDO, DVT_ANULADO, DVT_ANULADO_SJ})
+#: Candidato sem `dvt` no payload (arquivo "não recebido", 0 votos). Não é
+#: destinação do TSE: é a ausência dela, e nunca conta como válido.
+DVT_SEM = ""
 
 #: Andamento da totalização: não recebido / parcial / finalizado.
 AND_NAO_RECEBIDO, AND_PARCIAL, AND_FINAL = "n", "p", "f"
@@ -151,7 +154,7 @@ class CargoResult:
 class Ea20:
     election: str
     turno: str
-    fase: str            # 'f' = oficial, 's' = simulado — barreira de ambiente
+    fase: str            # 'o' = oficial, 's' = simulado — barreira de ambiente
     suplementar: bool    # 'sup'
     tpabr: str           # br | uf | mu
     cdabr: str           # 'br' | 'ac' | '01120'
@@ -218,14 +221,21 @@ def _candidates(cargo: dict) -> tuple[Candidate, ...]:
             p_sg = as_text(par.get("sg"))
             p_nm = as_text(par.get("nm"))
             for c in par.get("cand", []):
-                require(c, "n", "sqcand", "nm", "dvt", "vap", ctx="EA20.cand")
+                # `dvt` pode faltar: no simulado de 22/09, os arquivos ainda
+                # "não recebidos" (and='n', 0 votos) vieram com candidatos
+                # sem destinação. Recusar o arquivo inteiro deixava o banco
+                # vazio no começo da noite. Sem `dvt`, o candidato fica com
+                # DVT_SEM — que não conta como válido (não se inventa
+                # destinação) e, se tiver voto, vira divergência crítica em
+                # quality/checks.py.
+                require(c, "n", "sqcand", "nm", "vap", ctx="EA20.cand")
                 out.append(Candidate(
                     numero=as_code(c["n"], "cand.n"),
                     sqcand=as_code(c["sqcand"], "cand.sqcand"),
                     nome=as_text(c["nm"]),
                     nome_urna=as_text(c.get("nmu") or c["nm"]),
                     seq=str(c.get("seq") or "") or None,
-                    dvt=as_text(c["dvt"]),
+                    dvt=(as_text(c["dvt"]) if "dvt" in c else DVT_SEM),
                     classificado_flag=str(c.get("e", "") or ""),
                     situacao=as_text(c.get("st")),
                     votos=as_int(c["vap"], "cand.vap"),

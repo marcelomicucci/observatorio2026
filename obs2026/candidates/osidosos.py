@@ -51,6 +51,11 @@ from pathlib import Path
 
 import httpx
 
+#: Eleição a que os perfis pertencem. Perfil casado com candidato de outro
+#: ano pelo número de urna é outra pessoa (22-PL: Jair em 2022, Flávio em
+#: 2026); por isso a rota de candidatos só enriquece eleições deste ano.
+ANO_ENRIQUECIMENTO = 2026
+
 BASE = "https://eleicoes.osidosos.com.br/backend/public/index.php/api"
 SITE = "https://eleicoes.osidosos.com.br"
 #: Os arquivos enviados ficam sob o mesmo prefixo da API, nao na raiz do

@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
@@ -32,6 +34,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -43,17 +46,23 @@ from ..storage.models import (Candidate, Contest, Election, Geography,
                               ObservedResult, SourceSnapshot, UnitTotals)
 
 API_VERSION = "v1"
-MODEL_VERSION = "m1-0.1-nao-homologado"
+MODEL_VERSION = "m2-0.1-nao-homologado"
 CLASSIFICATION_VERSION = "2026.0-rascunho"
 
 app = FastAPI(title="Observatório Eleitoral 2026", version="0.1.0",
               docs_url="/api/docs", openapi_url="/api/openapi.json")
+# O mapa municipal do Brasil tem 3,5 MB de JSON e o telão o pede a cada
+# troca de tela. Comprimido cai para cerca de um décimo: menos tempo de
+# transferência e de leitura no navegador do projetor.
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["GET"],
     allow_headers=["*"],
 )
 
-_ENV_NAME = "simulado2026"
+#: Ambiente servido. `OBS2026_ENV` escolhe sem editar código — é assim que
+#: `obs2026 servir --env ...` troca para o oficial ou para a demonstração.
+_ENV_NAME = os.environ.get("OBS2026_ENV", "simulado2026")
 _engine = None
 _Session = None
 
@@ -66,11 +75,119 @@ def configure(env_name: str = "simulado2026") -> None:
     _Session = make_session_factory(_engine)
 
 
+#: Ambiente pedido por ESTE pedido (`?eleicao_passada=tse2022t2`), para o seletor de
+#: anos: as mesmas telas da noite lendo uma eleição passada. Só ambientes
+#: congelados e só leitura — ver `EleicaoPorPedido`. Fora disso, vale o
+#: ambiente servido.
+_ENV_PEDIDO: ContextVar[str | None] = ContextVar("obs2026_env_pedido",
+                                                 default=None)
+_fabricas_congeladas: dict[str, object] = {}
+_congelados: dict[str, bool] = {}
+
+
+def env_atual() -> str:
+    """O ambiente que as consultas deste pedido devem ler."""
+    return _ENV_PEDIDO.get() or _ENV_NAME
+
+
+def ambiente_congelado(nome: str) -> bool:
+    """Existe, é congelado e tem banco montado."""
+    if nome not in _congelados:
+        try:
+            env = load_environment(nome)
+            _congelados[nome] = bool(env.congelado and env.db_path.exists())
+        except Exception:                               # noqa: BLE001
+            _congelados[nome] = False
+    return _congelados[nome]
+
+
 def get_session() -> Session:
+    pedido = _ENV_PEDIDO.get()
+    if pedido:
+        fab = _fabricas_congeladas.get(pedido)
+        if fab is None:
+            env = load_environment(pedido)
+            fab = _fabricas_congeladas[pedido] = make_session_factory(
+                make_engine(sqlite_path=env.db_path))
+        with fab() as s:           # type: ignore[operator]
+            yield s
+        return
     if _Session is None:
         configure(_ENV_NAME)
     with _Session() as s:          # type: ignore[misc]
         yield s
+
+
+_metas: dict[str, tuple[float, dict | None]] = {}
+
+
+def _meta_congelado(env) -> dict | None:
+    """Metadados que o `montar-ano` grava ao lado do banco (lidos uma vez
+    por versão do arquivo)."""
+    from ..history.congelado import caminho_meta
+    p = caminho_meta(env.db_path)
+    try:
+        mt = p.stat().st_mtime
+    except OSError:
+        return None
+    memo = _metas.get(env.name)
+    if memo is None or memo[0] != mt:
+        memo = _metas[env.name] = (mt, json.loads(
+            p.read_text(encoding="utf-8")))
+    return memo[1]
+
+
+class EleicaoPorPedido:
+    """`?eleicao_passada=<ambiente>` troca o banco lido NESTE pedido.
+
+    O nome é longo de propósito: `eleicao` já é parâmetro de rotas como
+    `/results` (o código da eleição no TSE), e a colisão fazia a disputa
+    "sumir" (visto em 24/09).
+
+    Middleware ASGI puro (não o `BaseHTTPMiddleware`), para o ContextVar
+    chegar intacto à rota e às dependências. Recusa, em vez de ignorar:
+    - ambiente que não é congelado — o painel nunca deve ler o simulado ou
+      o oficial por esta porta, e ignorar mostraria 2026 com rótulo de 2018;
+    - método que não é GET/HEAD — eleição passada não se escreve.
+    """
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        from urllib.parse import parse_qs
+        qs = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+        nome = (qs.get("eleicao_passada") or [""])[0].strip()
+        if not nome:
+            return await self.app(scope, receive, send)
+        erro = None
+        if scope.get("method") not in ("GET", "HEAD"):
+            erro = "eleição passada é só leitura"
+        elif not ambiente_congelado(nome):
+            erro = (f"eleição {nome!r} não disponível: monte com "
+                    "`obs2026 montar-ano`")
+        if erro:
+            corpo = json.dumps({"detail": erro},
+                               ensure_ascii=False).encode("utf-8")
+            await send({"type": "http.response.start", "status": 400,
+                        "headers": [(b"content-type",
+                                     b"application/json; charset=utf-8")]})
+            await send({"type": "http.response.body", "body": corpo})
+            return
+        from ..contexto import ANO_ELEICAO
+        meta = _meta_congelado(load_environment(nome)) or {}
+        token = _ENV_PEDIDO.set(nome)
+        token_ano = ANO_ELEICAO.set(meta.get("ano"))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            ANO_ELEICAO.reset(token_ano)
+            _ENV_PEDIDO.reset(token)
+
+
+app.add_middleware(EleicaoPorPedido)
 
 
 # --------------------------------------------------------------------------
@@ -108,7 +225,7 @@ def envelope(dados: Any, *, snapshots: list[SourceSnapshot],
     set_id = hashlib.sha256("|".join(ids).encode()).hexdigest()[:16] \
         if ids else None
 
-    env = load_environment(_ENV_NAME)
+    env = load_environment(env_atual())
     thr = load_thresholds()
     return {
         "as_of": datetime.now(timezone.utc).isoformat(),
@@ -125,9 +242,12 @@ def envelope(dados: Any, *, snapshots: list[SourceSnapshot],
             "oficial": env.official,
             # Barreira visível: nenhum consumidor pode confundir simulado com
             # resultado oficial por descuido de leitura.
-            "aviso": (None if env.official else
+            "aviso": (None if env.official else env.aviso or
                       "AMBIENTE DE SIMULADO — dados de teste do TSE, "
                       "não são resultado eleitoral"),
+            # Eleição passada (seletor de anos): ano, turno e as UFs cujo
+            # governador do "resultado final" é o do 1º turno.
+            "eleicao": _meta_congelado(env) if env.congelado else None,
         },
         "denominador": ({"base": denominador.value,
                          "rotulo": DEN_LABELS[denominador]}
@@ -229,9 +349,23 @@ def _abrangencia_do_recorte(ct: Contest, uf: str | None,
     return ct.abrangencia_decisoria
 
 
+def tem_segundo_turno(s: Session, ct: Contest | None) -> bool:
+    """A disputa ainda pode ir a 2º turno?
+
+    Presidente e governador no 1º turno. NÃO é "vaga única": o Senado de
+    2022 teve uma vaga por UF e nenhum 2º turno, e o resultado de um 2º
+    turno não tem outro depois dele — o seletor de anos mostrava "2º turno
+    garantido" no Haddad de 2018 (visto em 24/09)."""
+    if ct is None or ct.cargo_cd not in ("1", "3"):
+        return False
+    turno = s.execute(select(Election.turno).where(
+        Election.id == ct.election_id)).scalar()
+    return str(turno or "1") == "1"
+
+
 def _contest_or_404(s: Session, cargo: str, eleicao: str | None) -> Contest:
     q = (select(Contest).join(Election, Election.id == Contest.election_id)
-         .where(Election.environment == _ENV_NAME, Contest.cargo_cd == cargo))
+         .where(Election.environment == env_atual(), Contest.cargo_cd == cargo))
     if eleicao:
         q = q.where(Election.cd_eleicao == eleicao)
     c = s.execute(q).scalars().first()
@@ -250,7 +384,7 @@ def elections(s: Session = Depends(get_session)):
     linhas = s.execute(
         select(Election, Contest)
         .join(Contest, Contest.election_id == Election.id)
-        .where(Election.environment == _ENV_NAME)
+        .where(Election.environment == env_atual())
     ).all()
     por_eleicao: dict[int, dict] = {}
     for el, ct in linhas:
@@ -289,7 +423,7 @@ def results(
     """Resultado oficial observado. Nunca mistura projeção."""
     ct = _contest_or_404(s, cargo, eleicao)
 
-    gq = select(Geography.id).where(Geography.environment == _ENV_NAME,
+    gq = select(Geography.id).where(Geography.environment == env_atual(),
                                     Geography.tipo == abrangencia)
     if uf:
         gq = gq.where(Geography.uf == uf.lower())
@@ -440,10 +574,16 @@ def forecasts(cargo: str, eleicao: str | None = None,
             extra={"disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas},
                    "gate": thr.gates},
         )
-    raise HTTPException(
-        501, "motor de projeção não publicado: execute o backtest e "
-             "assine config/thresholds.yaml"
-    )
+    # Homologado: a projeção por disputa, com probabilidades, sai em
+    # /api/v1/projection (a mesma que o telão usa). Antes daqui saía um 501
+    # — que ninguém tinha visto porque o gate nunca tinha passado.
+    return envelope(
+        None, snapshots=[], estado="projecao_disponivel",
+        motivo=None,
+        extra={"disputa": {"cargo": ct.cargo_nome, "vagas": ct.vagas},
+               "gate": thr.gates, "assinado_por": thr.signed_by,
+               "assinado_em": thr.signed_at,
+               "rota": "/api/v1/projection?cargo=<cd>&uf=<uf>"})
 
 
 @app.get("/api/v1/map")
@@ -451,7 +591,7 @@ def mapa(cargo: str, eleicao: str | None = None,
          uf: str | None = None, s: Session = Depends(get_session)):
     """Dados compactos do mapa. Não repete geometria (§9)."""
     ct = _contest_or_404(s, cargo, eleicao)
-    gq = select(Geography.id).where(Geography.environment == _ENV_NAME,
+    gq = select(Geography.id).where(Geography.environment == env_atual(),
                                     Geography.tipo == "mu")
     if uf:
         gq = gq.where(Geography.uf == uf.lower())
@@ -503,7 +643,7 @@ def timeline(cargo: str, eleicao: str | None = None,
              s: Session = Depends(get_session)):
     """Série para replay. Mostra só o que se sabia em cada instante (§5.2)."""
     ct = _contest_or_404(s, cargo, eleicao)
-    gq = select(Geography.id).where(Geography.environment == _ENV_NAME,
+    gq = select(Geography.id).where(Geography.environment == env_atual(),
                                     Geography.tipo == abrangencia)
     if uf:
         gq = gq.where(Geography.uf == uf.lower())
@@ -540,10 +680,10 @@ def quality(s: Session = Depends(get_session)):
     """Atrasos, cobertura e divergências (§9)."""
     total_snaps = s.execute(
         select(func.count()).select_from(SourceSnapshot)
-        .where(SourceSnapshot.environment == _ENV_NAME)).scalar_one()
+        .where(SourceSnapshot.environment == env_atual())).scalar_one()
     ultimo = s.execute(
         select(func.max(SourceSnapshot.captured_at))
-        .where(SourceSnapshot.environment == _ENV_NAME)).scalar_one()
+        .where(SourceSnapshot.environment == env_atual())).scalar_one()
 
     flags: dict[str, int] = {}
     for (qf,) in s.execute(select(UnitTotals.quality_flags)
@@ -555,7 +695,7 @@ def quality(s: Session = Depends(get_session)):
     por_disputa = []
     for ct in s.execute(select(Contest).join(
             Election, Election.id == Contest.election_id)
-            .where(Election.environment == _ENV_NAME)).scalars().all():
+            .where(Election.environment == env_atual())).scalars().all():
         tot = s.execute(
             select(func.count(func.distinct(UnitTotals.geography_id)))
             .where(UnitTotals.contest_id == ct.id)).scalar_one()
@@ -601,7 +741,7 @@ def exports(cargo: str, eleicao: str | None = None, limite: int = 5000,
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "ambiente": _ENV_NAME,
+    return {"ok": True, "ambiente": env_atual(),
             "api_version": API_VERSION}
 
 # --------------------------------------------------------------------------
@@ -629,6 +769,11 @@ def _html_com_versao(arquivo: Path) -> HTMLResponse:
     except OSError:
         v = 0
     html = html.replace('src="/mapa.js"', f'src="/mapa.js?v={v}"')
+    try:
+        v2 = int((_WEB / "politico.js").stat().st_mtime)
+    except OSError:
+        v2 = 0
+    html = html.replace('src="/politico.js"', f'src="/politico.js?v={v2}"')
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
@@ -647,6 +792,9 @@ from . import telao as _telao  # noqa: E402
 from . import convergencia as _convergencia  # noqa: E402
 from . import fotos as _fotos  # noqa: E402
 from . import compartilhar as _compartilhar  # noqa: E402
+from . import politico as _politico  # noqa: E402
+from . import configuracao as _configuracao  # noqa: E402
+from . import historico as _historico  # noqa: E402
 
 _decided_audit.register(app)
 _geo.register(app)
@@ -656,3 +804,6 @@ _telao.register(app)
 _convergencia.register(app)
 _fotos.register(app)
 _compartilhar.register(app)
+_politico.register(app)
+_configuracao.register(app)
+_historico.register(app)

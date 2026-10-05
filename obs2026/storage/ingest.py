@@ -120,6 +120,14 @@ def _geography_for(s: Session, env_name: str, r: Ea20,
     ).scalar_one_or_none()
 
 
+def _utc(dt: datetime | None) -> datetime | None:
+    """Aware → UTC. O banco guarda UTC sem fuso (§9); horário sem fuso é
+    tratado como já em UTC."""
+    if dt is None or dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc)
+
+
 def ingest_ea20(s: Session, env, ref: SnapshotRef, r: Ea20) -> dict:
     """Ingere um EA20. Idempotente pela chave (sha256, url, captured_at)."""
     out = {"snapshot": 0, "candidates": 0, "results": 0, "flags": []}
@@ -163,7 +171,11 @@ def ingest_ea20(s: Session, env, ref: SnapshotRef, r: Ea20) -> dict:
             environment=env.name, kind=ref.kind, source_key=ref.key,
             url=ref.url, status=ref.status, sha256=ref.sha256,
             bytes_len=ref.bytes_len,
-            source_generated_at=(
+            # Em UTC. O TSE manda horário de Brasília (-03:00) e o SQLite
+            # descarta o fuso: gravado sem converter, "08:53 BRT" virava
+            # "08:53" e a API (que lê tudo como UTC) mostrava 05:53. Achado
+            # no simulado de 22/09.
+            source_generated_at=_utc(
                 datetime.fromisoformat(ref.source_generated_at)
                 if ref.source_generated_at else None),
             captured_at=datetime.fromisoformat(ref.captured_at),
@@ -211,7 +223,7 @@ def ingest_ea20(s: Session, env, ref: SnapshotRef, r: Ea20) -> dict:
         e, sec, v = r.electorate, r.sections, r.votes
         s.add(UnitTotals(
             snapshot_id=snap.id, contest_id=contest.id, geography_id=geo.id,
-            andamento=r.andamento, totalizado_em=r.totalized_at,
+            andamento=r.andamento, totalizado_em=_utc(r.totalized_at),
             secoes_total=sec.ts, secoes_totalizadas=sec.st,
             secoes_instaladas=sec.si, secoes_apuradas=sec.sa,
             eleitorado_total=e.te, eleitorado_totalizado=e.est,

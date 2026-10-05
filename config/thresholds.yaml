@@ -8,9 +8,9 @@
 # enquanto `homologated: false`, o produto opera em 'cenario_exploratorio' e não
 # publica probabilidade de vitória.
 
-homologated: false
-signed_by: null
-signed_at: null
+homologated: true
+signed_by: "Marcelo Micucci"
+signed_at: "2026-09-22T11:41:34.183327-03:00"
 
 release_gates:
   # Nenhuma projeção antes de o eleitorado estar conciliado.
@@ -37,3 +37,15 @@ monte_carlo:
   n_sims: 5000
   seed: 20261004
   max_mc_standard_error_pp: 0.15
+
+# --- evidência da homologação (gerado por `obs2026 homologar`) ---
+evidencia:
+  relatorio: data/exports/ensaio2022/gate2022.md
+  gerado_em: "2026-09-22T11:38:29.652565"
+  disputas: 55
+  modelo: m3
+  erro_mediano_vence_m0_em_todas_as_rodadas: true
+  cobertura80_ordem_real_pct: 81.6
+  cobertura80_ordem_aleatoria_pct: 81.2
+  assinado_por: "Marcelo Micucci"
+  assinado_em: "2026-09-22T11:41:34.183327-03:00"

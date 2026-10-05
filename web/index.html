@@ -47,6 +47,11 @@ a{color:var(--acento)}
  font-weight:600}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .aviso{
  background:#2a1a0a;color:#fcd9a8;border-color:#7c4a11}}
+/* Eleição passada (seletor de anos): azul, para não se confundir com o
+ * laranja do simulado — é dado oficial, só não é de agora. */
+.aviso.passado{background:#e8f0fe;color:#17325c;border-color:#8fb0e8}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .aviso.passado{
+ background:#0f1d33;color:#b9d0f5;border-color:#2f5391}}
 
 /* nível 1 — cargo: a escolha primária, e por isso a maior */
 .cargos{display:flex;flex-wrap:wrap}
@@ -128,6 +133,7 @@ a{color:var(--acento)}
  padding:9px 13px;margin:13px 0;font-size:12.5px;color:var(--muted);
  border-radius:0 7px 7px 0}
 .nota b{color:var(--fg)}
+.nota.ok{border-left-color:var(--ok)}
 .nota.aten{border-left-color:var(--alerta)}
 h2{font-size:15px;margin:22px 0 9px;letter-spacing:-.01em}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -175,6 +181,7 @@ footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);
 <nav class="visoes" role="tablist" id="visoes"></nav>
 <main id="main"><div class="estado">carregando…</div></main>
 <div class="rodape" id="meta"></div>
+<div class="rodape" id="auto" style="border-top:0;padding-top:0;margin-top:0"></div>
 <footer>
   Apuração oficial, projeção e definição matemática são três coisas distintas
   e nunca se somam no mesmo número. Liderar um território não é ser eleito por
@@ -183,6 +190,7 @@ footer{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);
 </div>
 
 <script src="/mapa.js"></script>
+<script src="/politico.js"></script>
 <script>
 const API = '/api/v1';
 const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
@@ -211,6 +219,11 @@ const CARGOS = [
   {cd: '1', nome: 'Presidente', abr: 'br', vagas: 1},
   {cd: '3', nome: 'Governador', abr: 'uf', vagas: 1},
   {cd: '5', nome: 'Senador', abr: 'uf', vagas: 2},
+  // Proporcional: sem projeção, sem disputa no banco — visão própria.
+  {cd: '6', nome: 'Deputado federal', abr: 'uf', vagas: null,
+   proporcional: true},
+  // Não é cargo: a tela de recordes da noite, com todos os cargos.
+  {cd: 'rec', nome: 'Recordes', abr: 'br', vagas: null, especial: true},
 ];
 const VISOES = [
   {id: 'resultado', nome: 'Resultado'},
@@ -218,8 +231,31 @@ const VISOES = [
   {id: 'projecao', nome: 'Projeção'},
   {id: 'convergencia', nome: 'Convergência'},
   {id: 'auditoria', nome: 'Auditoria'},
+  {id: 'comparar', nome: 'Comparar'},
   {id: 'telao', nome: 'Telão'},
+  {id: 'config', nome: 'Configuração'},
 ];
+const REGIOES_BR = ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'];
+const REGIAO_UF = {ac: 'Norte', am: 'Norte', ap: 'Norte', pa: 'Norte',
+  ro: 'Norte', rr: 'Norte', to: 'Norte', al: 'Nordeste', ba: 'Nordeste',
+  ce: 'Nordeste', ma: 'Nordeste', pb: 'Nordeste', pe: 'Nordeste',
+  pi: 'Nordeste', rn: 'Nordeste', se: 'Nordeste', df: 'Centro-Oeste',
+  go: 'Centro-Oeste', ms: 'Centro-Oeste', mt: 'Centro-Oeste',
+  es: 'Sudeste', mg: 'Sudeste', rj: 'Sudeste', sp: 'Sudeste',
+  pr: 'Sul', rs: 'Sul', sc: 'Sul'};
+const _MUNIS = {};
+/* Municípios de uma UF (código IBGE, nome), da mesma rota do mapa, uma vez
+ * por UF — a lista não muda durante a noite. */
+function municipiosDe(uf) {
+  if (!_MUNIS[uf]) {
+    _MUNIS[uf] = get(`/map-layers?cargo=1&abrangencia=mu&uf=${uf}`)
+      .then(m => (m.dados || []).filter(d => d.cd_ibge)
+        .map(d => [d.cd_ibge, d.nome])
+        .sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')));
+    _MUNIS[uf].catch(() => { delete _MUNIS[uf]; });
+  }
+  return _MUNIS[uf];
+}
 const UFS = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg',
              'pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se',
              'to'];
@@ -228,7 +264,10 @@ const UFS = ['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg',
 // rótulos distintos e nunca se fundem. Este mapa cobre só o do meio.
 const DEF = {
   matematicamente_eleito: {cls: 'ok', txt: 'definido matematicamente'},
-  matematicamente_no_segundo_turno: {cls: 'info', txt: '2º turno garantido'},
+  // A conta prova "não sai dos dois primeiros", não que haverá 2º turno: o
+  // líder ainda pode fechar no 1º (PA em 04/10/2026, com 52,6%).
+  matematicamente_no_segundo_turno: {cls: 'info',
+                                     txt: 'entre os 2 primeiros'},
   matematicamente_eliminado: {cls: '', txt: 'sem chance aritmética'},
   em_aberto: null,
 };
@@ -271,9 +310,41 @@ function comandarTelao(acao, indice) {
  * é um botão, e o telão fica no recorte até alguém mandar retomar. */
 function mostrarNoTelaoAgora() {
   if (!canalTelao) return;
-  canalTelao.postMessage({tipo: 'recorte', recorte: {
+  // A aba aberta manda: em Comparar, o telão recebe o comparativo daquele
+  // território, não o mapa que está por baixo.
+  if ((st.visao || '') === 'comparar') {
+    const c = cargoAtual();
+    // Deputado federal: a bancada nacional ano a ano, sem UF. Resumo: os
+    // quatro cargos numa tela, também sem UF.
+    const resumo = st.resumo === '1';
+    const cd = resumo ? 'R' : c.proporcional ? '6' : c.especial ? '1' : c.cd;
+    canalTelao.postMessage({tipo: 'recorte', recorte: {
+      tipo: 'comparativo', cargo: cd,
+      uf: (resumo || c.proporcional) ? null : st.uf || null,
+      anos: '2018,2022,2026'}});
+    return;
+  }
+  if (cargoAtual().especial) {
+    canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'recordes',
+      titulo: 'Recordes da noite'}});
+    return;
+  }
+  if (cargoAtual().proporcional || (cargoAtual().cd === '5' && !st.uf)) {
+    const camara = cargoAtual().proporcional;
+    // Deputado federal com UF escolhida: a lista de deputados do estado.
+    const ufDep = camara && st.uf && !eleicaoPedida() ? st.uf : null;
+    canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'composicao',
+      casa: camara ? 'camara' : 'senado', eleicao: eleicaoPedida(),
+      uf: ufDep, municipio: null,
+      titulo: ufDep ? `Deputados federais — ${ufDep.toUpperCase()}`
+        : (camara ? 'Câmara — composição' : 'Senado — composição')
+          + (eleicaoPedida() ? ` (${st.ano})` : '')}});
+    return;
+  }
+  canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'mapa',
     cargo: st.cargo || '1', uf: st.uf || null,
     camada: MAPA.camadaCanonica(st.camada) || 'lider',
+    eleicao: eleicaoPedida(),
   }});
 }
 
@@ -430,6 +501,16 @@ async function prepararWhatsApp(pedido, rotulo) {
 
 function whatsappDestaTela() {
   const cargo = cargoAtual();
+  if (cargo.especial) {
+    alert('Os recordes vão para o WhatsApp pela tela "Recordes da noite" do '
+        + 'roteiro — aba Telão, botão "WhatsApp: roteiro inteiro".');
+    return;
+  }
+  if (cargo.proporcional) {
+    alert('A Câmara vai para o WhatsApp pela tela "Câmara: composição" do '
+        + 'roteiro — aba Telão, botão "WhatsApp: roteiro inteiro".');
+    return;
+  }
   if (cargo.abr === 'uf' && !st.uf) {
     alert(`${cargo.nome} é decidido em cada estado. Escolha a UF antes.`);
     return;
@@ -437,7 +518,9 @@ function whatsappDestaTela() {
   prepararWhatsApp({recorte: {
     cargo: cargo.cd, uf: st.uf || null,
     camada: MAPA.camadaCanonica(st.camada) || 'lider',
-  }}, `${cargo.nome} — ${st.uf ? st.uf.toUpperCase() : 'Brasil'}`);
+    eleicao: eleicaoPedida(),
+  }}, `${cargo.nome} — ${st.uf ? st.uf.toUpperCase() : 'Brasil'}`
+      + (eleicaoPedida() ? ` (${st.ano})` : ''));
 }
 
 function retomarRoteiro() {
@@ -471,6 +554,8 @@ const ROTEIRO = {
 
   deTela(t) {
     return {
+      tipo: t.tipo || 'mapa', casa: t.casa || null,
+      abrangencia: t.abrangencia || null,
       cargo: t.cargo, uf: t.uf || null,
       municipio: t.municipio || null,
       municipio_nome: t.municipio_nome || null,
@@ -480,7 +565,8 @@ const ROTEIRO = {
     };
   },
   assinatura(lista) {
-    return JSON.stringify(lista.map(i => [i.cargo, i.uf || null,
+    return JSON.stringify(lista.map(i => [i.tipo || 'mapa',
+      i.casa || null, i.abrangencia || null, i.cargo, i.uf || null,
       i.municipio || null, i.camada, i.segundos, i.titulo || null]));
   },
   carregar(telas) {
@@ -524,7 +610,34 @@ const ROTEIRO = {
   },
   titulo(it) {
     if (it.titulo) return it.titulo;
+    // Eleição passada: o ano no título, para a tela não passar por 2026.
+    if (it.eleicao) {
+      return this.titulo({...it, eleicao: null}) + ` (${it.eleicao.slice(3, 7)})`;
+    }
+    if (it.tipo === 'recordes') return 'Recordes da noite';
+    if (it.tipo === 'comparativo' && it.cargo === '6') {
+      return 'Câmara — bancadas ao longo das eleições';
+    }
+    if (it.tipo === 'comparativo' && it.cargo === 'R') {
+      return 'O país eleição a eleição — resumo';
+    }
+    if (it.tipo === 'comparativo') {
+      const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
+      return `${c.nome} — ${it.uf ? it.uf.toUpperCase() : 'Brasil'} `
+        + 'ao longo das eleições';
+    }
+    if (it.tipo === 'composicao') {
+      if (it.casa === 'camara' && it.uf)
+        return `Deputados federais — ${it.uf.toUpperCase()}`;
+      return it.casa === 'camara' ? 'Câmara — composição'
+                                  : 'Senado — composição';
+    }
     const c = CARGOS.find(x => x.cd === it.cargo) || CARGOS[0];
+    if (it.tipo === 'politico') {
+      return `${c.nome} — partido e ideologia`
+        + (it.cargo === '1' && it.abrangencia === 'uf' ? ' (por estado)'
+           : '');
+    }
     const onde = it.municipio_nome
       ? `${it.municipio_nome}/${(it.uf || '').toUpperCase()}`
       : it.uf ? it.uf.toUpperCase() : 'Brasil';
@@ -538,8 +651,11 @@ const ROTEIRO = {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({roteiro: this.itens.map(it => ({
+        tipo: it.tipo || 'mapa', casa: it.casa,
+        abrangencia: it.abrangencia,
         cargo: it.cargo, uf: it.uf, municipio: it.municipio,
         camada: it.camada, segundos: it.segundos, titulo: it.titulo,
+        eleicao: it.eleicao || null,
       }))}),
     });
     const corpo = await r.json().catch(() => ({}));
@@ -560,6 +676,41 @@ const ROTEIRO = {
 
 async function enviarParaLista() {
   const cargo = cargoAtual();
+  if ((st.visao || '') === 'comparar') {
+    const resumo = st.resumo === '1';
+    const cd = resumo ? 'R' : cargo.proporcional ? '6'
+      : cargo.especial ? '1' : cargo.cd;
+    await ROTEIRO.garantir();
+    ROTEIRO.itens.push({tipo: 'comparativo', casa: null, abrangencia: null,
+      cargo: cd, uf: (resumo || cargo.proporcional) ? null : st.uf || null, municipio: null, municipio_nome: null,
+      camada: 'lider', segundos: 30, titulo: null,
+      anos: '2018,2022,2026'});
+    ROTEIRO.guardar();
+    navegacao();
+    return;
+  }
+  if (cargo.especial) {
+    await ROTEIRO.garantir();
+    ROTEIRO.itens.push({tipo: 'recordes', casa: null, abrangencia: null,
+      cargo: '1', uf: null, municipio: null, municipio_nome: null,
+      camada: 'lider', segundos: 25, titulo: null});
+    ROTEIRO.guardar();
+    navegacao();
+    return;
+  }
+  if (cargo.proporcional || (cargo.cd === '5' && !st.uf)) {
+    await ROTEIRO.garantir();
+    ROTEIRO.itens.push({tipo: 'composicao',
+      casa: cargo.proporcional ? 'camara' : 'senado', abrangencia: null,
+      // Deputado federal com UF: a lista de deputados daquele estado.
+      cargo: '1', uf: (cargo.proporcional && !eleicaoPedida() && st.uf)
+        || null, municipio: null, municipio_nome: null,
+      camada: 'lider', segundos: 25, titulo: null,
+      eleicao: eleicaoPedida()});
+    ROTEIRO.guardar();
+    navegacao();
+    return;
+  }
   if (cargo.abr === 'uf' && !st.uf) {
     alert(`${cargo.nome} é decidido em cada estado. Escolha a UF antes de `
         + 'mandar para o telão.');
@@ -570,7 +721,7 @@ async function enviarParaLista() {
     cargo: cargo.cd, uf: st.uf || null, municipio: null,
     municipio_nome: null,
     camada: MAPA.camadaCanonica(st.camada) || 'lider',
-    segundos: 20, titulo: null,
+    segundos: 20, titulo: null, eleicao: eleicaoPedida(),
   });
   ROTEIRO.guardar();
   navegacao();
@@ -641,6 +792,30 @@ function editorRoteiro() {
     }
   }
 
+  /* Telas prontas de partido, ideologia e composição. Não dependem de
+   * cargo ou UF escolhidos na pesquisa: entram direto no fim do roteiro. */
+  const prontas = el('div', {cls: 'visoes', style: 'margin-top:4px'},
+    el('span', {style: 'font-size:12.5px;color:var(--muted);'
+                     + 'align-self:center;margin-right:4px'},
+       'Acrescentar tela pronta:'),
+    ...[
+      ['Presidente: partido e ideologia',
+       {tipo: 'politico', cargo: '1', abrangencia: 'mu'}],
+      ['Governadores: partido e ideologia',
+       {tipo: 'politico', cargo: '3'}],
+      ['Senado: composição', {tipo: 'composicao', casa: 'senado'}],
+      ['Câmara: composição', {tipo: 'composicao', casa: 'camara'}],
+      ['Recordes da noite', {tipo: 'recordes'}],
+      ['Presidente: evolução 2018-2026',
+       {tipo: 'comparativo', cargo: '1', anos: '2018,2022,2026'}],
+    ].map(([rot, t]) => el('button', {onclick: () => {
+      ROTEIRO.itens.push({tipo: 'mapa', casa: null, abrangencia: null,
+        cargo: '1', uf: null, municipio: null, municipio_nome: null,
+        camada: 'lider', segundos: 25, titulo: null, ...t});
+      mudou(true);
+    }}, '＋ ' + rot)));
+  raiz.insertBefore(prontas, tabela);
+
   const botao = (txt, acao, titulo, desligado) => el('button', {
     style: 'font-size:12px;padding:3px 9px;border-radius:6px;'
          + 'border:1px solid var(--line);background:var(--panel);'
@@ -672,7 +847,12 @@ function editorRoteiro() {
                      + 'aqui. O telão mostra esse aviso junto.'},
                 'recorte não decisório')]
             : null),
-        el('td', {}, el('select', {
+        el('td', {}, (it.tipo || 'mapa') !== 'mapa'
+          ? el('span', {cls: 'tag'}, it.tipo === 'composicao'
+              ? 'hemiciclo' : it.tipo === 'recordes' ? 'cartões'
+              : it.tipo === 'comparativo' ? 'ano a ano'
+              : 'partido + ideologia')
+          : el('select', {
           onchange: e => { it.camada = e.target.value; mudou(); },
           style: 'background:var(--bg);color:var(--fg);border:1px solid '
                + 'var(--line);border-radius:6px;padding:4px 6px;font:inherit;'
@@ -798,10 +978,96 @@ async function viewTelao() {
   return el('div', {}, ...out);
 }
 
+/* Seletor de anos (24/09): Resultado e Mapa podem ler 2018 ou 2022, no
+ * mesmo formato da noite, por `?eleicao_passada=tse2022t2`. Vale SÓ nessas duas abas
+ * (e nas telas que elas abrem: Senado, Câmara, panorama dos governadores);
+ * projeção, auditoria, telão e configuração continuam no ao vivo. Senado e
+ * Câmara não têm 2º turno: para eles vale sempre o banco do 1º. */
+const VISOES_COM_ANO = new Set(['resultado', 'mapa']);
+function eleicaoPedida() {
+  if (!st.ano || st.ano === '2026') return null;
+  if (!VISOES_COM_ANO.has(st.visao || 'resultado')) return null;
+  const c = cargoAtual();
+  if (c.especial) return null;
+  const turno = (c.cd === '5' || c.proporcional) ? '1' : (st.turno || '2');
+  return `tse${st.ano}t${turno}`;
+}
+// Rotas que nunca leem eleição passada: comparação (tem os próprios anos),
+// catálogo de anos e operação.
+const SEM_ELEICAO = ['/comparativo', '/anos', '/telao', '/configuracao',
+                     '/operacao'];
+
 async function get(p) {
+  const e = eleicaoPedida();
+  if (e && !SEM_ELEICAO.some(x => p.startsWith(x))) {
+    p += (p.includes('?') ? '&' : '?') + `eleicao_passada=${e}`;
+  }
   const r = await fetch(API + p);
   if (!r.ok) throw new Error(`${r.status} em ${p}`);
   return r.json();
+}
+
+/* Anos com banco montado, lidos uma vez: {2022: {'1': 'tse2022t1', …}}. */
+let ANOS_CONGELADOS = null;
+async function anosCongelados() {
+  if (ANOS_CONGELADOS) return ANOS_CONGELADOS;
+  try {
+    const r = await fetch(API + '/anos');
+    const j = await r.json();
+    ANOS_CONGELADOS = {};
+    for (const a of j.dados) {
+      if (a.congelados && (a.congelados['1'] || a.congelados['2'])) {
+        ANOS_CONGELADOS[a.ano] = a.congelados;
+      }
+    }
+  } catch (e) { ANOS_CONGELADOS = {}; }
+  return ANOS_CONGELADOS;
+}
+
+function seletorAno() {
+  const visao = st.visao || 'resultado';
+  const c = cargoAtual();
+  if (c.especial) return null;
+  const caixa = el('span', {style: 'display:inline-flex;gap:6px;'
+    + 'align-items:center;margin-left:auto;font-size:12.5px;'
+    + 'color:var(--muted)'});
+  if (!VISOES_COM_ANO.has(visao)) {
+    if (st.ano && st.ano !== '2026') {
+      caixa.append(el('span', {style: 'color:var(--alerta)'},
+        `${st.ano} só vale em Resultado e Mapa — esta aba mostra 2026`));
+    }
+    return caixa;
+  }
+  const estilo = 'background:var(--bg);color:var(--fg);border:1px solid '
+    + 'var(--line);border-radius:6px;padding:4px 7px;font:inherit;'
+    + 'font-size:13px';
+  const sel = el('select', {'aria-label': 'Eleição', style: estilo,
+      onchange: e => { st.ano = e.target.value === '2026' ? ''
+                                                           : e.target.value; }},
+    el('option', {value: '2026'}, '2026 · ao vivo'));
+  caixa.append('Eleição', sel);
+  anosCongelados().then(anos => {
+    for (const a of Object.keys(anos).sort().reverse()) {
+      sel.append(el('option', {value: a,
+        selected: st.ano === a ? '' : null}, a));
+    }
+  });
+  const passado = st.ano && st.ano !== '2026';
+  if (passado && !(c.cd === '5' || c.proporcional)) {
+    const t = st.turno || '2';
+    const bt = (v, rot, dica) => el('button', {
+      role: 'tab', 'aria-selected': String(t === v), title: dica,
+      style: 'font-size:12px;padding:3px 10px',
+      onclick: () => { st.turno = v === '2' ? '' : v; }}, rot);
+    caixa.append(
+      bt('1', '1º turno', 'o 1º turno em todas as UFs'),
+      bt('2', 'resultado final',
+         '2º turno onde houve; governador completa com as UFs decididas no '
+         + '1º turno, marcadas'));
+  } else if (passado) {
+    caixa.append(el('span', {}, '1º turno (não há 2º)'));
+  }
+  return caixa;
 }
 
 /* --------------------------------------------------------------- chrome */
@@ -815,7 +1081,10 @@ function navegacao() {
     }, c.nome)));
 
   const kids = [el('span', {cls: 'fixo'}, 'Brasil')];
-  if (cargo.abr === 'uf') {
+  if (cargo.especial) {
+    kids.push(el('span', {cls: 'seta'}, '›'),
+      el('span', {}, 'recordes da noite · até agora, só votos contados'));
+  } else if (cargo.abr === 'uf') {
     kids.push(el('span', {cls: 'seta'}, '›'),
       el('select', {
         'aria-label': 'Unidade da Federação',
@@ -831,8 +1100,52 @@ function navegacao() {
            el('b', {}, st.uf.toUpperCase()),
            cargo.vagas > 1 ? ` · ${cargo.vagas} vagas` : ''));
     }
+    if (cargo.proporcional) {
+      kids.push(el('span', {}, '· composição nacional da Câmara; a UF '
+                               + 'mostra os eleitos dela'));
+    }
+    if (cargo.cd === '5' && !st.uf) {
+      kids.push(el('span', {}, '· composição do Senado; a UF abre a '
+                               + 'disputa dela'));
+    }
   } else {
-    kids.push(el('span', {}, '· disputa nacional, inclui o exterior'));
+    /* Presidente: região, estado e município ficam à vista em todas as
+     * abas. Antes a região escolhida no mapa ficava guardada e invisível, e
+     * a aba Resultado a ignorava — parecia recorte o que era o Brasil. */
+    const estilo = 'background:var(--bg);color:var(--fg);border:1px solid '
+      + 'var(--line);border-radius:6px;padding:4px 7px;font:inherit;'
+      + 'font-size:13px';
+    kids.push(el('span', {cls: 'seta'}, '›'),
+      el('select', {'aria-label': 'Região', style: estilo,
+          onchange: e => { st.regiao = e.target.value; st.uf = '';
+                           st.municipio = ''; }},
+        el('option', {value: ''}, 'todas as regiões'),
+        ...REGIOES_BR.map(r => el('option', {value: r,
+          selected: st.regiao === r ? '' : null}, r))));
+    kids.push(el('span', {cls: 'seta'}, '›'),
+      el('select', {'aria-label': 'Unidade da Federação', style: estilo,
+          onchange: e => { st.uf = e.target.value; st.municipio = '';
+                           st.detalhe = e.target.value ? 'mu' : ''; }},
+        el('option', {value: ''}, st.regiao ? `todo o ${st.regiao}`
+                                            : 'todos os estados'),
+        ...UFS.filter(u => !st.regiao || REGIAO_UF[u] === st.regiao)
+          .map(u => el('option', {value: u,
+            selected: st.uf === u ? '' : null}, u.toUpperCase()))));
+    if (st.uf) {
+      const sel = el('select', {'aria-label': 'Município', style: estilo,
+          onchange: e => { st.municipio = e.target.value; }},
+        el('option', {value: ''}, 'todos os municípios'));
+      kids.push(el('span', {cls: 'seta'}, '›'), sel);
+      municipiosDe(st.uf).then(ms => {
+        for (const [cd, nome] of ms) sel.append(el('option', {value: cd,
+          selected: st.municipio === cd ? '' : null}, nome));
+      }).catch(() => {});
+    }
+    const onde = st.municipio ? 'recorte municipal' : st.uf
+      ? 'recorte estadual' : st.regiao ? 'recorte regional'
+      : 'disputa nacional, inclui o exterior';
+    kids.push(el('span', {style: st.regiao || st.uf
+        ? 'color:var(--alerta);font-weight:600' : null}, '· ' + onde));
   }
 
   // Os botões ficam na trilha, não na aba do telão: quem está pesquisando
@@ -871,7 +1184,8 @@ function navegacao() {
     ...VISOES.map(v => el('button', {
       role: 'tab', 'aria-selected': String(v.id === (st.visao || 'resultado')),
       onclick: () => { st.visao = v.id; },
-    }, v.nome)));
+    }, v.nome)),
+    seletorAno());
 }
 
 function rodape(d) {
@@ -935,7 +1249,8 @@ function cartao(c, i, maxPct, estados) {
     selos.push(el('span', {cls: 'tag'}, o.situacao));
   if (d) selos.push(el('span', {cls: 'tag ' + d.cls,
     title: est.motivo || ''}, d.txt));
-  if (o.destinacao_voto !== 'Válido')
+  // Vazio = arquivo ainda "não recebido": sem destinação, não é aviso.
+  if (o.destinacao_voto && o.destinacao_voto !== 'Válido')
     selos.push(el('span', {cls: 'tag warn',
       title: 'Destinação oficial do voto'}, o.destinacao_voto));
   if (p && !p.juncao_confiavel)
@@ -983,9 +1298,13 @@ async function viewResultado() {
    * tela respondia "nenhuma geografia para o filtro pedido" sem que houvesse
    * como descobrir o porquê. O recorte agora é legítimo e visível: muda a
    * abrangência, e o §3 aparece por escrito. */
+  if (cargo.abr === 'br' && st.regiao && !st.uf) return viewRegiao(cargo);
   const recorte = cargo.abr === 'br' && !!st.uf;
-  const abr = recorte ? 'uf' : cargo.abr;
-  const qs = `cargo=${cargo.cd}` + (st.uf ? `&uf=${st.uf}` : '');
+  const mun = cargo.abr === 'br' && st.uf && st.municipio
+    ? st.municipio : null;
+  const abr = mun ? 'mu' : recorte ? 'uf' : cargo.abr;
+  const qs = `cargo=${cargo.cd}` + (st.uf ? `&uf=${st.uf}` : '')
+    + (mun ? `&municipio=${mun}` : '');
   const [res, cands, def] = await Promise.all([
     get(`/results?abrangencia=${abr}&${qs}`),
     get(`/candidates?${qs}`),
@@ -1013,8 +1332,8 @@ async function viewResultado() {
 
   if (recorte) {
     out.push(el('div', {cls: 'nota aten'},
-      el('b', {}, `${cargo.nome} em ${st.uf.toUpperCase()} — recorte do `
-                + 'voto. '),
+      el('b', {}, `${cargo.nome} em ${mun ? (u.geografia.nome + '/') : ''}`
+                + `${st.uf.toUpperCase()} — recorte do voto. `),
       'A disputa é decidida no total do Brasil; liderar aqui não é ser '
       + 'eleito por aqui. ',
       el('button', {
@@ -1025,6 +1344,16 @@ async function viewResultado() {
       }, 'voltar ao Brasil')));
   }
 
+  // "Resultado final" de um ano passado: governador de UF decidida no 1º
+  // turno vem do 1º turno. A tela diz, senão pareceria ter havido 2º turno.
+  const eleicao = (res.ambiente || {}).eleicao;
+  if (eleicao && eleicao.turno === '2' && cargo.cd === '3' && st.uf
+      && (eleicao.governador_decidido_1o_turno || []).includes(st.uf)) {
+    out.push(el('div', {cls: 'nota aten'},
+      el('b', {}, `${st.uf.toUpperCase()} decidiu no 1º turno. `),
+      `Não houve 2º turno para governador em ${eleicao.ano}: este é o `
+      + 'resultado do 1º turno, que foi o final.'));
+  }
   out.push(kpis(u, dfn));
 
   if (dfn && dfn.sub_judice_em_jogo) {
@@ -1048,6 +1377,16 @@ async function viewResultado() {
     ...lista.map((c, i) => cartao(c, i, maxPct, estados))));
 
   const en = cands.enriquecimento || {};
+  if (eleicaoPedida()) {
+    // Eleição passada: candidatos reais, sem foto — o enriquecimento é só
+    // de 2026. Dizer "fictícios" aqui (herdado do simulado) seria falso.
+    out.push(el('div', {cls: 'nota'},
+      el('b', {}, 'De onde vem cada coisa. '),
+      `Votos, destinação, situação e nome de urna vêm dos arquivos do TSE `
+      + `de ${st.ano}. Foto, vice e perfil só existem para 2026.`));
+    out.push(detalhesTecnicos(res, u));
+    return el('div', {}, ...out);
+  }
   out.push(el('div', {cls: 'nota'},
     el('b', {}, 'De onde vem cada coisa. '),
     'Votos, destinação e situação vêm do TSE. Foto, vice e perfil vêm de ',
@@ -1063,6 +1402,59 @@ async function viewResultado() {
 
   out.push(detalhesTecnicos(res, u));
   return el('div', {}, ...out);
+}
+
+/* Presidente numa região: soma das UFs da região. Não existe arquivo de
+ * região no TSE, então a soma é nossa — e a tela diz isso, junto com o
+ * aviso de que região não elege ninguém (§3). */
+async function viewRegiao(cargo) {
+  const res = await get(`/results?abrangencia=uf&cargo=${cargo.cd}`);
+  rodape(res);
+  const ufs = res.dados.filter(d => REGIAO_UF[d.geografia.uf] === st.regiao);
+  if (!ufs.length) {
+    return el('div', {cls: 'estado'}, `sem dados das UFs do ${st.regiao}`);
+  }
+  const soma = (f) => ufs.reduce((a, d) => a + (f(d) || 0), 0);
+  const e = {}, sc = {}, v = {};
+  for (const k of ['total', 'apurado', 'nao_totalizado', 'nao_instalado',
+                   'comparecimento', 'abstencao'])
+    e[k] = soma(d => d.eleitorado[k]);
+  e.comparecimento_pct = e.apurado ? 100 * e.comparecimento / e.apurado
+                                   : null;
+  for (const k of ['total', 'totalizadas', 'instaladas', 'apuradas'])
+    sc[k] = soma(d => d.secoes[k]);
+  for (const k of Object.keys(ufs[0].votos)) v[k] = soma(d => d.votos[k]);
+  const u = {eleitorado: e, secoes: sc, votos: v,
+             pendente: {min: soma(d => d.pendente.min),
+                        max: soma(d => d.pendente.max)},
+             andamento: ufs.every(d => d.andamento === 'f') ? 'f' : 'p'};
+  const cands = new Map();
+  for (const d of ufs) for (const c of d.candidatos) {
+    const x = cands.get(c.sqcand) || {...c, votos: 0};
+    x.votos += c.votos;
+    cands.set(c.sqcand, x);
+  }
+  const den = v.validos_computados;
+  const lista = [...cands.values()].map(c => ({oficial: {
+      ...c, pct: den && c.destinacao_voto === 'Válido' ? 100 * c.votos / den
+                                                      : null,
+      situacao: null, eleito_segundo_tse: null}, enriquecimento: null}))
+    .sort((a, b) => b.oficial.votos - a.oficial.votos);
+  const maxPct = Math.max(...lista.map(c => c.oficial.pct || 0), 0);
+  return el('div', {},
+    el('div', {cls: 'nota aten'},
+      el('b', {}, `${cargo.nome} no ${st.regiao} — recorte do voto. `),
+      `Soma das ${ufs.length} UFs da região (${ufs.map(d =>
+        d.geografia.uf.toUpperCase()).join(', ')}), feita pelo Observatório: `
+      + 'o TSE não publica total por região. A disputa é decidida no total '
+      + 'do Brasil. ',
+      el('button', {style: 'font-size:12px;padding:2px 10px;'
+          + 'border-radius:999px;border:1px solid var(--line);'
+          + 'background:var(--panel);color:var(--fg);cursor:pointer',
+        onclick: () => { st.regiao = ''; }}, 'voltar ao Brasil')),
+    kpis(u, null),
+    el('div', {cls: 'cards'},
+      ...lista.map((c, i) => cartao(c, i, maxPct, {}))));
 }
 
 function detalhesTecnicos(res, u) {
@@ -1125,7 +1517,11 @@ function filtroTerritorial(m, abr) {
        value: v, selected: String(valor || '') === String(v) ? '' : null,
      }, t))));
 
-  const kids = [
+  // Presidente: região, estado e município já estão na trilha, visíveis
+  // em todas as abas. Repeti-los aqui dava dois controles para a mesma
+  // escolha; ficam só os botões de subir um nível.
+  const naTrilha = cargoAtual().abr === 'br';
+  const kids = naTrilha ? [] : [
     sel('Região', st.regiao, regioes.map(r => [r, r]),
         v => { st.regiao = v; st.uf = ''; st.municipio = ''; },
         'todas as regiões'),
@@ -1144,7 +1540,7 @@ function filtroTerritorial(m, abr) {
 
   // Município só faz sentido com o mapa já em municípios: a lista de 5.570
   // num seletor é pior do que não ter seletor.
-  if (abr === 'mu' && st.uf) {
+  if (!naTrilha && abr === 'mu' && st.uf) {
     const munis = [...m.dados]
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
       .map(d => [d.cd_ibge, d.nome + (d.capital ? ' (capital)' : '')]);
@@ -1186,6 +1582,7 @@ function filtroTerritorial(m, abr) {
       },
     }, 'Brasil inteiro'));
   }
+  if (!kids.length) return null;
   return el('div', {
     style: 'display:flex;gap:11px;align-items:flex-end;flex-wrap:wrap;'
          + 'margin:2px 0 14px',
@@ -1246,16 +1643,30 @@ async function viewMapa() {
       'aria-selected': String(id === camadaId),
       onclick: () => { st.camada = id; },
     }, c.rotulo)),
-    el('button', {
-      'aria-selected': 'false', disabled: '',
-      title: 'Classificação ideológica pendente de curadoria com autoria',
-      style: 'opacity:.45;cursor:not-allowed',
-    }, 'Bloco ideológico')));
+    ));
 
-  wrap.append(filtroTerritorial(m, abr));
+  const filtro = filtroTerritorial(m, abr);
+  if (filtro) wrap.append(filtro);
 
   wrap.append(el('div', {cls: 'nota'}, el('b', {}, camada.rotulo + '. '),
                  camada.nota));
+  const eleicao = (m.ambiente || {}).eleicao;
+  const pelo1t = eleicao && eleicao.turno === '2' && cargo.cd === '3'
+    ? (eleicao.governador_decidido_1o_turno || []) : [];
+  if (pelo1t.length) {
+    wrap.append(el('div', {cls: 'nota aten'},
+      el('b', {}, `Resultado final de ${eleicao.ano}. `),
+      `${pelo1t.length} estados decidiram o governador no 1º turno e `
+      + 'aparecem com o resultado dele: '
+      + pelo1t.map(u => u.toUpperCase()).join(', ') + '. Os demais, 2º turno.'));
+  }
+  if (camadaId === 'ideologia'
+      && m.classificacao_estado !== 'disponivel') {
+    wrap.append(el('div', {cls: 'nota aten'},
+      el('b', {}, 'Classificação não assinada. '),
+      'O mapa ideológico fica em hachura até a curadoria ser assinada — '
+      + 'veja a aba Configuração, "Partidos × ideologia".'));
+  }
 
   const caixa = el('div', {style: 'background:var(--panel);border:1px solid '
     + 'var(--line);border-radius:var(--radius);padding:5px'});
@@ -1362,35 +1773,215 @@ function tabelaMapa(m, camada, ctx) {
 
 /* ------------------------------------------------------------- projeção */
 
+/* ------------------------------------------------- governadores, nacional
+ *
+ * Governador sem UF: os 27 estados de uma vez, cada um num card com os dois
+ * primeiros — votos, % e a projeção registrada pelo coletor (mediana e
+ * intervalo de 80%; probabilidade só com o gate homologado). Clicar abre o
+ * estado. */
+const EST_GOV = {eleito: ['ok', 'eleito'], definido: ['ok', 'definido'],
+                 segundo_turno: ['info', '2º turno definido'],
+                 liderando: ['info', 'em apuração'],
+                 aguardando: ['', 'aguardando']};
+
+function linhaProj(pj, publicavel) {
+  if (!pj) return el('span', {cls: 'null'}, 'sem projeção');
+  const f = v => v.toFixed(1).replace('.', ',');
+  return el('span', {style: 'color:var(--proj)'},
+    `proj. ${f(pj.pct_mediana)}% (${f(pj.pct_q100)}–${f(pj.pct_q900)})`,
+    publicavel && pj.prob_lideranca != null
+      ? ` · ${Math.round(100 * pj.prob_lideranca)}% de chance` : '');
+}
+
+async function viewPanoramaGov() {
+  let r;
+  try { r = await get('/panorama?cargo=3'); }
+  catch (e) {
+    // Servidor ainda sem a rota nova (antes de reiniciar): diz o que fazer.
+    return el('div', {cls: 'estado'},
+      'O panorama dos 27 estados precisa do servidor reiniciado (feche a '
+      + 'janela preta e rode "Iniciar Observatório 2026"). Enquanto isso, '
+      + 'escolha uma UF acima.');
+  }
+  rodape(r);
+  const cards = r.dados.map(u => {
+    const [cls, txt] = EST_GOV[u.estado] || ['', u.estado];
+    const max = Math.max(1, ...u.candidatos.map(c => c.pct || 0));
+    return el('div', {cls: 'cand', style: 'flex-direction:column;gap:6px;'
+        + 'cursor:pointer', onclick: () => { st.uf = u.uf; }},
+      el('div', {style: 'display:flex;align-items:baseline;gap:8px;'
+          + 'width:100%'},
+        el('b', {style: 'font-size:16px'}, u.uf.toUpperCase()),
+        el('span', {cls: 'tag ' + cls}, txt),
+        el('span', {style: 'margin-left:auto;font-size:12px;'
+                         + 'color:var(--muted)'},
+           u.apurado_pct == null ? 'sem dado'
+             : `${pct(u.apurado_pct, 1)} apurado`)),
+      ...(u.candidatos.length ? u.candidatos.map((c, i) => el('div', {
+          style: 'width:100%'},
+        el('div', {style: 'display:flex;align-items:baseline;gap:6px'},
+          el('span', {cls: 'sw', style: `background:${c.partido.cor}`}),
+          el('span', {style: 'font-weight:' + (i ? 500 : 650)
+                           + ';flex:1;min-width:0;overflow:hidden;'
+                           + 'text-overflow:ellipsis;white-space:nowrap'},
+             c.nome),
+          el('span', {style: 'font-size:11.5px;color:var(--muted)'},
+             c.partido.sigla),
+          el('b', {style: 'font-variant-numeric:tabular-nums'},
+             c.pct == null ? 'n/d' : pct(c.pct))),
+        el('div', {cls: 'barra', style: 'margin-top:3px'},
+          el('i', {style: `width:${100 * (c.pct || 0) / max}%;`
+                        + `background:${c.partido.cor}`})),
+        el('div', {style: 'display:flex;justify-content:space-between;'
+                        + 'font-size:11.5px;margin-top:2px'},
+          el('span', {style: 'color:var(--muted)'}, fmt(c.votos) + ' votos'),
+          linhaProj(c.projecao, u.projecao_publicavel))))
+        : [el('div', {cls: 'null', style: 'font-size:12.5px'},
+              'nenhum voto contado ainda')]));
+  });
+  return el('div', {},
+    el('div', {cls: 'nota'}, el('b', {}, 'Os 27 estados. '),
+      'Clique num estado para abrir a disputa dele. ', r.nota_projecao),
+    el('div', {cls: 'cards'}, ...cards));
+}
+
+/* ------------------------------------------------------------- projeção
+ *
+ * A projeção da disputa: mediana e intervalo de 80% por candidato, sempre;
+ * probabilidade só com o gate homologado (§4.7). Lê a última registrada
+ * pelo coletor (a mesma do telão), sem calcular de novo. */
 async function viewProjecao() {
   const cargo = cargoAtual();
-  const d = await get(`/forecasts?cargo=${cargo.cd}`);
+  if (cargo.abr === 'uf' && !st.uf) {
+    return el('div', {cls: 'estado'},
+      `Escolha uma UF acima: a projeção de ${cargo.nome.toLowerCase()} é `
+      + 'feita estado a estado.');
+  }
+  const qs = `cargo=${cargo.cd}` + (cargo.abr === 'uf' ? `&uf=${st.uf}` : '');
+  const d = await get(`/projection?${qs}&registrar=false`);
   rodape(d);
-  const nomes = {
-    aguardando: 'Aguardando dados',
-    cenario_exploratorio: 'Cenário exploratório',
-    projecao_disponivel: 'Projeção disponível',
-    projecao_suspensa: 'Projeção suspensa',
-    resultado_oficial: 'Resultado oficial',
-  };
+  if (!d.dados) {
+    return el('div', {cls: 'estado'}, d.status_motivo || 'sem projeção ainda');
+  }
+  const pub = !!d.publicavel;
+  const f = v => v == null ? '—' : v.toFixed(1).replace('.', ',') + '%';
+  const idade = d.idade_s != null
+    ? `registrada há ${Math.round(d.idade_s)} s` : 'calculada agora';
   return el('div', {},
     el('div', {cls: 'resumo'},
-      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Estado do produto'),
+      el('div', {cls: 'kpi', style: pub ? 'border-color:var(--ok)'
+                                        : 'border-color:var(--alerta)'},
+        el('div', {cls: 'k'}, 'Estado'),
         el('div', {cls: 'v', style: 'font-size:16px'},
-           nomes[d.status] || d.status),
-        el('div', {cls: 'n'}, 'nenhuma probabilidade publicada'))),
-    el('div', {cls: 'nota aten'}, el('b', {}, 'Por que não há projeção: '),
-       d.status_motivo),
-    el('div', {cls: 'nota'}, el('b', {}, 'O que muda quando liberar. '),
-      'A projeção estima separadamente comparecimento, taxa de votos válidos '
-      + 'e preferência nos locais pendentes, e só então agrega contagens — '
-      + 'nunca extrapolando o percentual nacional já apurado. Intervalo '
-      + 'preditivo não é margem de erro de pesquisa.'),
-    el('div', {cls: 'nota'}, el('b', {}, 'Enquanto isso. '),
-      'A aba Resultado já mostra o que está ',
-      el('b', {}, 'matematicamente definido'),
-      ' — certeza aritmética, não estimativa, e que não depende de nenhuma '
-      + 'homologação.'));
+           pub ? 'projeção publicada' : 'cenário exploratório'),
+        el('div', {cls: 'n'}, pub ? 'gate estatístico homologado'
+                                  : 'sem probabilidade de vitória')),
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Apurado'),
+        el('div', {cls: 'v'}, f(d.cobertura_pct)),
+        el('div', {cls: 'n'}, 'do eleitorado')),
+      el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Modelo'),
+        el('div', {cls: 'v', style: 'font-size:16px'},
+           String(d.modelo || '').toUpperCase()),
+        el('div', {cls: 'n'}, `${fmt(d.n_sims)} simulações · ${idade}`))),
+    !pub ? el('div', {cls: 'nota aten'}, el('b', {}, 'Cenário, não previsão. '),
+      d.status_motivo) : null,
+    // Vencedor projetado: probabilidade, com régua dura (engine/chamada.py).
+    // Quando ainda não dá, a tela diz o que falta — é o que evita a
+    // pergunta "e por que não?" no meio da apuração.
+    (() => {
+      const ch = d.chamada;
+      if (!ch || !pub) return null;
+      // Hierarquia: conta vence probabilidade. Com a disputa definida
+      // matematicamente, é isso que a tela diz — "vencedor projetado" seria
+      // dizer menos do que se sabe.
+      const dfn = d.definicao || {};
+      if (dfn.disputa_definida || dfn.segundo_turno_definido) {
+        const quem = d.dados.filter(c =>
+          c.estado_matematico === 'matematicamente_eleito'
+          || c.estado_matematico === 'matematicamente_no_segundo_turno');
+        // Com sub judice capaz de mudar o resultado, a conta vale no
+        // cenário de validação: a tela diz em qual cenário está falando.
+        const dois = dfn.cenarios_divergem;
+        return el('div', {cls: dois ? 'nota aten' : 'nota ok'},
+          el('b', {}, dfn.disputa_definida ? 'Matematicamente eleito: '
+                                           : 'Garantidos entre os dois '
+                                             + 'primeiros: '),
+          quem.map(c => c.nome).join(', '),
+          dois
+            ? ' — com os votos sub judice validados. Se forem cassados, '
+              + 'muda quem se define; por isso os dois cenários seguem '
+              + 'na tela até a decisão judicial.'
+            : ' — conta, não probabilidade: o que falta apurar não alcança.');
+      }
+      if (ch.apta && ch.tipo === 'segundo_turno') {
+        return el('div', {cls: 'nota ok'}, el('b', {}, '2º turno projetado: '),
+          ch.candidatos.map(c => c.nome).join(' × '),
+          ` — chance de ${Math.floor(100 * ch.probabilidade_minima)}% ou mais`
+          + ' de ninguém ter maioria absoluta, estável em '
+          + `${ch.registros_estaveis} registros. É probabilidade, não `
+          + 'conta: o que falta apurar, em tese, ainda muda.');
+      }
+      // Servidor anterior a 04/10/2026 não envia o tipo e apontava quem
+      // lidera, não quem vence: com uma vaga, não se afirma vencedor.
+      if (ch.apta && !ch.tipo && cargoAtual().vagas === 1) {
+        return el('div', {cls: 'nota'}, el('b', {}, 'Sem vencedor projetado. '),
+          'Liderança projetada de ',
+          ch.candidatos.map(c => c.nome).join(', '),
+          ' — liderar no 1º turno não é vencer.');
+      }
+      if (ch.apta) {
+        return el('div', {cls: 'nota ok'}, el('b', {}, 'Vencedor projetado: '),
+          ch.candidatos.map(c => c.nome).join(', '),
+          ` — chance de ${Math.floor(100 * ch.probabilidade_minima)}% ou mais,`
+          + ` estável em ${ch.registros_estaveis} registros. `, ch.nota,
+          ' Ainda não é definição matemática: o que falta apurar, em tese, '
+          + 'alcança.');
+      }
+      return el('div', {cls: 'nota'}, el('b', {}, 'Sem vencedor projetado. '),
+        ch.motivo + `. Régua: ${Math.round(100 * ch.regra.p_min)}% de chance,`
+        + ` ${ch.regra.registros} registros seguidos e `
+        + `${ch.regra.apurado_min_pct}% apurado.`);
+    })(),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Candidato'),
+      el('th', {cls: 'num'}, 'Apurado (votos)'),
+      el('th', {cls: 'num'}, 'Projeção'),
+      el('th', {cls: 'num'}, (() => {
+        // O nível da faixa sobe com o apurado (engine/nivel.py): a tela
+        // sempre diz qual está valendo — faixa sem nível não significa nada.
+        const fx = d.dados[0] && d.dados[0].projecao.faixa;
+        return fx ? `Intervalo ${fx.nivel}%` : 'Intervalo 80%';
+      })()),
+      pub ? el('th', {cls: 'num'}, cargo.vagas > 1 ? 'Chance de vaga'
+                                                   : 'Chance de liderar')
+          : null,
+      pub && cargo.cd !== '5' ? el('th', {cls: 'num hide-sm'},
+                                   'Maioria absoluta') : null)),
+      el('tbody', {}, ...d.dados.map(c => el('tr', {},
+        el('td', {}, c.nome),
+        el('td', {cls: 'num'}, fmt(c.votos_observados)),
+        el('td', {cls: 'num', style: 'color:var(--proj);font-weight:600'},
+           f(c.projecao.pct_mediana)),
+        el('td', {cls: 'num', style: 'color:var(--muted)'},
+           c.projecao.faixa
+             ? `${f(c.projecao.faixa.pct_min)} – ${f(c.projecao.faixa.pct_max)}`
+             : `${f(c.projecao.pct_q100)} – ${f(c.projecao.pct_q900)}`),
+        pub ? el('td', {cls: 'num'}, c.probabilidades
+          ? Math.round(100 * (cargo.vagas > 1
+              ? c.probabilidades.dentro_das_vagas
+              : c.probabilidades.lideranca)) + '%' : '—') : null,
+        pub && cargo.cd !== '5' ? el('td', {cls: 'num hide-sm'},
+          c.probabilidades && c.probabilidades.maioria_absoluta != null
+            ? Math.round(100 * c.probabilidades.maioria_absoluta) + '%'
+            : '—') : null)))),
+    el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '),
+      'Percentual sobre votos a concorrentes, a base da maioria absoluta. '
+      + 'O intervalo é preditivo — contém o resultado final na proporção '
+      + 'que o nível declara —, não margem de erro de pesquisa. O nível '
+      + 'sobe com a apuração: 80% até 15% apurado e 90% daí em diante — '
+      + 'no ensaio de 2018 a faixa de 95% entregou 92%, e prometer 95% '
+      + 'seria prometer o que o modelo não cumpre. '
+      + 'Subir o nível não torna a projeção mais precisa; alarga a faixa, '
+      + 'e com mais votos contados essa garantia maior cabe na tela.'));
 }
 
 /* --------------------------------------------------------- convergência */
@@ -1623,9 +2214,1555 @@ async function viewAuditoria() {
   return el('div', {}, ...out);
 }
 
+/* --------------------------------------------------------- configuração
+ *
+ * As chaves que se mexem com o sistema no ar. Cada seção grava sozinha e
+ * mostra o que ficou gravado (a resposta do servidor relida do disco), não
+ * o que foi pedido. Nada aqui muda voto, apuração ou projeção já feita:
+ * modelo e chaves valem da próxima passada em diante. */
+
+async function postConfig(rota, corpo) {
+  const r = await fetch(API + '/configuracao/' + rota, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(corpo || {}),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const det = d.detail;
+    throw new Error(typeof det === 'string' ? det
+      : (det && det.motivo) || `erro ${r.status}`);
+  }
+  return d.dados;
+}
+
+const idade = iso => {
+  if (!iso) return null;
+  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  return s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)} min`
+    : `${Math.round(s / 3600)} h`;
+};
+
+const dataBR = iso => iso ? new Date(iso).toLocaleString('pt-BR',
+  {timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit',
+   hour: '2-digit', minute: '2-digit'}) : '—';
+
+async function viewConfig() {
+  let c = (await get('/configuracao')).dados;
+  const raiz = el('div', {});
+  const msg = el('div', {});
+
+  const aviso = (txt, erro) => poe(msg, el('div', {
+    cls: 'nota' + (erro ? ' aten' : '')}, txt));
+  const tenta = async (fn, ok) => {
+    try { c = await fn(); aviso(ok); desenhar(); }
+    catch (e) { aviso('Não gravado: ' + e.message, true); }
+  };
+  /* Ligar e desligar o coletor não é instantâneo: quem diz se ele está no ar
+   * é o batimento que ele grava a cada 5 s, e o pedido de parada só é
+   * atendido na volta seguinte do laço dele. Sem esperar, a tela redesenhava
+   * com o estado velho e parecia que o clique não pegou — daí o hábito de
+   * clicar duas vezes, que chegava a pedir dois coletores. Agora a tela
+   * espera a confirmação, com o botão travado enquanto isso. */
+  // Enquanto o pedido está em curso, `desenhar()` refaz o botão: sem
+  // guardar o estado aqui, ele voltava a dizer "Iniciar coletor" no meio da
+  // espera — a aparência de clique perdido que levava ao clique duplo.
+  let coletorPendente = null;   // 'iniciando' | 'parando' | null
+  const vivo = (x) => !!(x && x.coletor && x.coletor.visto_em
+    && (Date.now() - new Date(x.coletor.visto_em).getTime()) < 30000);
+  // Ao sair, o coletor grava `parado_em` junto com o último batimento. Sem
+  // olhar isso, a parada só apareceria 30 s depois, quando o batimento
+  // envelhece — e a tela ficava em "parando…" com ele já fora do ar.
+  const parado = (x) => {
+    const col = x && x.coletor;
+    if (!col || !vivo(x)) return true;
+    return !!(col.parado_em && col.visto_em
+              && new Date(col.parado_em) >= new Date(col.visto_em));
+  };
+  const aguardarColetor = async (queroVivo, ate = 40000) => {
+    const fim = Date.now() + ate;
+    while (Date.now() < fim) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const novo = (await get('/configuracao')).dados;
+        const pronto = queroVivo ? (vivo(novo) && !parado(novo))
+                                 : parado(novo);
+        if (pronto) { c = novo; desenhar(); return true; }
+        c = novo;
+      } catch (e) { /* servidor ocupado: tenta de novo */ }
+    }
+    try { c = (await get('/configuracao')).dados; } catch (e) { /* idem */ }
+    desenhar();
+    return false;
+  };
+  const secao = (titulo, ...filhos) => el('section', {
+    style: 'border:1px solid var(--line);border-radius:var(--radius);'
+         + 'padding:4px 16px 14px;margin:14px 0;background:var(--bg)'},
+    el('h2', {}, titulo), ...filhos);
+  const botao = (txt, onclick, extra) => el('button', {onclick,
+    style: 'background:var(--panel);border:1px solid var(--line);'
+         + 'border-radius:8px;padding:6px 13px;font:inherit;font-size:13px;'
+         + 'color:var(--fg);cursor:pointer;margin:3px 6px 3px 0;'
+         + (extra || '')}, txt);
+
+  function secaoModelo() {
+    const atual = c.operacao.modelo_projecao;
+    return secao('Modelo de projeção',
+      el('div', {style: 'display:flex;flex-direction:column;gap:8px'},
+        ...c.modelos.map(m => el('label', {
+          style: 'display:flex;gap:10px;align-items:flex-start;'
+               + 'text-transform:none;letter-spacing:0;font-size:13.5px;'
+               + 'color:var(--fg);cursor:pointer;padding:8px 10px;'
+               + 'border-radius:8px;border:1px solid '
+               + (m.id === atual ? 'var(--acento)' : 'var(--line)')},
+          el('input', {type: 'radio', name: 'modelo', value: m.id,
+            checked: m.id === atual ? '' : null,
+            onchange: () => {
+              if (m.id === 'm0' && !confirm('M0 é só a referência do gate '
+                  + 'estatístico, não um modelo de produção. Usar mesmo '
+                  + 'assim?')) { desenhar(); return; }
+              tenta(() => postConfig('operacao', {modelo_projecao: m.id}),
+                `Modelo em produção: ${m.nome}. Vale da próxima projeção `
+                + 'em diante (o coletor registra a cada 2 min; o telão '
+                + 'guarda 60 s).');
+            }}),
+          el('div', {},
+            el('b', {}, m.nome),
+            m.recomendado ? [' ', el('span', {cls: 'tag ok'},
+                                     'recomendado')] : null,
+            m.id === atual ? [' ', el('span', {cls: 'tag info'},
+                                      'em produção')] : null,
+            el('div', {style: 'color:var(--muted);font-size:12.5px;'
+                            + 'margin-top:2px'}, m.descricao))))),
+      el('div', {cls: 'nota'}, 'A troca vale para projeções novas. As já '
+        + 'registradas continuam no diário com o modelo com que foram '
+        + 'feitas — o gráfico de convergência mostra a troca como série '
+        + 'nova, não reescreve o passado (§5.2).'));
+  }
+
+  function secaoColeta() {
+    const col = c.coletor;
+    // "No ar" é batimento recente E sem marca de saída. O coletor grava
+    // `parado_em` no mesmo instante do último batimento quando sai; sem
+    // olhar isso, a tela diria "no ar" por mais 30 s depois de ele fechar.
+    const paradoAgora = !!(col && col.parado_em && col.visto_em
+      && new Date(col.parado_em) >= new Date(col.visto_em));
+    const vivo = !paradoAgora && col && col.visto_em
+      && (Date.now() - new Date(col.visto_em).getTime()) < 30000;
+    const chave = (rotulo, k, nota) => el('label', {
+      style: 'display:flex;gap:10px;align-items:flex-start;'
+           + 'text-transform:none;letter-spacing:0;font-size:13.5px;'
+           + 'color:var(--fg);margin:8px 0;cursor:pointer'},
+      el('input', {type: 'checkbox',
+        checked: c.operacao.coleta[k] ? '' : null,
+        onchange: e => tenta(() => postConfig('operacao',
+          {coleta: {[k]: e.target.checked}}),
+          `${rotulo}: ${e.target.checked ? 'ligado' : 'desligado'}. O `
+          + 'coletor aplica na próxima volta do laço.')}),
+      el('div', {}, el('b', {}, rotulo),
+        el('div', {style: 'color:var(--muted);font-size:12.5px'}, nota)));
+    const ult = c.ultimo_comando;
+    const atendido = ult && col && col.ultimo_comando_id >= ult.id;
+    return secao('Coleta',
+      el('div', {cls: 'resumo'},
+        el('div', {cls: 'kpi', style: vivo ? null
+            : 'border-color:var(--alerta)'},
+          el('div', {cls: 'k'}, 'Coletor'),
+          el('div', {cls: 'v', style: 'font-size:17px'},
+             vivo ? 'no ar' : col ? 'parado' : 'nunca visto'),
+          el('div', {cls: 'n'}, col
+            ? (vivo ? `último sinal há ${idade(col.visto_em)}`
+               : `parou há ${idade(col.parado_em || col.visto_em)}`
+                 + (col.motivo_parada ? ` · ${col.motivo_parada}` : ''))
+            : 'rode obs2026 coletar'),
+          el('div', {style: 'margin-top:8px'}, c.ambiente.demonstracao ? null
+            : coletorPendente
+              ? botao(coletorPendente === 'parando' ? 'parando…'
+                                                    : 'iniciando…',
+                      null, 'opacity:.6;cursor:progress')
+            : vivo ? botao('■ Parar coletor', async () => {
+                if (!confirm('Parar o coletor? Ele termina a volta atual e '
+                             + 'sai. Painel e telão continuam no ar.')) return;
+                coletorPendente = 'parando';
+                await tenta(() => postConfig('comando', {acao: 'parar'}),
+                  'Pedido enviado: aguardando o coletor sair…');
+                const ok = await aguardarColetor(false);
+                coletorPendente = null;
+                desenhar();
+                aviso(ok ? 'Coletor parado.'
+                  : 'O coletor ainda aparece no ar; veja a janela dele.');
+              })
+            : botao('▶ Iniciar coletor', async () => {
+                coletorPendente = 'iniciando';
+                await tenta(() => postConfig('coletor/iniciar', {}),
+                  'Coletor aberto numa janela própria — aguardando o '
+                  + 'primeiro batimento…');
+                const ok = await aguardarColetor(true);
+                coletorPendente = null;
+                desenhar();
+                aviso(ok ? 'Coletor no ar.'
+                  : 'Iniciado, mas sem batimento ainda; veja a janela dele.');
+              }))),
+        el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Fila'),
+          el('div', {cls: 'v'}, col ? fmt(col.fila) : '—'),
+          el('div', {cls: 'n'}, col ? `${String(col.req_s).replace('.', ',')}`
+            + ' req/s em média' : '')),
+        el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Finalizados'),
+          el('div', {cls: 'v'}, col ? fmt(col.finalizados) : '—'),
+          el('div', {cls: 'n'}, 'fora das buscas, vigiados'))),
+      chave('Pular o que o TSE já finalizou', 'pular_finalizados',
+        'Poupa a cota de 100 req/s para o que ainda muda. O finalizado '
+        + 'continua vigiado pelo EA14/EA15 e volta se o TSE re-totalizar.'),
+      chave('Buscar deputados federais', 'deputados_federais',
+        'Só os 27 arquivos de UF, a cada 2 min (0,23 req/s), para a tela '
+        + 'de composição da Câmara. Sem projeção e sem municípios.'),
+      chave('Parar o coletor quando o TSE encerrar', 'encerrar_ao_finalizar',
+        'Quando Brasil e todas as UFs estiverem encerrados, o coletor espera '
+        + '10 min pelos últimos arquivos e se desliga. Painel e telão '
+        + 'continuam com o resultado final.'
+        + (col && col.encerra_em_s != null
+           ? ` Encerramento em ${Math.ceil(col.encerra_em_s / 60)} min.`
+           : '')),
+      el('div', {style: 'margin-top:10px'},
+        botao('⟳ Forçar atualização dos totais', () => tenta(
+          () => postConfig('comando', {acao: 'forcar_totais'}),
+          'Pedido enviado ao coletor: Brasil, UFs e deputados vão para a '
+          + 'frente da fila, inclusive os finalizados. Confira abaixo '
+          + 'quando ele atender.'), 'border-color:var(--acento)'),
+        botao('Forçar varredura completa', () => {
+          if (!confirm('Enfileirar os ~16.900 arquivos municipais? Vão '
+              + 'atrás de tudo que muda, mas ocupam cerca de 14 minutos de '
+              + 'cota a 20 req/s.')) return;
+          tenta(() => postConfig('comando', {acao: 'forcar_tudo'}),
+                'Varredura completa pedida ao coletor.');
+        }),
+        botao('Reler o dia no banco', () => {
+          if (!confirm('Reler no banco tudo o que chegou hoje do TSE? Não '
+              + 'duplica nada; serve quando o painel parece parado num '
+              + 'retrato velho. Leva de segundos a poucos minutos.')) return;
+          tenta(() => postConfig('reler-dia', {}),
+                'A carga do coletor relê o dia na próxima passada (5 s). '
+                + 'Arquivos que falharem ficam pendentes e são tentados de '
+                + 'novo sozinhos.');
+        }),
+        botao('Limpar memória do mapa', () => tenta(
+          () => postConfig('cache', {}),
+          'Memória de linhas do mapa esvaziada; a próxima leitura '
+          + 'recalcula do banco.'))),
+      ult ? el('div', {cls: 'nota' + (atendido ? '' : ' aten')},
+        el('b', {}, `Último pedido #${ult.id}: `), c.comandos[ult.acao]
+          || ult.acao, ` — pedido ${dataBR(ult.pedido_em)}; `,
+        atendido
+          ? `atendido às ${dataBR(col.ultimo_comando_atendido_em)} `
+            + `(${fmt(col.ultimo_comando_alvos)} arquivos enfileirados).`
+          : vivo ? 'aguardando o coletor (ele confere a cada volta).'
+          : 'o coletor não está no ar — e um pedido feito com ele parado '
+            + 'não é executado quando ele voltar, de propósito.') : null);
+  }
+
+  function secaoTelao() {
+    return secao('Telão',
+      botao('↻ Recarregar o telão', () => {
+        comandarTelao('recarregar');
+        aviso('Telão recarregado (se estiver aberto neste navegador).');
+      }),
+      botao('Abrir telão ↗', abrirTelao),
+      el('div', {cls: 'nota'}, 'Recarregar relê a página do projetor — '
+        + 'útil depois de assinar a classificação ou trocar cores. O '
+        + 'roteiro continua o gravado, na aba Telão.'));
+  }
+
+  function secaoPartidos() {
+    const cl = c.classificacao;
+    const cats = cl.categorias;
+    const linhas = c.partidos.map(p => ({...p, _orig: JSON.stringify(
+      [p.ideologia, p.grau_controversia, p.justificativa, p.fonte]),
+      _cor: p.cor}));
+    const mudadas = () => linhas.filter(p => JSON.stringify(
+      [p.ideologia, p.grau_controversia, p.justificativa, p.fonte])
+      !== p._orig);
+    const cores = () => linhas.filter(p => p.cor !== p._cor);
+    const nome = el('input', {type: 'text', placeholder: 'seu nome',
+      value: cl.curador || '',
+      style: 'background:var(--bg);color:var(--fg);border:1px solid '
+           + 'var(--line);border-radius:6px;padding:6px 9px;font:inherit;'
+           + 'font-size:13.5px;min-width:220px'});
+    const estadoBtn = el('span', {});
+    const campo = 'background:var(--bg);color:var(--fg);border:1px solid '
+      + 'var(--line);border-radius:6px;padding:3px 6px;font:inherit;'
+      + 'font-size:12.5px;width:100%';
+
+    function atualizarBotao() {
+      const n = mudadas().length, k = cores().length;
+      poe(estadoBtn,
+        cl.estado !== 'disponivel' && !n
+          ? botao('✍ Assinar a proposta como está', assinar,
+                  'border-color:var(--ok)') : null,
+        n ? botao(`✍ Gravar ${n} alteração(ões) e assinar`, assinar,
+                  'border-color:var(--ok)') : null,
+        k ? botao(`Gravar ${k} cor(es)`, gravarCores) : null,
+        (n || k) ? botao('Descartar', () => desenhar()) : null);
+    }
+    async function assinar() {
+      const quem = nome.value.trim();
+      if (quem.length < 3) {
+        aviso('Informe o nome de quem responde pela classificação.', true);
+        nome.focus();
+        return;
+      }
+      const alts = mudadas().map(p => ({numero: p.numero,
+        ideologia: p.ideologia, grau_controversia: p.grau_controversia,
+        justificativa: p.justificativa, fonte: p.fonte}));
+      if (!confirm(`Assinar a classificação como "${quem}"? `
+          + (alts.length ? `${alts.length} partido(s) alterado(s); ` : '')
+          + 'ela passa a aparecer no telão, com o seu nome.')) return;
+      tenta(() => postConfig('classificacao', {curador: quem,
+        alteracoes: alts}), 'Classificação assinada. O telão passa a '
+        + 'mostrar a ideologia na próxima atualização.');
+    }
+    function gravarCores() {
+      const cs = {};
+      for (const p of cores()) cs[p.numero] = p.cor;
+      tenta(() => postConfig('cores', {cores: cs}), 'Cores gravadas.');
+    }
+
+    const tabela = el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {}, 'Nº'), el('th', {}, 'Partido'),
+        el('th', {}, 'Ideologia'), el('th', {}, 'Controv.'),
+        el('th', {}, 'Justificativa e fonte'))),
+      el('tbody', {}, ...linhas.map(p => el('tr', {},
+        el('td', {cls: 'num'}, p.numero),
+        el('td', {style: 'white-space:nowrap'},
+          el('input', {type: 'color', value: p.cor,
+            title: 'cor do partido nos mapas',
+            style: 'width:26px;height:22px;border:0;padding:0;'
+                 + 'background:none;vertical-align:middle;cursor:pointer',
+            oninput: e => { p.cor = e.target.value.toUpperCase();
+                            atualizarBotao(); }}),
+          ' ', el('b', {}, p.sigla),
+          el('div', {style: 'font-size:11px;color:var(--muted)'}, p.nome)),
+        el('td', {}, el('select', {style: campo,
+            onchange: e => { p.ideologia = e.target.value || null;
+                             atualizarBotao(); }},
+          el('option', {value: '', selected: p.ideologia ? null : ''},
+             '— sem classificação'),
+          ...cats.map(k => el('option', {value: k.id,
+            selected: p.ideologia === k.id ? '' : null},
+            k.simbolo + ' ' + k.rotulo))),
+          p.autor ? el('div', {style: 'font-size:10.5px;color:var(--muted);'
+            + 'margin-top:2px'}, `${p.autor}, ${p.decidido_em || ''}`)
+            : el('div', {style: 'font-size:10.5px;color:var(--alerta);'
+            + 'margin-top:2px'}, p.ideologia ? 'sem autor (proposta)' : '')),
+        el('td', {}, el('select', {style: campo + ';width:52px',
+            title: '0 consensual · 3 fortemente disputada',
+            onchange: e => { p.grau_controversia = +e.target.value;
+                             atualizarBotao(); }},
+          ...[0, 1, 2, 3].map(g => el('option', {value: g,
+            selected: p.grau_controversia === g ? '' : null}, String(g))))),
+        el('td', {style: 'min-width:260px'},
+          el('textarea', {rows: 2, style: campo + ';resize:vertical',
+            oninput: e => { p.justificativa = e.target.value;
+                            atualizarBotao(); }}, p.justificativa),
+          el('input', {type: 'text', value: p.fonte, placeholder: 'fonte',
+            style: campo + ';margin-top:3px;color:var(--muted)',
+            oninput: e => { p.fonte = e.target.value;
+                            atualizarBotao(); }}))))));
+
+    const sec = secao('Partidos × ideologia',
+      el('div', {cls: 'resumo'},
+        el('div', {cls: 'kpi', style: cl.estado === 'disponivel'
+            ? 'border-color:var(--ok)' : 'border-color:var(--alerta)'},
+          el('div', {cls: 'k'}, 'Classificação'),
+          el('div', {cls: 'v', style: 'font-size:17px'},
+             cl.estado === 'disponivel' ? 'assinada' : 'proposta, sem assinatura'),
+          el('div', {cls: 'n'}, `versão ${cl.versao}`
+             + (cl.curador ? ` · ${cl.curador}` : ''))),
+        el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Classificados'),
+          el('div', {cls: 'v'}, String(c.partidos.filter(p => p.ideologia)
+                                        .length) + '/' + c.partidos.length),
+          el('div', {cls: 'n'}, 'partidos do cadastro de 2026'))),
+      el('div', {cls: 'nota'}, el('b', {}, 'Ato editorial, com autoria. '),
+        'A ideologia só aparece no telão depois de assinada, e cada '
+        + 'alteração vira versão nova com o nome de quem gravou — a anterior '
+        + 'fica em config/classificacao.anterior/. Blocos: esquerda = '
+        + 'esquerda + centro-esquerda; direita = direita + centro-direita. '
+        + 'Vale o partido do candidato, nunca o da coligação. A cor ao lado '
+        + 'da sigla é a do mapa por partido.'),
+      cl.problemas.length ? el('div', {cls: 'nota aten'},
+        el('b', {}, 'Problemas: '), cl.problemas.join(' · ')) : null,
+      el('div', {style: 'display:flex;gap:10px;align-items:center;'
+                      + 'flex-wrap:wrap;margin:8px 0'},
+        el('span', {style: 'font-size:12.5px;color:var(--muted)'},
+           'Assinar como'), nome, estadoBtn),
+      el('div', {style: 'overflow-x:auto'}, tabela));
+    atualizarBotao();
+    return sec;
+  }
+
+  function secaoGate() {
+    const h = c.homologacao, g = h.gate || {};
+    const nome = el('input', {type: 'text', placeholder: 'seu nome',
+      value: h.assinado_por || (c.classificacao.curador || ''),
+      style: 'background:var(--bg);color:var(--fg);border:1px solid '
+           + 'var(--line);border-radius:6px;padding:6px 9px;font:inherit;'
+           + 'font-size:13.5px;min-width:220px'});
+    const f = v => v == null ? '—' : String(v).replace('.', ',');
+    const tabela = g.disponivel && g.por_rodada ? el('details', {},
+      el('summary', {}, 'Erro mediano rodada a rodada (M0 × M2)'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Ordem'),
+        el('th', {cls: 'num'}, 'Rodada'), el('th', {cls: 'num'}, 'M0 (pp)'),
+        el('th', {cls: 'num'}, 'M2 (pp)'), el('th', {}, 'M2 melhor'))),
+        el('tbody', {}, ...g.por_rodada.map(r => el('tr', {},
+          el('td', {}, r.ordem), el('td', {cls: 'num'}, String(r.rodada)),
+          el('td', {cls: 'num'}, f(r.erro_m0)),
+          el('td', {cls: 'num'}, f(r.erro_m2)),
+          el('td', {}, r.m2_melhor ? el('span', {cls: 'tag ok'}, 'sim')
+                                   : el('span', {cls: 'tag err'}, 'não')))))))
+      : null;
+    return secao('Gate estatístico (probabilidade de vitória)',
+      el('div', {cls: 'resumo'},
+        el('div', {cls: 'kpi', style: h.thresholds
+            ? 'border-color:var(--ok)' : 'border-color:var(--alerta)'},
+          el('div', {cls: 'k'}, 'Situação'),
+          el('div', {cls: 'v', style: 'font-size:17px'},
+             h.thresholds ? 'homologado' : 'não homologado'),
+          el('div', {cls: 'n'}, h.thresholds
+            ? `${h.assinado_por} · ${dataBR(h.assinado_em)}`
+            : 'cenário exploratório, sem probabilidade')),
+        el('div', {cls: 'kpi', style: g.disponivel ? (g.passou
+            ? 'border-color:var(--ok)' : 'border-color:var(--erro)') : null},
+          el('div', {cls: 'k'}, 'Evidência 2022'),
+          el('div', {cls: 'v', style: 'font-size:17px'},
+             !g.disponivel ? 'não rodada' : g.passou ? 'passou' : 'não passou'),
+          el('div', {cls: 'n'}, g.disponivel
+            ? `${g.disputas} disputas · ${dataBR(g.gerado_em)}` : '')),
+        g.disponivel ? el('div', {cls: 'kpi'},
+          el('div', {cls: 'k'}, 'Cobertura do intervalo 80%'),
+          el('div', {cls: 'v', style: 'font-size:17px'},
+             `${f(g.cobertura80_m2_pct.real)}% · `
+             + `${f(g.cobertura80_m2_pct.aleatoria)}%`),
+          el('div', {cls: 'n'}, `ordem real · aleatória (±${f(g.tolerancia_pp)}`
+             + ' pp)')) : null),
+      el('div', {cls: 'nota'}, el('b', {}, 'O que é. '),
+        'Probabilidade de vitória só é publicada se o modelo em produção '
+        + 'provar, na eleição real de 2022 (ordem real de chegada e '
+        + 'aleatória), que erra menos que a referência ingênua (M0) em toda '
+        + 'rodada e que o intervalo de 80% cobre o resultado cerca de 80% '
+        + 'das vezes. Sem isso, os intervalos ficam no ar e a probabilidade '
+        + 'não.'),
+      !g.disponivel ? el('div', {cls: 'nota aten'}, g.motivo)
+        : g.recusa && g.recusa.length ? el('div', {cls: 'nota aten'},
+            el('b', {}, 'Não pode ser homologado: '), g.recusa.join('; '),
+            '. O produto segue em cenário exploratório.') : null,
+      tabela,
+      el('div', {style: 'display:flex;gap:10px;align-items:center;'
+                      + 'flex-wrap:wrap;margin:10px 0'},
+        !h.thresholds && g.passou ? [
+          el('span', {style: 'font-size:12.5px;color:var(--muted)'},
+             'Assinar como'), nome,
+          botao('✍ Homologar e liberar probabilidades', () => {
+            const quem = nome.value.trim();
+            if (quem.length < 3) { aviso('Informe o seu nome.', true); return; }
+            if (!confirm(`Homologar como "${quem}"? Probabilidades de vitória `
+                + 'passam a aparecer no painel, no telão e no WhatsApp, a '
+                + 'partir da próxima rodada de projeção (até 3 min).')) return;
+            tenta(() => postConfig('homologar', {assinante: quem}),
+                  'Homologado. Probabilidades a partir da próxima rodada.');
+          }, 'border-color:var(--ok)')] : null,
+        h.thresholds ? botao('Revogar (voltar ao cenário exploratório)', () => {
+          const motivo = prompt('Motivo da revogação (fica registrado):');
+          if (motivo === null) return;
+          tenta(() => postConfig('revogar', {motivo}),
+                'Homologação revogada: sem probabilidade a partir da próxima '
+                + 'rodada.');
+        }, 'border-color:var(--alerta)') : null));
+  }
+
+  function secaoDados() {
+    const s = c.senado;
+    return secao('Dados institucionais e homologação',
+      el('div', {cls: 'resumo'},
+        el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Senado até 2031'),
+          el('div', {cls: 'v'}, String(s.remanescentes)),
+          el('div', {cls: 'n'}, s.obtido_em ? 'partidos de '
+            + dataBR(s.obtido_em) : 'não baixado')),
+        el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Ambiente'),
+          el('div', {cls: 'v', style: 'font-size:15px'}, c.ambiente.nome),
+          el('div', {cls: 'n'}, c.ambiente.oficial ? 'oficial'
+            : c.ambiente.demonstracao ? 'demonstração' : 'simulado')),
+        el('div', {cls: 'kpi', style: c.homologacao.thresholds ? null
+            : 'border-color:var(--alerta)'},
+          el('div', {cls: 'k'}, 'Gate estatístico'),
+          el('div', {cls: 'v', style: 'font-size:15px'},
+             c.homologacao.thresholds ? 'homologado' : 'não homologado'),
+          el('div', {cls: 'n'}, c.homologacao.thresholds
+            ? `${c.homologacao.assinado_por || ''}`
+            : 'sem probabilidade publicada'))),
+      botao('Atualizar composição do Senado (usa internet)', () => {
+        if (!confirm('Baixar de novo a lista de senadores dos dados '
+            + 'abertos do Senado? Faça antes da noite, não durante.')) return;
+        tenta(() => postConfig('senado', {}), 'Composição do Senado '
+          + 'atualizada.');
+      }),
+      el('div', {cls: 'nota'}, 'Trocar de ambiente (simulado, oficial, '
+        + 'demonstração) é na hora de subir o servidor: ',
+        el('code', {}, 'obs2026 servir --env oficial2026'),
+        '. O gate estatístico é assinado em config/thresholds.yaml, fora do '
+        + 'painel, de propósito.'));
+  }
+
+  function desenhar() {
+    poe(raiz, msg, secaoModelo(), secaoGate(), secaoColeta(), secaoTelao(),
+        secaoPartidos(), secaoDados());
+  }
+  desenhar();
+  return raiz;
+}
+
 /* --------------------------------------------------------------- render */
 
+
+/* ------------------------------------------------------ deputado federal
+ *
+ * Só o resultado do TSE, sem projeção (pedido de 21/09). Não é uma disputa
+ * no banco: os 27 arquivos de UF vêm do arquivo bruto pela rota de
+ * composição. Por isso esta aba tem visão própria, e as de projeção,
+ * convergência e auditoria não se aplicam a ela. */
+async function viewCamara() {
+  const q = st.uf ? `&uf=${st.uf}` : '';
+  const r = await get(`/composicao?casa=camara${q}`);
+  rodape(r);
+  const d = r.dados;
+  const out = [];
+  out.push(el('div', {cls: 'resumo'},
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Eleitos segundo o TSE'),
+      el('div', {cls: 'v'}, `${fmt(d.eleitos)}/513`),
+      el('div', {cls: 'n'}, `${fmt(d.sem_eleito)} cadeiras sem eleito`)),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'UFs encerradas'),
+      el('div', {cls: 'v'}, `${d.ufs_encerradas}/27`),
+      el('div', {cls: 'n'}, `${d.ufs_com_dado} com arquivo coletado`)),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Vagas provisórias'),
+      el('div', {cls: 'v'}, fmt(d.em_formacao.provisorio)),
+      el('div', {cls: 'n'}, `distribuídas pelo TSE · `
+        + `${d.em_formacao.partidos.length} partidos com cadeira`))));
+  out.push(el('div', {cls: 'nota'}, el('b', {}, 'Só o resultado. '), d.nota));
+  if (d.vagas_divergentes && d.vagas_divergentes.length) {
+    out.push(el('div', {cls: 'nota aten'}, el('b', {}, 'Conferir: '),
+      'UF encerrada com número de eleitos diferente das vagas — ',
+      d.vagas_divergentes.map(u => u.toUpperCase()).join(', ')));
+  }
+
+  // Hemiciclo da Câmara se formando: eleitos oficiais cheios; onde o TSE
+  // ainda não marcou eleitos, as vagas que ele já distribuiu às listas,
+  // ocupadas pelos mais votados — claras, provisórias. Sem projeção.
+  const f = d.em_formacao;
+  // Com UF escolhida, a lista dela vem primeiro; o nacional fica embaixo.
+  const inicioNacional = out.length;
+  if (f.provisorio) {
+    out.push(el('div', {cls: 'nota'}, el('b', {}, 'A Câmara se formando. '),
+      f.nota));
+  }
+  if (f.vagas_declaradas && f.vagas_declaradas !== 513) {
+    out.push(el('div', {cls: 'nota aten'}, el('b', {}, 'Dado de teste: '),
+      `os arquivos das UFs somam ${f.vagas_declaradas} vagas, não 513; o `
+      + 'hemiciclo mostra as primeiras 513.'));
+  }
+  if (typeof POLITICO !== 'undefined') {
+    let cad = [];
+    for (const p of f.partidos) {
+      for (let i = 0; i < p.eleito; i++)
+        cad.push({partido: p.partido, ideologia: p.ideologia, estado: 'eleito'});
+      for (let i = 0; i < p.provisorio; i++)
+        cad.push({partido: p.partido, ideologia: p.ideologia,
+                  estado: 'liderando'});
+    }
+    cad = cad.slice(0, 513);
+    while (cad.length < 513)
+      cad.push({partido: null, ideologia: null, estado: 'aguardando'});
+    const caixa = el('div', {style: 'background:#0b0e13;border:1px solid '
+      + 'var(--line);border-radius:var(--radius);padding:10px;'
+      + 'max-width:760px'});
+    caixa.append(POLITICO.hemiciclo(cad, {largura: 1000, altura: 540,
+      comIdeologia: d.classificacao.estado === 'disponivel', maioria: 257,
+      centro: '513', subcentro: 'maioria 257 · 3/5 308'}));
+    caixa.append(POLITICO.legendaEstados([['eleito', f.eleito],
+      ['liderando', f.provisorio], ['aguardando', f.sem_dado]],
+      {liderando: 'provisório — vaga do TSE, pode mudar'}));
+    out.push(caixa);
+  }
+
+  if (f.partidos.length) {
+    out.push(el('h2', {}, 'Bancadas'),
+      el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Partido'),
+        el('th', {cls: 'num'}, 'Total'), el('th', {cls: 'num'}, 'Eleitos'),
+        el('th', {cls: 'num'}, 'Provisórios'), el('th', {}, 'Ideologia'))),
+        el('tbody', {}, ...f.partidos.map(p => el('tr', {},
+          el('td', {}, el('span', {cls: 'sw', style:
+            `background:${p.partido.cor};margin-right:6px`}), p.partido.sigla),
+          el('td', {cls: 'num'}, el('b', {}, String(p.total))),
+          el('td', {cls: 'num'}, String(p.eleito)),
+          el('td', {cls: 'num'}, p.provisorio ? String(p.provisorio)
+                                              : el('span', {cls: 'null'}, '—')),
+          el('td', {}, p.ideologia ? p.ideologia.rotulo
+                                   : el('span', {cls: 'null'}, '—')))))));
+  }
+
+  const sel = d.uf_detalhe;
+  if (st.uf) {
+    const nacional = out.splice(inicioNacional);
+    const UF = st.uf.toUpperCase();
+    if (!sel) {
+      out.push(el('h2', {}, `Deputados federais — ${UF}`), el('div',
+        {cls: 'estado'}, `Arquivo de ${UF} ainda não coletado.`));
+    } else {
+      const oficial = sel.eleitos.length > 0;
+      out.push(el('h2', {}, `Deputados federais — ${UF}`),
+        el('div', {cls: 'nota'}, `${sel.vagas} vagas · quociente eleitoral `
+          + `${fmt(sel.quociente_eleitoral)} · `
+          + `${pct(sel.apurado_pct, 1) || '0%'} apurado · `
+          + (sel.andamento === 'f' ? 'totalização encerrada'
+             : 'em andamento: tudo pode mudar')));
+      if (!oficial) {
+        out.push(el('div', {cls: 'nota aten'}, el('b', {}, 'Provisório. '),
+          `Vagas por lista: distribuição que o próprio TSE publica com os `
+          + `votos contados até agora (${sel.vagas_distribuidas_tse} de `
+          + `${sel.vagas}). Nomes: os mais votados de cada lista ocupam as `
+          + 'vagas dela. Não é projeção — o TSE só marca eleito no fim.'));
+      }
+      // Uma tabela por lista (partido isolado ou federação): quem está nas
+      // vagas e os dois seguintes da fila.
+      const listas = sel.listas.filter(x => x.vagas_tse > 0
+        || x.candidatos.some(c => c.eleito_tse));
+      const semVaga = sel.listas.filter(x => !listas.includes(x));
+      const linhas = [];
+      for (const x of listas) {
+        linhas.push(el('tr', {style: 'background:#141a23'},
+          el('td', {colspan: 2}, el('b', {}, x.nome),
+            el('span', {cls: 'null', style: 'margin-left:6px'},
+              x.tipo + (x.partidos.length > 1 ? ' · '
+                + x.partidos.map(p => p.sigla).join(', ') : ''))),
+          el('td', {cls: 'num'}, fmt(x.votos)),
+          el('td', {cls: 'num'}, el('b', {},
+            `${x.vagas_tse} vaga${x.vagas_tse === 1 ? '' : 's'}`))));
+        for (const c of x.candidatos) {
+          const dentro = oficial ? c.eleito_tse : c.dentro_das_vagas;
+          linhas.push(el('tr', {style: dentro ? '' : 'opacity:.5'},
+            el('td', {cls: 'num', style: 'width:36px;color:var(--muted)'},
+              `${c.posicao}º`),
+            el('td', {}, c.nome, ' ',
+              el('span', {cls: 'sw', style: `background:${c.partido.cor};`
+                + 'margin:0 4px 0 8px'}),
+              el('span', {style: 'font-size:12px;color:var(--muted)'},
+                c.partido.sigla),
+              c.abaixo_10pct_qe && dentro ? el('span', {cls: 'tag warn',
+                style: 'margin-left:6px', title: 'Abaixo de 10% do quociente '
+                + 'eleitoral: pela regra, não ocupa a vaga'}, '< 10% QE') : ''),
+            el('td', {cls: 'num'}, fmt(c.votos)),
+            el('td', {}, oficial ? (c.situacao || '—')
+              : dentro ? el('span', {cls: 'tag info'}, 'na vaga')
+              : el('span', {cls: 'null'}, 'próximo'))));
+        }
+      }
+      out.push(el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, ''),
+        el('th', {}, 'Lista / candidato'), el('th', {cls: 'num'}, 'Votos'),
+        el('th', {}, oficial ? 'Situação' : 'Vagas'))),
+        el('tbody', {}, ...linhas)));
+      if (semVaga.length) {
+        out.push(el('div', {cls: 'nota'}, el('b', {}, 'Sem vaga até agora: '),
+          semVaga.map(x => `${x.nome} (${fmt(x.votos)})`).join(' · ')));
+      }
+    }
+    out.push(el('h2', {}, 'Câmara — Brasil'), ...nacional);
+  }
+
+  out.push(el('h2', {}, 'Por UF'),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'UF'),
+      el('th', {cls: 'num'}, 'Vagas'), el('th', {cls: 'num'}, 'Eleitos'),
+      el('th', {cls: 'num'}, 'Apurado'), el('th', {}, 'Andamento'))),
+      el('tbody', {}, ...d.ufs.map(u => el('tr', {
+          style: 'cursor:pointer', onclick: () => { st.uf = u.uf; }},
+        el('td', {}, el('b', {}, u.uf.toUpperCase())),
+        el('td', {cls: 'num'}, String(u.vagas)),
+        el('td', {cls: 'num'}, String(u.eleitos)),
+        el('td', {cls: 'num'}, pct(u.apurado_pct, 1) || '—'),
+        el('td', {}, u.andamento === 'f' ? el('span', {cls: 'tag ok'},
+            'encerrada') : u.andamento === 'p' ? el('span', {cls: 'tag info'},
+            'em andamento') : el('span', {cls: 'null'}, 'não recebida')))))));
+  return el('div', {}, ...out);
+}
+
+/* ------------------------------------------------ atualização automática
+ *
+ * A cada 10 s a visão aberta é refeita e trocada de uma vez, sem o
+ * "carregando…" e sem mexer na rolagem: quem está lendo a tabela não é
+ * jogado para o topo. Consulta periódica (Fetch), e não SSE ou WebSocket:
+ * a própria fonte é consultada periodicamente — o coletor puxa do TSE —,
+ * então um canal empurrado pelo servidor não traria o dado antes, e seria
+ * mais uma peça para cair na noite.
+ *
+ * Não atualiza: Telão e Configuração (formulários — apagaria o que se
+ * digita), com um campo em foco, com a aba do navegador escondida, ou com
+ * a chave desligada. O mapa, que é pesado, a cada 30 s. */
+const AUTO = {
+  ligado: (() => { try { return localStorage.getItem('auto-atualizar')
+                               !== '0'; } catch (e) { return true; } })(),
+  ultima: null, rodando: false, ultimoMapa: 0,
+};
+const VISOES_AUTO = new Set(['resultado', 'mapa', 'projecao',
+                             'convergencia', 'auditoria']);
+
+async function atualizarSilencioso() {
+  if (!AUTO.ligado || AUTO.rodando || document.hidden) return;
+  const visao = st.visao || 'resultado';
+  if (!VISOES_AUTO.has(visao)) return;
+  const foco = document.activeElement;
+  if (foco && /^(INPUT|SELECT|TEXTAREA)$/.test(foco.tagName)) return;
+  if (visao === 'mapa' && Date.now() - AUTO.ultimoMapa < 30000) return;
+  AUTO.rodando = true;
+  try {
+    const geracao = renderAtual;
+    const fn = escolherVisao();
+    const novo = await fn();
+    // Outra navegação aconteceu enquanto buscava (aba OU cargo/UF, que
+    // passam por render): descarta.
+    if ((st.visao || 'resultado') !== visao || geracao !== renderAtual) return;
+    const main = document.getElementById('main');
+    const abertos = [...main.querySelectorAll('details')].map(x => x.open);
+    const y = window.scrollY;
+    poe(main, novo);
+    [...main.querySelectorAll('details')].forEach((x, i) => {
+      if (abertos[i] !== undefined) x.open = abertos[i];
+    });
+    window.scrollTo(0, y);
+    if (visao === 'mapa') AUTO.ultimoMapa = Date.now();
+    AUTO.ultima = new Date();
+    marcarAuto();
+  } catch (e) { /* a próxima volta tenta de novo */ }
+  finally { AUTO.rodando = false; }
+}
+
+function marcarAuto() {
+  const alvo = document.getElementById('auto');
+  if (!alvo) return;
+  poe(alvo, el('label', {style: 'display:inline-flex;align-items:center;'
+      + 'gap:5px;text-transform:none;letter-spacing:0;font-size:11.5px;'
+      + 'margin:0;cursor:pointer'},
+    el('input', {type: 'checkbox', checked: AUTO.ligado ? '' : null,
+      onchange: e => {
+        AUTO.ligado = e.target.checked;
+        try { localStorage.setItem('auto-atualizar',
+                                   AUTO.ligado ? '1' : '0'); } catch (x) {}
+        marcarAuto();
+      }}),
+    'atualizar sozinho',
+    AUTO.ligado && document.hidden
+      ? el('span', {style: 'color:var(--alerta)'},
+           ' · pausado (janela em segundo plano)')
+      : AUTO.ligado && AUTO.ultima
+        ? el('span', {style: 'color:var(--muted)'}, ' · '
+            + AUTO.ultima.toLocaleTimeString('pt-BR')) : null));
+}
+setInterval(atualizarSilencioso, 10000);
+/* Janela em segundo plano não atualiza (o navegador estrangula o tempo e
+ * não faz sentido gastar CPU do notebook do telão). Mas voltar a ela tem de
+ * trazer o número de agora, não o de quando saiu: sem isto, a tela ficava
+ * parada por até 10 s depois do clique e parecia travada — visto no
+ * simulado de 23/09, entre reuniões. */
+document.addEventListener('visibilitychange', () => {
+  marcarAuto();
+  if (!document.hidden) atualizarSilencioso();
+});
+
+
+/* ------------------------------------------------------ senado, nacional
+ *
+ * Senador sem UF escolhida: a pergunta é "como fica o Senado", não uma
+ * disputa estadual. Hemiciclo das 81 (27 até 2031 + 54 em disputa), com os
+ * estados de cada vaga desenhados separados — liderando nunca se parece com
+ * eleito —, bancadas e a tabela das 27 UFs. Clicar numa UF abre a disputa
+ * dela, que é a unidade que elege. */
+const ROT_ESTADO = {eleito: 'eleito', definido: 'definido',
+                    liderando: 'liderando', aguardando: 'aguardando voto',
+                    mandato_em_curso: 'até 2031'};
+const TAG_ESTADO = {eleito: 'ok', definido: 'ok', liderando: 'info',
+                    aguardando: '', mandato_em_curso: ''};
+
+async function viewSenado() {
+  const r = await get('/composicao?casa=senado');
+  rodape(r);
+  const d = r.dados;
+  const e = d.em_disputa.estados;
+  // "até 2031" hoje; "eleitas em 2018" num ano passado (seletor de anos).
+  const ROT_REM = d.remanescentes.rotulo || 'até 2031';
+  ROT_ESTADO.mandato_em_curso = ROT_REM;
+  const out = [];
+  out.push(el('div', {cls: 'resumo'},
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Eleitos'),
+      el('div', {cls: 'v'}, `${e.eleito + e.definido}/${d.em_disputa.n}`),
+      el('div', {cls: 'n'}, e.definido
+        ? `${e.definido} matematicamente definidos` : 'segundo o TSE')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Liderando'),
+      el('div', {cls: 'v'}, String(e.liderando)),
+      el('div', {cls: 'n'}, 'apuração parcial — pode virar')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, 'Aguardando'),
+      el('div', {cls: 'v'}, String(e.aguardando)),
+      el('div', {cls: 'n'}, 'vagas sem voto contado')),
+    el('div', {cls: 'kpi'}, el('div', {cls: 'k'}, ROT_REM),
+      el('div', {cls: 'v'}, String(d.remanescentes.n)),
+      el('div', {cls: 'n'}, d.remanescentes.eleitos_em
+        ? 'pelo partido da eleição'
+        : d.remanescentes.referencia_em
+        ? 'partido de ' + new Date(d.remanescentes.referencia_em)
+            .toLocaleDateString('pt-BR') : 'não baixado'))));
+  if (d.remanescentes.estado !== 'ok') {
+    out.push(el('div', {cls: 'nota aten'}, d.remanescentes.motivo));
+  }
+  if (e.sem_eleito) {
+    const ufs = [...new Set(d.cadeiras.filter(c => c.estado === 'sem_eleito')
+      .map(c => c.uf.toUpperCase()))];
+    out.push(el('div', {cls: 'nota aten'},
+      el('b', {}, `${e.sem_eleito} vaga sem eleito no arquivo do TSE `
+        + `(${ufs.join(', ')}). `),
+      'A eleição acabou, mas o resultado atual do TSE não traz eleito para '
+      + 'ela: a eleição da vaga foi anulada e refeita depois, em eleição '
+      + 'suplementar, que não entra neste ano. A tela não põe o próximo da '
+      + 'lista no lugar.'));
+  }
+
+  if (typeof POLITICO !== 'undefined') {
+    const caixa = el('div', {style: 'background:#0b0e13;border:1px solid '
+      + 'var(--line);border-radius:var(--radius);padding:10px;'
+      + 'max-width:760px'});
+    caixa.append(POLITICO.hemiciclo(d.cadeiras, {largura: 1000, altura: 540,
+      comIdeologia: d.classificacao.estado === 'disponivel', maioria: 41,
+      centro: '81', subcentro: 'maioria 41 · 3/5 49'}));
+    const leg = POLITICO.legendaEstados([
+      ['mandato_em_curso', d.remanescentes.n], ['eleito', e.eleito],
+      ['definido', e.definido], ['liderando', e.liderando],
+      ['aguardando', e.aguardando], ['sem_eleito', e.sem_eleito || 0]],
+      {mandato_em_curso: ROT_REM});
+    leg.style.cssText += ';font-size:12px;margin-top:6px';
+    caixa.append(leg);
+    out.push(caixa);
+  }
+
+  out.push(el('h2', {}, 'Bancadas'),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Partido'),
+      el('th', {cls: 'num'}, 'Total'), el('th', {cls: 'num'}, ROT_REM),
+      el('th', {cls: 'num'}, 'Eleitos'), el('th', {cls: 'num'}, 'Liderando'),
+      el('th', {cls: 'hide-sm'}, 'Ideologia'))),
+      el('tbody', {}, ...d.por_partido.map(p => el('tr', {},
+        el('td', {}, el('span', {cls: 'sw', style:
+          `background:${p.partido.cor};margin-right:6px`}), p.partido.sigla),
+        el('td', {cls: 'num'}, el('b', {}, String(p.total))),
+        el('td', {cls: 'num'}, String(p.remanescentes || '')),
+        el('td', {cls: 'num'}, String((p.eleito + p.definido) || '')),
+        el('td', {cls: 'num'}, String(p.liderando || '')),
+        el('td', {cls: 'hide-sm'}, p.ideologia ? p.ideologia.rotulo
+          : el('span', {cls: 'null'}, '—')))))),
+    el('div', {cls: 'nota'}, el('b', {}, 'Maioria. '), d.maioria.nota));
+
+  // Tabela por UF: as vagas em disputa e quem segue até 2031.
+  const porUf = {};
+  for (const c of d.cadeiras) (porUf[c.uf] = porUf[c.uf] || []).push(c);
+  const apur = Object.fromEntries(d.em_disputa.ufs.map(u => [u.uf, u]));
+  const pessoa = c => c.partido
+    ? [el('span', {cls: 'sw', style: `background:${c.partido.cor};`
+        + 'margin-right:5px'}), c.nome || '—',
+       el('span', {style: 'color:var(--muted)'}, ' ' + c.partido.sigla
+         + (c.pct != null ? ' · ' + pct(c.pct, 1) : ''))]
+    : el('span', {cls: 'null'}, 'sem voto');
+  out.push(el('h2', {}, 'Por UF'),
+    el('div', {cls: 'nota'}, 'Clique numa UF para abrir a disputa dela.'),
+    el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'UF'),
+      el('th', {cls: 'num'}, 'Apurado'), el('th', {}, 'Vagas em disputa'),
+      el('th', {cls: 'hide-sm'}, ROT_REM))),
+      el('tbody', {}, ...UFS.map(uf => {
+        const cs = porUf[uf] || [];
+        const disp = cs.filter(c => c.origem === 'eleicao');
+        const rem = cs.filter(c => c.origem === 'remanescente');
+        const a = apur[uf];
+        return el('tr', {style: 'cursor:pointer',
+                         onclick: () => { st.uf = uf; }},
+          el('td', {}, el('b', {}, uf.toUpperCase())),
+          el('td', {cls: 'num'}, a ? (pct(a.apurado_pct, 1) || '—') : '—'),
+          el('td', {}, ...disp.map(c => el('div', {},
+            el('span', {cls: 'tag ' + (TAG_ESTADO[c.estado] || ''),
+                        style: 'margin-right:6px'},
+               ROT_ESTADO[c.estado] || c.estado), pessoa(c)))),
+          el('td', {cls: 'hide-sm'}, ...rem.map(c => el('div', {},
+            pessoa(c), c.suplente_em_exercicio
+              ? el('span', {cls: 'tag', style: 'margin-left:5px'},
+                   'suplente') : null))));
+      }))));
+  return el('div', {}, ...out);
+}
+
+/* ------------------------------------------------------------- recordes
+ *
+ * A mesma tela do telão (POLITICO.recordes), no tamanho do painel. */
+async function viewRecordes() {
+  const r = await get('/recordes');
+  rodape(r);
+  const caixa = el('div', {style: '--u:15px'});
+  caixa.append(POLITICO.recordes(r.dados));
+  return el('div', {},
+    el('div', {cls: 'nota'}, el('b', {}, 'Até agora. '), r.dados.nota,
+      ' Apuração mais rápida: primeiro boletim do TSE com 100% das seções '
+      + '(referência: presidente). Percentual: votos ÷ votos da UF, a base '
+      + 'do TSE.'), caixa);
+}
+
+/* ------------------------------------------------------------- comparar
+ *
+ * O mesmo território em várias eleições, lado a lado: participação
+ * (eleitorado, comparecimento, abstenção, brancos, nulos) e quem ganhou,
+ * com partido e ideologia. É a tela de leitura pós-eleição — e a que
+ * responde "o que mudou desde 2018 aqui".
+ *
+ * Três cuidados que a tela precisa manter à vista:
+ *   - o ano ao vivo é PARCIAL, e abstenção parcial não se compara com final;
+ *   - partido muda de nome, e a série só se liga com a linhagem assinada;
+ *   - ideologia é a do próprio ano, nunca herdada de outro. */
+/* Comparar tem duas leituras: a do cargo escolhido e o resumo de todos
+ * os cargos numa página. O seletor fica no topo das duas. */
+async function viewComparar() {
+  const resumo = st.resumo === '1';
+  const seletor = el('div', {cls: 'visoes', role: 'tablist'},
+    el('button', {role: 'tab', 'aria-selected': String(!resumo),
+      onclick: () => { st.resumo = ''; }}, `Só ${cargoAtual().nome.toLowerCase()}`),
+    el('button', {role: 'tab', 'aria-selected': String(resumo),
+      onclick: () => { st.resumo = '1'; }}, 'Resumo de todos os cargos'));
+  const corpo = resumo ? await viewResumoAnos() : await viewCompararCargo();
+  return el('div', {}, seletor, corpo);
+}
+
+async function viewCompararCargo() {
+  const cargo = cargoAtual();
+  if (cargo.proporcional) return viewCamaraAnos();
+  const cd = cargo.especial || cargo.proporcional ? '1' : cargo.cd;
+  const q = [`cargo=${cd}`];
+  if (cd !== '1' && st.uf) q.push(`uf=${st.uf}`);
+  // Sem UF escolhida, a pergunta deixa de ser "como foi neste estado" e
+  // passa a ser "o que mudou no país": os 27 estados ano a ano, com o
+  // agregado por bloco. É o mapa de mudança em tabela.
+  if (cd !== '1' && !st.uf) return viewPanoramaAnos(cd);
+  if (cd === '1' && st.uf) q.push(`uf=${st.uf}`);
+  const r = await get(`/comparativo?${q.join('&')}`);
+  rodape(r);
+  const d = r.dados;
+  const cols = d.colunas.filter(c => !c.sem_dado);
+  const vazias = d.colunas.filter(c => c.sem_dado);
+  if (!cols.length) {
+    return el('div', {cls: 'estado'},
+      'Nenhum ano importado ainda. Rode "obs2026 importar-historico".');
+  }
+  const onde = st.uf ? st.uf.toUpperCase() : 'Brasil';
+  const n = x => x == null ? '—' : fmt(x);
+  const pc = (x, casas) => x == null ? '—' : pct(x, casas === undefined ? 1
+                                                 : casas);
+
+  // Linha da tabela: um rótulo e um valor por ano.
+  // `num` alinha à direita: vale para número, não para nome de candidato.
+  // Cabeçalho e conteúdo precisam do mesmo alinhamento, senão o ano fica
+  // numa borda e o nome na outra (visto em 23/09).
+  const linha = (rot, valor, nota, num = true) => el('tr', {},
+    el('td', {}, rot, nota ? el('div', {style: 'color:var(--muted);'
+        + 'font-size:11.5px'}, nota) : null),
+    ...cols.map(c => el('td', {cls: num ? 'num' : null}, valor(c))));
+
+  // Função, não nó: um elemento do DOM só existe num lugar, e reaproveitar
+  // o mesmo cabeçalho nas três tabelas o fazia migrar para a última — a
+  // tabela de participação ficava sem os anos (visto em 23/09).
+  const cabec = (num = true) => el('tr', {}, el('th', {}, ''),
+    ...cols.map(c => el('th', {cls: num ? 'num' : null},
+      el('div', {}, String(c.ano)),
+      c.parcial
+        ? el('div', {style: 'color:var(--alerta);font-size:11px;'
+              + 'font-weight:400'}, `parcial · ${pct(c.apurado_pct, 1)}`)
+        : el('div', {style: 'color:var(--muted);font-size:11px;'
+              + 'font-weight:400'}, `${c.turno}º turno`))));
+
+  const participacao = el('table', {}, el('thead', {}, cabec()),
+    el('tbody', {},
+      linha('Eleitorado', c => n(c.eleitorado)),
+      linha('Compareceram', c => `${n(c.comparecimento)}`),
+      linha('Comparecimento', c => pc(c.comparecimento_pct)),
+      linha('Abstenção', c => pc(c.abstencao_pct)),
+      linha('Brancos', c => `${n(c.brancos)} · ${pc(c.brancos_pct)}`,
+            'sobre o total de votos'),
+      linha('Nulos', c => `${n(c.nulos)} · ${pc(c.nulos_pct)}`,
+            'sobre o total de votos'),
+      linha('Válidos', c => n(c.validos))));
+
+  // As quatro parcelas do eleitorado, na mesma base, somando 100%. É o que
+  // desfaz a leitura fácil: em 2022 a abstenção subiu e, ainda assim, mais
+  // eleitores produziram voto válido, porque branco e nulo caíram pela
+  // metade (observação do usuário em 23/09).
+  const efetiva = el('table', {}, el('thead', {}, cabec()),
+    el('tbody', {},
+      linha('Abstenção', c => pc(c.abstencao_sobre_aptos_pct, 2)),
+      linha('Brancos', c => pc(c.brancos_sobre_aptos_pct, 2)),
+      linha('Nulos', c => pc(c.nulos_sobre_aptos_pct, 2)),
+      linha('Participação efetiva', c => el('b', {},
+        pc(c.participacao_efetiva_pct, 2)),
+        'votos válidos sobre o eleitorado')));
+
+  const nomeCand = (x) => {
+    if (!x) return el('span', {cls: 'null'}, '—');
+    const lin = x.linhagem || {};
+    const trocou = lin.nota && lin.linhagem_ativa;
+    return el('div', {},
+      el('div', {}, el('b', {}, x.nome)),
+      el('div', {style: 'font-size:12px;color:var(--muted)'},
+        el('span', {cls: 'sw', style:
+          `background:${x.partido_cor};margin-right:5px`}),
+        x.partido, ' · ', pct(x.pct_validos, 1),
+        trocou ? el('div', {style: 'font-size:11px'}, lin.nota) : null),
+      x.ideologia
+        ? el('div', {style: 'font-size:11.5px'}, x.ideologia.bloco)
+        : el('div', {style: 'font-size:11.5px;color:var(--muted)'},
+             'sem classificação'));
+  };
+  const disputa = el('table', {}, el('thead', {}, cabec(false)),
+    el('tbody', {},
+      el('tr', {}, el('td', {}, '1º colocado'),
+        ...cols.map(c => el('td', {}, nomeCand(c.candidatos[0])))),
+      el('tr', {}, el('td', {}, '2º colocado'),
+        ...cols.map(c => el('td', {}, nomeCand(c.candidatos[1])))),
+      linha('Margem', c => {
+        const a = c.candidatos[0], b = c.candidatos[1];
+        return (a && b && a.pct_validos != null && b.pct_validos != null)
+          ? pct(a.pct_validos - b.pct_validos, 1) : '—';
+      }, 'entre o 1º e o 2º', false)));
+
+  const semClass = cols.filter(c => c.classificacao_motivo);
+  return el('div', {},
+    el('h2', {}, `${d.cargo_nome} em ${onde} — evolução`),
+    el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '), d.nota),
+    !d.linhagem_ativa
+      ? el('div', {cls: 'nota aten'}, el('b', {}, 'Linhagem pendente. '),
+          'Cada ano mostra o partido com o nome da época, e as séries não '
+          + 'se ligam (PSL e União Brasil aparecem separados). Para ligar, '
+          + 'assine em config/linhagem_partidos.yaml.')
+      : null,
+    semClass.length
+      ? el('div', {cls: 'nota'}, el('b', {}, 'Ideologia incompleta: '),
+          semClass.map(c => c.classificacao_motivo).join(' · '))
+      : null,
+    el('h2', {}, 'Participação'), participacao,
+    el('h2', {}, 'Tudo sobre o eleitorado'),
+    el('div', {cls: 'nota'},
+      'Abstenção, branco e nulo na mesma base, somando 100% com os válidos. '
+      + 'Comparar abstenção sozinha engana: ela pode subir enquanto mais '
+      + 'eleitores escolhem alguém.'),
+    efetiva,
+    el('h2', {}, 'Disputa'), disputa,
+    vazias.length
+      ? el('div', {cls: 'nota'}, 'Sem dado para: '
+          + vazias.map(c => c.ano).join(', ') + '.')
+      : null);
+}
+
+/* Peças comuns das telas ano a ano (Câmara, governadores, senadores e o
+ * resumo): as cores dos blocos e a tabela de partidos na linhagem. */
+const CORB_ANOS = {esquerda: '#e2574c', centro: '#e3b341', direita: '#5b8def',
+                   sem_classificacao: 'var(--muted)', misto: 'var(--muted)'};
+const ROTB_ANOS = {esquerda: 'Esquerda', centro: 'Centro', direita: 'Direita',
+                   sem_classificacao: 'Sem classificação', misto: 'misto'};
+const BLOCOS_ANOS = ['esquerda', 'centro', 'direita', 'sem_classificacao'];
+
+/* Partidos na série da linhagem, um ano por coluna. Embaixo do número, as
+ * legendas que ele soma quando a série juntou partidos ou tinha outro nome
+ * na época; em amarelo, o provisório do ano ao vivo (liderando ou vaga
+ * ainda não marcada pelo TSE), nunca somado como eleito. `limite` corta a
+ * lista e soma o resto numa linha, para a coluna fechar a conta. */
+function tabelaSeries(d, anos, cabAno, limite) {
+  const chave = d.variacao_par;
+  const [pa, pb] = chave ? chave.split('-') : [];
+  const celula = (se, a) => {
+    const x = se.anos[a];
+    if (!x || !x.cadeiras) return el('td', {cls: 'num null'}, '—');
+    return el('td', {cls: 'num'},
+      el('div', {}, el('b', {}, String(x.eleito)),
+        x.provisorio ? el('span', {cls: 'tag warn',
+          style: 'margin-left:5px'}, `+${x.provisorio} prov.`) : null),
+      x.composta ? el('div', {style: 'font-size:11px;color:var(--muted)'},
+        x.componentes.map(c => `${c.sigla} ${c.cadeiras}`).join(' + '))
+        : null,
+      x.bloco !== 'sem_classificacao'
+        ? el('div', {style: `font-size:11px;color:${CORB_ANOS[x.bloco]}`},
+             ROTB_ANOS[x.bloco]) : null);
+  };
+  const variacao = (se) => {
+    const v = se.variacao[chave];
+    return el('td', {cls: 'num', style: 'color:' + (v > 0 ? '#5fbf7a'
+        : v < 0 ? '#e2574c' : 'var(--muted)')},
+      v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '=');
+  };
+  const lista = limite ? d.series.slice(0, limite) : d.series;
+  const resto = limite ? d.series.slice(limite) : [];
+  return el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, 'Partido (linhagem)'), ...anos.map(cabAno),
+      chave ? el('th', {cls: 'num'}, `${pa} → ${pb}`) : null)),
+    el('tbody', {}, ...lista.map(se => el('tr', {},
+      el('td', {}, el('span', {cls: 'sw',
+        style: `background:${se.cor};margin-right:6px`}), el('b', {}, se.sigla)),
+      ...anos.map(a => celula(se, a)),
+      chave ? variacao(se) : null)),
+      resto.length ? el('tr', {style: 'color:var(--muted)'},
+        el('td', {}, `outras ${resto.length} legendas`),
+        ...anos.map(a => el('td', {cls: 'num'}, String(resto.reduce(
+          (s, se) => s + ((se.anos[a] || {}).cadeiras || 0), 0)))),
+        chave ? el('td', {}, '') : null) : null));
+}
+
+/* Senado: duas colunas por ano — eleitos naquele ano e a casa inteira.
+ * As linhas são as séries da composição (que contém as dos eleitos); a
+ * variação é a da casa inteira, que é a pergunta "o Senado mudou?". */
+function tabelaSeriesDupla(d, anos, cabDupla, limite) {
+  const eleitos = new Map(d.series.map(s => [s.serie, s]));
+  const chave = d.variacao_par_composicao;
+  const [pa, pb] = chave ? chave.split('-') : [];
+  const num = (x, sep) => {
+    const st = sep ? 'border-left:1px solid var(--line)' : null;
+    if (!x || !x.cadeiras) return el('td', {cls: 'num null', style: st}, '—');
+    return el('td', {cls: 'num', style: st},
+      el('div', {}, el('b', {}, String(x.eleito)),
+        x.provisorio ? el('span', {cls: 'tag warn',
+          style: 'margin-left:5px'}, `+${x.provisorio} prov.`) : null),
+      x.composta ? el('div', {style: 'font-size:11px;color:var(--muted)'},
+        x.componentes.map(c => `${c.sigla} ${c.cadeiras}`).join(' + '))
+        : null);
+  };
+  return el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, 'Partido (linhagem)'), ...anos.flatMap(cabDupla),
+      chave ? el('th', {cls: 'num'}, `Senado ${pa} → ${pb}`) : null)),
+    el('tbody', {}, ...(limite ? d.series_composicao.slice(0, limite)
+                               : d.series_composicao).map(se => {
+      const e = eleitos.get(se.serie) || {anos: {}};
+      const v = chave ? se.variacao[chave] : null;
+      return el('tr', {},
+        el('td', {}, el('span', {cls: 'sw',
+          style: `background:${se.cor};margin-right:6px`}),
+          el('b', {}, se.sigla)),
+        ...anos.flatMap(a => [num(e.anos[a], false), num(se.anos[a], true)]),
+        chave ? el('td', {cls: 'num', style: 'color:' + (v > 0 ? '#5fbf7a'
+            : v < 0 ? '#e2574c' : 'var(--muted)')},
+          v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '=') : null);
+    })));
+}
+
+/* Câmara ano a ano: 513 cadeiras por bloco e por partido. Cada partido
+ * segue a linhagem assinada até a legenda de hoje, e a célula diz de quais
+ * legendas veio o número (União 2018 = PSL 52 + DEM 29). Bloco é o da
+ * legenda naquela eleição: o agregado soma legenda a legenda. É a bancada
+ * ELEITA, não a de hoje — troca de partido no mandato fica fora. */
+async function viewCamaraAnos() {
+  const r = await get('/comparativo/camara');
+  rodape(r);
+  const d = r.dados;
+  const anos = d.anos.map(String).filter(a => d.colunas[a]
+                                         && !d.colunas[a].sem_dado);
+  const vazios = d.anos.map(String).filter(a => !anos.includes(a));
+  if (!anos.length) {
+    return el('div', {cls: 'estado'},
+      'Nenhum ano importado ainda. Rode "obs2026 importar-historico".');
+  }
+
+  const cabAno = (a) => {
+    const c = d.colunas[a];
+    return el('th', {cls: 'num'}, el('div', {}, a),
+      c.parcial
+        ? el('div', {style: 'color:var(--alerta);font-size:11px;'
+              + 'font-weight:400'}, `parcial · ${c.ufs_encerradas}/27 UFs`)
+        : el('div', {style: 'color:var(--muted);font-size:11px;'
+              + 'font-weight:400'}, 'resultado final'));
+  };
+
+  const porBloco = el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, 'Bloco'), ...anos.map(cabAno))),
+    el('tbody', {}, ...BLOCOS_ANOS.map(b => el('tr', {},
+      el('td', {}, el('span', {cls: 'sw',
+        style: `background:${CORB_ANOS[b]};margin-right:6px`}), ROTB_ANOS[b]),
+      ...anos.map(a => {
+        const pb_ = d.colunas[a].por_bloco;
+        const x = pb_[b];
+        if (!x) return el('td', {cls: 'num null'}, '—');
+        // Base: as cadeiras daquele ano (o simulado declara 532, não 513).
+        const tot = Object.values(pb_).reduce((s, v) => s + v, 0);
+        return el('td', {cls: 'num'}, el('b', {}, fmt(x)),
+          el('span', {style: 'color:var(--muted);font-size:11.5px'},
+             ` · ${pct(100 * x / tot, 1)}`));
+      })))));
+
+  const avisos = [];
+  for (const a of anos) {
+    const c = d.colunas[a];
+    if (c.vagas_declaradas && c.vagas_declaradas !== d.total) {
+      avisos.push(`${a}: o TSE declara ${c.vagas_declaradas} vagas, não `
+        + `${d.total} — dado de teste do simulado.`);
+    }
+    if (c.classificacao_motivo) avisos.push(`${a}: ${c.classificacao_motivo}.`);
+  }
+  return el('div', {},
+    el('h2', {}, 'Câmara dos Deputados — bancadas eleição a eleição'),
+    el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '), d.nota),
+    !d.linhagem_ativa
+      ? el('div', {cls: 'nota aten'}, el('b', {}, 'Linhagem pendente. '),
+          'Cada ano mostra a legenda da época e as séries não se ligam.')
+      : null,
+    avisos.length
+      ? el('div', {cls: 'nota aten'}, avisos.join(' ')) : null,
+    el('h2', {}, 'Por bloco'), porBloco,
+    el('h2', {}, 'Por partido'),
+    el('div', {cls: 'nota'}, `Ordem: bancada de ${d.ordem_por}. Embaixo do `
+      + 'número, as legendas que ele soma quando a série juntou partidos ou '
+      + 'a legenda tinha outro nome.'),
+    tabelaSeries(d, anos, cabAno),
+    vazios.length
+      ? el('div', {cls: 'nota'}, 'Sem dado para: ' + vazios.map(a =>
+          `${a} (${d.colunas[a] ? d.colunas[a].motivo : 'sem coluna'})`)
+          .join(', ') + '.')
+      : null);
+}
+
+/* Os 27 estados, eleição a eleição. Resultado FINAL de cada ano: onde
+ * houve 2º turno vale o 2º, senão a tela diria que o estado "mudou de lado"
+ * quando só mudou a etapa. Senador conta cadeiras, não estados: 2018 e 2026
+ * elegem dois por UF, 2022 um. */
+async function viewPanoramaAnos(cd) {
+  const r = await get(`/comparativo/governadores?cargo=${cd}`);
+  rodape(r);
+  const d = r.dados;
+  const anos = d.anos.map(String).filter(a => (d.agregado[a] || {}).vagas);
+  const unidade = d.unidade || 'estados';
+
+  const cabAno = (a) => {
+    const g = d.agregado[a] || {};
+    return el('th', {cls: 'num'}, el('div', {}, a),
+      el('div', {style: `color:var(--${g.parcial ? 'alerta' : 'muted'});`
+          + 'font-size:11px;font-weight:400'},
+        g.parcial ? 'ao vivo · parcial' : `${g.vagas} ${unidade}`));
+  };
+
+  // Agregado: quantas cadeiras (ou estados) e quanto eleitorado por bloco,
+  // com o percentual sobre o total do ano. No Senado, duas colunas por ano
+  // (pedido de 24/09): quem se elegeu NAQUELE ano e a casa inteira — as 81,
+  // somando quem continuava. Sem a segunda, "13 de esquerda em 2018" parecia
+  // ser o Senado de 2018.
+  const senado = !!d.series_composicao;
+  const totalEleit = (ano) => Object.values(
+    (d.agregado[ano] || {}).por_bloco || {})
+    .reduce((s, x) => s + (x.eleitorado || 0), 0);
+  const cabDupla = (a) => {
+    const g = d.agregado[a] || {};
+    const c = g.composicao || {};
+    return [
+      el('th', {cls: 'num'}, el('div', {}, `${a} · eleitos`),
+        el('div', {style: `color:var(--${g.parcial ? 'alerta' : 'muted'});`
+            + 'font-size:11px;font-weight:400'},
+          g.parcial ? 'ao vivo · parcial' : `${g.vagas} no ano`)),
+      el('th', {cls: 'num', style: 'border-left:1px solid var(--line)'},
+        el('div', {}, `${a} · Senado`),
+        el('div', {style: 'color:var(--muted);font-size:11px;'
+            + 'font-weight:400'}, `${c.cadeiras || '—'} de 81`)),
+    ];
+  };
+  const celBloco = (n, tot, extra) => (!n)
+    ? el('td', {cls: 'num null'}, '—')
+    : el('td', {cls: 'num', style: extra || null},
+        el('b', {}, String(n)),
+        el('span', {style: 'color:var(--muted);font-size:11.5px'},
+           ` · ${pct(100 * n / tot, 1)}`));
+  const agregado = el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, 'Bloco'),
+      ...anos.flatMap(a => senado ? cabDupla(a) : [cabAno(a)]))),
+    el('tbody', {}, ...BLOCOS_ANOS.map(b => el('tr', {},
+      el('td', {}, el('span', {cls: 'sw',
+        style: `background:${CORB_ANOS[b]};margin-right:6px`}), ROTB_ANOS[b]),
+      ...anos.flatMap(a => {
+        const g = d.agregado[a] || {};
+        const x = (g.por_bloco || {})[b];
+        if (senado) {
+          const c = g.composicao || {};
+          return [celBloco(x && x.cadeiras, g.vagas),
+                  celBloco((c.por_bloco || {})[b], c.cadeiras,
+                           'border-left:1px solid var(--line)')];
+        }
+        if (!x || !x.cadeiras) return [el('td', {cls: 'num null'}, '—')];
+        const tot = totalEleit(a);
+        return [el('td', {cls: 'num'},
+          el('div', {}, el('b', {}, `${x.cadeiras} ${unidade}`),
+            el('span', {style: 'color:var(--muted);font-size:11.5px'},
+               ` · ${pct(100 * x.cadeiras / g.vagas, 1)}`)),
+          el('div', {style: 'font-size:11.5px;color:var(--muted)'},
+             tot ? `${pct(100 * x.eleitorado / tot, 0)} do eleitorado` : ''))];
+      })))));
+  // O que a composição não conta, dito: vaga sem ocupante, suplementar,
+  // régua de outro ano, remanescentes que faltam.
+  const notasComp = senado ? anos.flatMap(a => {
+    const c = (d.agregado[a] || {}).composicao || {};
+    const out = [];
+    if (c.remanescentes && c.remanescentes.motivo) {
+      out.push(`${a}: ${c.remanescentes.motivo}`);
+    }
+    if (c.sem_ocupante) {
+      out.push(`${a}: ${c.sem_ocupante} cadeira sem ocupante no arquivo do `
+        + 'TSE (eleição da vaga anulada; a suplementar veio depois)');
+    }
+    for (const s of c.suplementares || []) {
+      out.push(`${a}: ${s.uf.toUpperCase()} com ${s.sigla}, eleito em `
+        + `suplementar em ${s.eleito_em} — quem ocupou a vaga`);
+    }
+    for (const r of c.classificados_pela_regua_de || []) {
+      out.push(`${a}: eleitos em ${r} classificados pela régua de ${a} `
+        + '(partido levado pela linhagem)');
+    }
+    return out;
+  }) : [];
+
+  const umEleito = (v, x) => {
+    const b = (v.ideologia || {}).bloco || 'sem_classificacao';
+    return el('div', {style: 'margin-bottom:3px'},
+      el('div', {},
+        el('span', {cls: 'sw', style: `background:${CORB_ANOS[b]};`
+          + 'margin-right:5px'}),
+        el('b', {}, v.nome),
+        x.parcial ? el('span', {cls: 'tag warn', style: 'margin-left:5px'},
+          `lidera · ${pct(x.apurado_pct, 0)}`) : null),
+      el('div', {style: 'font-size:11.5px;color:var(--muted)'},
+        v.partido,
+        x.turno === '2' ? ' · 2º turno' : '',
+        (v.linhagem && v.linhagem.nota && v.linhagem.linhagem_ativa)
+          ? ` · ${v.linhagem.nota}` : ''));
+  };
+  const cel = (x) => {
+    if (!x) return el('td', {}, el('span', {cls: 'null'}, '—'));
+    return el('td', {}, ...(x.vencedores || [x]).map(v => umEleito(v, x)));
+  };
+  const porUf = el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, 'UF'), ...anos.map(a => el('th', {}, a)))),
+    el('tbody', {}, ...d.ufs.map(u => el('tr', {
+        style: 'cursor:pointer', onclick: () => { st.uf = u.uf; }},
+      el('td', {}, el('b', {}, u.uf.toUpperCase())),
+      ...anos.map(a => cel(u.anos[a]))))));
+
+  const semClass = anos
+    .map(a => (d.agregado[a] || {}).classificacao_motivo)
+    .filter(Boolean);
+  const titulo = d.cargo_nome === 'senador' ? 'Senadores' : 'Governadores';
+  // Vagas sem eleito no arquivo do TSE (MT/2018): o total do ano fica
+  // menor, e a tela diz por quê.
+  const semEleito = anos.flatMap(a => ((d.agregado[a] || {}).sem_eleito || [])
+    .map(x => `${a}: ${x.uf.toUpperCase()} (${x.vagas})`));
+  return el('div', {},
+    el('h2', {}, `${titulo} — o país eleição a eleição`),
+    el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '), d.nota),
+    !d.linhagem_ativa
+      ? el('div', {cls: 'nota aten'}, el('b', {}, 'Linhagem pendente. '),
+          'Cada ano mostra a legenda da época e as séries não se ligam.')
+      : null,
+    semClass.length
+      ? el('div', {cls: 'nota'}, el('b', {}, 'Ideologia incompleta: '),
+           semClass.join(' · ')) : null,
+    semEleito.length
+      ? el('div', {cls: 'nota aten'}, el('b', {}, 'Vaga sem eleito no '
+          + 'arquivo do TSE: '), semEleito.join(' · ') + '. A eleição da '
+          + 'vaga foi anulada e refeita depois, em eleição suplementar, que '
+          + 'não entra no ano; o total daquele ano fica menor.') : null,
+    el('h2', {}, 'Por bloco'), agregado,
+    notasComp.length
+      ? el('div', {cls: 'nota'}, el('b', {}, 'Composição. '),
+           notasComp.join(' · ')) : null,
+    el('h2', {}, 'Por partido'),
+    el('div', {cls: 'nota'}, senado
+      ? `Ordem: Senado em ${d.ordem_por}. Em cada ano, os eleitos naquele `
+        + 'ano e a casa inteira; embaixo do número, as legendas que ele soma.'
+      : `Ordem: ${unidade} em ${d.ordem_por}.`
+        + ' Embaixo do número, as legendas que ele soma.'),
+    senado ? tabelaSeriesDupla(d, anos, cabDupla) : tabelaSeries(d, anos, cabAno),
+    el('h2', {}, 'Estado a estado'),
+    el('div', {cls: 'nota'}, 'Clique num estado para ver a evolução dele.'),
+    porUf);
+}
+
+/* Resumo ano a ano: os quatro cargos numa página só — quem ganhou a
+ * Presidência e com quanto, a participação efetiva, e governadores,
+ * Senado e Câmara por bloco e pelas maiores séries da linhagem. É a
+ * leitura "o que mudou no país" de uma vez; cada bloco abre a tela
+ * completa do cargo. Os dados são os das telas de cada cargo, sem conta
+ * nova: o resumo não pode dizer uma coisa e a tela do cargo outra. */
+async function viewResumoAnos() {
+  const [p1, p2, gov, sen, cam] = await Promise.all([
+    get('/comparativo?cargo=1&turno=1'),
+    get('/comparativo?cargo=1&turno=2'),
+    get('/comparativo/governadores?cargo=3'),
+    get('/comparativo/governadores?cargo=5'),
+    get('/comparativo/camara'),
+  ]);
+  rodape(cam);
+
+  // Presidente: a participação vem do 1º turno (é quando todo o eleitorado
+  // vota em tudo); o eleito, do turno que decidiu — o 2º onde houve. O ano
+  // ao vivo só tem 1º turno e sai marcado como parcial.
+  const col1 = {}, col2 = {};
+  for (const c of p1.dados.colunas) if (!c.sem_dado) col1[c.ano] = c;
+  for (const c of p2.dados.colunas) if (!c.sem_dado) col2[c.ano] = c;
+  const anosP = Object.keys(col1).sort();
+  const decisivo = (a) => (col2[a] && !col2[a].parcial && a !== '2026')
+    ? {c: col2[a], turno: '2º turno'} : {c: col1[a], turno: '1º turno'};
+  const quem = (a) => {
+    const {c, turno} = decisivo(a);
+    const x = (c.candidatos || [])[0];
+    if (!x) return el('span', {cls: 'null'}, '—');
+    const b = (x.ideologia || {}).bloco;
+    return el('div', {},
+      el('b', {}, x.nome), ' ',
+      el('span', {style: 'color:var(--muted)'}, `${x.partido} · `
+        + `${pct(x.pct_validos, 1)} · ${turno}`),
+      c.parcial ? el('span', {cls: 'tag warn', style: 'margin-left:5px'},
+        `lidera · ${pct(c.apurado_pct, 0)}`) : null,
+      b ? el('div', {style: `font-size:11.5px;color:${CORB_ANOS[b]}`},
+             ROTB_ANOS[b]) : null);
+  };
+  const presidente = el('table', {}, el('thead', {}, el('tr', {},
+      el('th', {}, ''), ...anosP.map(a => el('th', {}, a)))),
+    el('tbody', {},
+      el('tr', {}, el('td', {}, 'Presidente'),
+        ...anosP.map(a => el('td', {}, quem(a)))),
+      el('tr', {}, el('td', {}, 'Participação efetiva',
+          el('div', {style: 'color:var(--muted);font-size:11.5px'},
+             'válidos sobre o eleitorado, 1º turno')),
+        ...anosP.map(a => el('td', {}, el('b', {},
+          pct(col1[a].participacao_efetiva_pct, 1)),
+          el('span', {style: 'color:var(--muted);font-size:11.5px'},
+            ` · abstenção ${pct(col1[a].abstencao_sobre_aptos_pct, 1)}`))))));
+
+  // Um bloco por casa: barra de blocos por ano e as maiores séries.
+  const bloco = (titulo, d, anos, porBloco, unidade, abrir) => {
+    const cab = (a) => el('th', {cls: 'num'}, a);
+    // Senado: duas linhas por ano — eleitos no ano e a casa inteira.
+    const linhas = anos.flatMap(a => {
+      const c = (d.agregado && (d.agregado[a] || {}).composicao) || null;
+      return c ? [{a, pb: porBloco(a), rot: a},
+                  {a, pb: c.por_bloco, rot: 'Senado', sec: true}]
+               : [{a, pb: porBloco(a), rot: a}];
+    });
+    const barras = el('div', {}, ...linhas.map(({a, pb, rot, sec}) => {
+      const tot = BLOCOS_ANOS.reduce((s, b) => s + (pb[b] || 0), 0);
+      return el('div', {style: 'display:flex;align-items:center;gap:8px;'
+          + `margin:${sec ? '0 0 8px' : '4px 0 2px'}`},
+        el(sec ? 'span' : 'b', {style: 'width:40px;'
+          + (sec ? 'font-size:11px;color:var(--muted)' : '')}, rot),
+        el('div', {style: 'flex:1;display:flex;height:18px;border-radius:4px;'
+            + 'overflow:hidden;background:var(--line)'},
+          ...BLOCOS_ANOS.filter(b => pb[b]).map(b => el('div', {
+            title: `${ROTB_ANOS[b]}: ${pb[b]} ${unidade}`,
+            style: `width:${tot ? 100 * pb[b] / tot : 0}%;background:`
+              + `${CORB_ANOS[b]};color:#0b0f14;font-size:11px;`
+              + 'font-weight:700;text-align:center;line-height:18px;'
+              + 'overflow:hidden;white-space:nowrap'}, String(pb[b])
+              + (pb[b] / tot >= .2 ? ` · ${pct(100 * pb[b] / tot, 1)}`
+                                   : '')))),
+        el('span', {style: 'width:90px;color:var(--muted);font-size:11.5px'},
+           `${tot} ${unidade}`));
+    }));
+    return el('div', {style: 'min-width:0'},
+      el('h2', {}, titulo, ' ',
+        el('a', {href: '#', style: 'font-size:12px;font-weight:400',
+          onclick: (e) => { e.preventDefault(); abrir(); }},
+          'abrir completo ›')),
+      barras,
+      d.series_composicao
+        ? tabelaSeriesDupla(d, anos, (a) => [
+            el('th', {cls: 'num'}, `${a} el.`),
+            el('th', {cls: 'num', style: 'border-left:1px solid var(--line)'},
+               'Senado')], 6)
+        : tabelaSeries(d, anos, cab, 6));
+  };
+
+  const anosG = gov.dados.anos.map(String)
+    .filter(a => (gov.dados.agregado[a] || {}).vagas);
+  const anosS = sen.dados.anos.map(String)
+    .filter(a => (sen.dados.agregado[a] || {}).vagas);
+  const anosC = cam.dados.anos.map(String)
+    .filter(a => cam.dados.colunas[a] && !cam.dados.colunas[a].sem_dado);
+  const pbPanorama = (d) => (a) => {
+    const out = {};
+    for (const b of BLOCOS_ANOS) {
+      out[b] = ((d.agregado[a].por_bloco || {})[b] || {}).cadeiras || 0;
+    }
+    return out;
+  };
+  const irPara = (cd) => () => {
+    const u = new URLSearchParams(location.search);
+    u.set('cargo', cd); u.delete('resumo'); u.delete('uf');
+    history.replaceState(null, '', location.pathname + '?' + u);
+    render();
+  };
+
+  const parciais = [gov, sen].some(x => Object.values(x.dados.agregado)
+      .some(g => g && g.parcial))
+    || Object.values(cam.dados.colunas).some(c => c && c.parcial);
+  const avisos = [];
+  const vagas26 = (cam.dados.colunas['2026'] || {}).vagas_declaradas;
+  if (vagas26 && vagas26 !== cam.dados.total) {
+    avisos.push(`2026: dado de teste do simulado (${vagas26} vagas na `
+      + 'Câmara, partidos fictícios). Ordem e variação usam só 2018 e 2022.');
+  }
+  return el('div', {},
+    el('h2', {}, 'O país eleição a eleição — resumo'),
+    el('div', {cls: 'nota'}, el('b', {}, 'Como ler. '),
+      'Resultado final do TSE em cada ano (2º turno onde houve). Partidos '
+      + 'seguem a linhagem assinada até a legenda de hoje; bloco é o da '
+      + 'legenda naquele ano. Senado: 2018 e 2026 renovam duas cadeiras por '
+      + 'estado, 2022 uma.'
+      + (parciais ? ' O ano ao vivo aparece como parcial: quem lidera não '
+         + 'é eleito.' : '')),
+    !cam.dados.linhagem_ativa
+      ? el('div', {cls: 'nota aten'}, el('b', {}, 'Linhagem pendente. '),
+          'As séries não se ligam entre os anos.') : null,
+    avisos.length ? el('div', {cls: 'nota aten'}, avisos.join(' ')) : null,
+    el('h2', {}, 'Presidência'), presidente,
+    el('div', {style: 'display:grid;grid-template-columns:'
+        + 'repeat(auto-fit,minmax(320px,1fr));gap:18px'},
+      bloco('Governadores', gov.dados, anosG, pbPanorama(gov.dados),
+            'estados', irPara('3')),
+      bloco('Senado', sen.dados, anosS, pbPanorama(sen.dados),
+            'cadeiras', irPara('5')),
+      bloco('Câmara', cam.dados, anosC, (a) => cam.dados.colunas[a].por_bloco,
+            'cadeiras', irPara('6'))));
+}
+
+function escolherVisao() {
+  const visao = st.visao || 'resultado';
+  // Senador sem UF: a composição do Senado, não "escolha uma UF".
+  if (cargoAtual().cd === '5' && !st.uf && visao === 'resultado')
+    return viewSenado;
+  if (cargoAtual().cd === '3' && !st.uf && visao === 'resultado')
+    return viewPanoramaGov;
+  if (cargoAtual().especial && visao !== 'telao' && visao !== 'config'
+      && visao !== 'comparar')
+    return viewRecordes;
+  // Deputado federal tem visão própria; Telão, Configuração e Comparar
+  // continuam.
+  if (cargoAtual().proporcional && visao !== 'telao' && visao !== 'config'
+      && visao !== 'comparar')
+    return viewCamara;
+  return {resultado: viewResultado, mapa: viewMapa,
+          projecao: viewProjecao, auditoria: viewAuditoria,
+          convergencia: viewConvergencia, telao: viewTelao,
+          comparar: viewComparar, config: viewConfig}[visao]
+         || viewResultado;
+}
+
+/* Cada render leva um número; só o mais novo escreve na tela. Sem isso,
+ * uma resposta lenta chegava depois de uma troca de aba e pisava na tela
+ * nova — clicar em Deputado federal e logo em Comparar deixava a
+ * composição na tela com a aba Comparar marcada (visto em 24/09). */
+let renderAtual = 0;
 async function render() {
+  const meu = ++renderAtual;
   navegacao();
   const main = document.getElementById('main');
   poe(main, el('div', {cls: 'estado'}, 'carregando…'));
@@ -1633,16 +3770,20 @@ async function render() {
     const cat = await get('/elections');
     document.getElementById('sub').textContent =
       cat.dados.map(e => e.nome.split(' - ')[0]).join(' · ');
-    if (cat.ambiente.aviso) {
-      poe(document.getElementById('aviso'),
-        el('div', {cls: 'aviso'}, cat.ambiente.aviso));
-    }
-    const fn = {resultado: viewResultado, mapa: viewMapa,
-                projecao: viewProjecao, auditoria: viewAuditoria,
-                convergencia: viewConvergencia, telao: viewTelao
-               }[st.visao || 'resultado'];
-    poe(main, await fn());
+    // Limpa quando não há aviso: ao voltar de 2022 para um ambiente
+    // oficial, a faixa "ELEIÇÃO DE 2022" não pode ficar para trás.
+    poe(document.getElementById('aviso'), cat.ambiente.aviso
+      ? el('div', {cls: eleicaoPedida() ? 'aviso passado' : 'aviso'},
+           cat.ambiente.aviso)
+      : null);
+    const fn = escolherVisao();
+    const novo = await fn();
+    if (meu !== renderAtual) return;
+    poe(main, novo);
+    AUTO.ultima = new Date();
+    marcarAuto();
   } catch (e) {
+    if (meu !== renderAtual) return;
     poe(main, el('div', {cls: 'estado'},
       el('span', {cls: 'tag err'}, 'erro'), ' ' + e.message));
   }

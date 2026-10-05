@@ -1,43 +1,157 @@
 # Classificação política — §6.
 #
-# ESTE ARQUIVO ESTÁ VAZIO DE PROPÓSITO.
+# ASSINADA por Marcelo Micucci em 21/09/2026 (versão 2026.1).
 #
 # Classificar um partido como esquerda, centro ou direita é ato editorial, não
 # cálculo. O §6 exige, para CADA entrada: fonte, justificativa, autor, data,
-# validade temporal e grau de controvérsia. O §12 lista a curadoria da
-# classificação ideológica como decisão de execução ainda pendente.
+# validade temporal e grau de controvérsia.
 #
-# Enquanto `curador` for nulo e `entradas` estiver vazia, o mapa ideológico
-# aparece desabilitado na interface, com o motivo — e as camadas de apuração
-# continuam disponíveis. É melhor um mapa desligado do que um mapa errado com
-# autoria inventada.
+# As entradas abaixo foram redigidas como proposta em 21/09/2026. Enquanto
+# `curador` for nulo, o mapa ideológico continua desligado na interface, com
+# o motivo, e o mapa por partido segue funcionando. Para ativar, quem
+# responde pela classificação revisa cada linha e assina:
+#
+#     obs2026 assinar-classificacao --curador "Nome Sobrenome"
+#
+# A assinatura preenche `curador`, `publicada_em` e o `autor`/`decidido_em`
+# das entradas ainda sem autor, sobe a versão e guarda a anterior em
+# config/classificacao.anterior/. Mudar uma categoria depois disso é nova
+# versão — mapas já exportados não são reescritos em silêncio (§6).
+#
+# MÉTODO DA PROPOSTA
+# Âncora acadêmica: survey com especialistas publicado em
+#   Bolognesi, B.; Ribeiro, E.; Codato, A. "Uma nova classificação
+#   ideológica dos partidos políticos brasileiros". Dados — Revista de
+#   Ciências Sociais, v. 66, n. 2, 2023.
+# O survey é de 2018. Para partidos criados ou fundidos depois, a proposta
+# parte dos predecessores e registra isso na justificativa. A escala de
+# sete pontos do artigo (com extremos) foi reduzida às cinco categorias do
+# produto: extrema-esquerda entra em `esquerda`, extrema-direita em
+# `direita`. CONFERIR cada categoria contra a tabela do artigo antes de
+# assinar — a proposta indica o enquadramento, não substitui a leitura.
 #
 # Três dimensões SEPARADAS. Uma não determina a outra:
 #   ideologia         esquerda | centro_esquerda | centro | centro_direita | direita
-#   posicao_governo   governo | oposicao | independente
+#   posicao_governo   governo | oposicao | independente   (deixada nula: não
+#                     é necessária para os mapas e muda durante o mandato)
 #   alianca_estadual  registrada por UF, não herdada do cabeça de chapa
 #
 # Não existe categoria "indefinido": ausência de classificação é ausência de
 # linha, e tem padrão visual próprio (hachura) — nunca o amarelo do centro.
-
-versao: "2026.0"
-ano: 2026
-curador: null
-publicada_em: null
-
-entradas: []
-
-# Modelo de uma entrada, para quando a curadoria acontecer:
 #
-# entradas:
-#   - entidade_tipo: partido
-#     entidade_id: "SIGLA"
-#     ideologia: centro_direita
-#     posicao_governo: independente
-#     fonte: "referência publicada e verificável"
-#     justificativa: "por que esta categoria e não a vizinha"
-#     autor: "nome de quem decidiu"
-#     decidido_em: 2026-09-30
-#     valido_de: 2026-01-01
-#     valido_ate: null
-#     grau_controversia: 2        # 0 consensual .. 3 fortemente disputada
+# grau_controversia: 0 consensual · 1 pouca discordância · 2 disputada ·
+#                    3 fortemente disputada ou pouca informação
+
+versao: "2026.1"
+ano: 2026
+curador: "Marcelo Micucci"
+publicada_em: 2026-09-21
+
+_fonte_base: &base >-
+  Bolognesi, Ribeiro e Codato (2023), Dados 66(2) — survey com especialistas
+  (2018), reduzido às cinco categorias do produto.
+
+entradas:
+  # ------------------------------------------------------------ esquerda
+  - {entidade_tipo: partido, entidade_id: PSTU, numero: "16", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 0, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Partido trotskista de programa revolucionário; extrema-esquerda no survey, agrupada em esquerda."}
+  - {entidade_tipo: partido, entidade_id: PCO, numero: "29", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 0, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Partido trotskista; extrema-esquerda no survey, agrupada em esquerda."}
+  - {entidade_tipo: partido, entidade_id: PCB, numero: "21", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 0, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Partido comunista marxista-leninista; extrema-esquerda no survey, agrupada em esquerda."}
+  - {entidade_tipo: partido, entidade_id: UP, numero: "80", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 1,
+     fonte: "Estatuto e programa registrados no TSE (registro em 2019); ausente do survey de 2018.",
+     autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Registrada depois do survey; programa socialista revolucionário, mesmo campo de PCB/PSTU."}
+  - {entidade_tipo: partido, entidade_id: PSOL, numero: "50", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 0, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Socialista; entre os mais à esquerda com representação no Congresso. Federado à Rede desde 2022 — a federação não muda a classificação de cada partido."}
+  - {entidade_tipo: partido, entidade_id: PCdoB, numero: "65", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Comunista; integra a Federação Brasil da Esperança com PT e PV desde 2022."}
+  - {entidade_tipo: partido, entidade_id: PT, numero: "13", ideologia: esquerda,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Esquerda no survey. Há quem o situe na centro-esquerda pela prática de governo; a proposta segue o survey."}
+
+  # ----------------------------------------------------- centro-esquerda
+  - {entidade_tipo: partido, entidade_id: PDT, numero: "12", ideologia: centro_esquerda,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Trabalhismo; centro-esquerda no survey."}
+  - {entidade_tipo: partido, entidade_id: PSB, numero: "40", ideologia: centro_esquerda,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Centro-esquerda no survey; aliado do PT nas eleições presidenciais de 2022."}
+  - {entidade_tipo: partido, entidade_id: REDE, numero: "18", ideologia: centro_esquerda,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Pauta socioambiental; federada ao PSOL desde 2022. Parte da literatura a põe no centro."}
+  - {entidade_tipo: partido, entidade_id: PV, numero: "43", ideologia: centro_esquerda,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Posição próxima do centro no survey de 2018; desde 2022 federado a PT e PCdoB, o que motivou o enquadramento na centro-esquerda."}
+
+  # -------------------------------------------------------------- centro
+  - {entidade_tipo: partido, entidade_id: MDB, numero: "15", ideologia: centro,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Partido de centro por excelência na literatura, com alianças estaduais para os dois lados. Há quem o ponha na centro-direita."}
+  - {entidade_tipo: partido, entidade_id: CIDADANIA, numero: "23", ideologia: centro,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PPS; centro no survey. Federado ao PSDB desde 2022."}
+  - {entidade_tipo: partido, entidade_id: SOLIDARIEDADE, numero: "77", ideologia: centro,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Base sindical; incorporou o PROS. Centro/centro-direita no survey, apoiou o PT em 2022 — enquadrado no centro."}
+  - {entidade_tipo: partido, entidade_id: AVANTE, numero: "70", ideologia: centro,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PTdoB; partido de perfil fisiológico, sem programa ideológico marcado."}
+  - {entidade_tipo: partido, entidade_id: MOBILIZA, numero: "33", ideologia: centro,
+     posicao_governo: null, grau_controversia: 3, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PMN; pouca informação sistemática. Enquadrado pelo predecessor."}
+
+  # ------------------------------------------------------ centro-direita
+  - {entidade_tipo: partido, entidade_id: PSDB, numero: "45", ideologia: centro_direita,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Centro-direita no survey; federado ao Cidadania desde 2022."}
+  - {entidade_tipo: partido, entidade_id: PSD, numero: "55", ideologia: centro_direita,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Se declara de centro; o survey o põe à direita do centro. Em 2026 lança Ronaldo Caiado à Presidência. Disputado."}
+  - {entidade_tipo: partido, entidade_id: PODE, numero: "20", ideologia: centro_direita,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PTN; incorporou o PSC (2023), de direita. Enquadrado na centro-direita — disputado."}
+
+  # ------------------------------------------------------------- direita
+  - {entidade_tipo: partido, entidade_id: PP, numero: "11", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Direita no survey; herdeiro da Arena/PDS."}
+  - {entidade_tipo: partido, entidade_id: REPUBLICANOS, numero: "10", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PRB; direita no survey, com pauta conservadora de costumes."}
+  - {entidade_tipo: partido, entidade_id: UNIÃO, numero: "44", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Fusão de DEM e PSL (2022), ambos de direita no survey."}
+  - {entidade_tipo: partido, entidade_id: PL, numero: "22", ideologia: direita,
+     posicao_governo: null, grau_controversia: 0, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Direita no survey; partido de Jair Bolsonaro desde 2021 e de Flávio Bolsonaro, candidato a presidente em 2026."}
+  - {entidade_tipo: partido, entidade_id: NOVO, numero: "30", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Liberal na economia; direita no survey."}
+  - {entidade_tipo: partido, entidade_id: PRTB, numero: "28", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Direita no survey; conservador."}
+  - {entidade_tipo: partido, entidade_id: DC, numero: "27", ideologia: direita,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PSDC; democracia cristã, conservador nos costumes."}
+  - {entidade_tipo: partido, entidade_id: PRD, numero: "25", ideologia: direita,
+     posicao_governo: null, grau_controversia: 2, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Fusão de PTB e Patriota (2023), ambos de direita no survey."}
+  - {entidade_tipo: partido, entidade_id: AGIR, numero: "36", ideologia: direita,
+     posicao_governo: null, grau_controversia: 3, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PTC; pouca informação sistemática. Enquadrado pelo predecessor."}
+  - {entidade_tipo: partido, entidade_id: DEMOCRATA, numero: "35", ideologia: direita,
+     posicao_governo: null, grau_controversia: 3, fonte: *base, autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Ex-PMB; pouca informação sistemática. Enquadrado pelo predecessor e pelas alianças recentes."}
+  - {entidade_tipo: partido, entidade_id: MISSÃO, numero: "14", ideologia: direita,
+     posicao_governo: null, grau_controversia: 1,
+     fonte: "Programa registrado no TSE; partido criado pelo MBL, posterior ao survey.",
+     autor: "Marcelo Micucci", decidido_em: 2026-09-21,
+     justificativa: "Liberal na economia e de oposição à esquerda; posterior ao survey."}

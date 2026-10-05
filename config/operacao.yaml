@@ -1,0 +1,21 @@
+# Chaves de operação — editadas pela aba Configuração do painel.
+#
+# Relido pela data de modificação: mudar aqui vale na próxima passada do
+# coletor e do servidor, sem reiniciar. A versão anterior de cada gravação
+# fica em config/operacao.anterior/.
+#
+#   modelo_projecao            m2 | m3 | m1 | m0    (m0 é só referência)
+#   coleta.pular_finalizados   não busca de novo o que o TSE finalizou;
+#                              segue vigiando pelo EA14/EA15
+#   coleta.deputados_federais  busca os 27 arquivos de UF de deputado
+#                              federal (só resultado, sem projeção)
+#   coleta.encerrar_ao_finalizar  o coletor se desliga sozinho 10 min depois
+#                              de o TSE encerrar Brasil e todas as UFs
+#
+# Gravado em 22/09/2026 11:41:23.
+
+modelo_projecao: m3
+coleta:
+  pular_finalizados: true
+  deputados_federais: true
+  encerrar_ao_finalizar: true

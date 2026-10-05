@@ -107,12 +107,26 @@ def test_senador_nao_tem_segundo_turno():
     assert not d.segundo_turno_definido
 
 
-def test_segundo_turno_definido_quando_sobram_dois():
+def test_dois_garantidos_nao_e_segundo_turno_se_o_lider_pode_fechar():
+    """A e B não saem dos dois primeiros, mas A ainda pode ter maioria
+    absoluta (48 + 6 de 99 = 54,5%): não há 2º turno garantido. Foi o caso
+    do governo do PA em 04/10/2026, com o líder em 52,6%."""
     d = D.avaliar({"A": 48, "B": 40, "C": 5}, vagas=1,
                   concorrentes_observados=93, pendente_max=6)
+    assert {s.sqcand for s in d.no_segundo_turno} == {"A", "B"}
+    assert d.maioria_absoluta_possivel
+    assert not d.segundo_turno_definido
+    assert not d.disputa_definida          # nenhum tem maioria absoluta
+
+
+def test_segundo_turno_definido_quando_ninguem_alcanca_a_maioria():
+    """A no máximo chega a 47 de 95 (49,5%): haverá 2º turno, com A e B."""
+    d = D.avaliar({"A": 45, "B": 40, "C": 8}, vagas=1,
+                  concorrentes_observados=93, pendente_max=2)
+    assert not d.maioria_absoluta_possivel
     assert d.segundo_turno_definido
     assert {s.sqcand for s in d.no_segundo_turno} == {"A", "B"}
-    assert not d.disputa_definida          # nenhum tem maioria absoluta
+    assert not d.disputa_definida
 
 
 def test_sub_judice_suspende_qualquer_definicao():

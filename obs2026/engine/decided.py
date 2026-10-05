@@ -137,6 +137,13 @@ class Definicao:
     sub_judice_em_jogo: bool
     #: True quando a apuração acabou: aí não há resto e tudo está definido.
     encerrada: bool
+    #: Situações no cenário em que a Justiça CASSA os votos sub judice. O
+    #: cenário-base (`situacoes`) é o da validação, onde esses votos contam.
+    #: `None` quando não há voto sub judice. Quando os dois divergem,
+    #: `sub_judice_em_jogo` é True e a tela mostra os dois — esconder a
+    #: definição matemática por causa do sub judice apagava a informação
+    #: mais forte que existe (decisão de 23/09/2026).
+    situacoes_cassado: tuple[Situacao, ...] | None = None
     avisos: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -154,9 +161,24 @@ class Definicao:
         return len(self.eleitos) >= self.vagas
 
     @property
+    def maioria_absoluta_possivel(self) -> bool:
+        """Alguém ainda pode fechar o 1º turno com mais de 50%.
+
+        Melhor caso do candidato: todo o resto vai para ele. Passa de
+        metade se `(V + R) / (C + R) > 1/2`, isto é, `2·V + R > C`."""
+        r, c = self.resto_maximo_total, self.votos_concorrentes_observados
+        return any(2 * s.votos + r > c for s in self.situacoes)
+
+    @property
     def segundo_turno_definido(self) -> bool:
-        """Os dois nomes do segundo turno já são certos."""
-        return self.vagas == 1 and len(self.no_segundo_turno) >= 2
+        """Haverá segundo turno e os dois nomes já são certos.
+
+        Dois candidatos garantidos entre os dois primeiros não bastam: o
+        líder ainda pode ter maioria absoluta. Em 04/10/2026 o governo do
+        PA apareceu como "2º turno garantido" com o líder em 52,6% e 18%
+        do eleitorado por apurar."""
+        return (self.vagas == 1 and len(self.no_segundo_turno) >= 2
+                and not self.maioria_absoluta_possivel)
 
 
 def _br(n: int) -> str:
@@ -189,8 +211,9 @@ def _deficits(votos: dict[str, int], alvo: str,
 def avaliar(votos: dict[str, int], *, vagas: int,
             concorrentes_observados: int, pendente_max: int,
             sub_judice: int = 0, encerrada: bool = False,
-            unidade: str = "", tem_segundo_turno: bool | None = None
-            ) -> Definicao:
+            unidade: str = "", tem_segundo_turno: bool | None = None,
+            sub_judice_por_candidato: dict[str, int] | None = None,
+            _cenario: bool = False) -> Definicao:
     """Avalia uma disputa. `votos` são os votos já contados por candidato.
 
     `pendente_max` é o limite SUPERIOR do eleitorado que ainda pode votar.
@@ -216,20 +239,40 @@ def avaliar(votos: dict[str, int], *, vagas: int,
     # Teto coletivo: cada eleitor pode distribuir até `vagas` escolhas.
     teto_total = pendente_max * max(1, vagas)
 
-    sub_judice_em_jogo = False
-    if sub_judice > 0 and not encerrada:
-        sub_judice_em_jogo = True
-        avisos.append(
-            f"{_br(sub_judice)} votos anulados sub judice podem ser revalidados "
-            "ou cassados por decisão judicial. Enquanto isso não se resolve, "
-            "a definição matemática fica suspensa (§4.7)."
-        )
-    elif sub_judice > 0 and encerrada:
-        sub_judice_em_jogo = True
-        avisos.append(
-            f"{_br(sub_judice)} votos anulados sub judice seguem pendentes de "
-            "decisão judicial, mesmo com a apuração encerrada."
-        )
+    # Sub judice: o voto pode ser validado ou cassado, e a conta muda depois
+    # do fato. Com `sub_judice_por_candidato`, em vez de suspender sempre, o
+    # cenário de cassação é calculado e comparado com o de validação (que é o
+    # cenário-base, onde esses votos contam). Só suspende se o resultado
+    # mudar entre os dois — "há voto sub judice" não é o mesmo que "o voto
+    # sub judice decide". Sem o detalhe por candidato, mantém-se a regra
+    # antiga, conservadora.
+    sub_judice_em_jogo = sub_judice > 0
+    cenario_cassado = None
+    if sub_judice > 0 and not _cenario and sub_judice_por_candidato:
+        cenario_cassado = avaliar(
+            {k: v for k, v in votos.items()
+             if k not in sub_judice_por_candidato},
+            vagas=vagas, tem_segundo_turno=tem_segundo_turno,
+            concorrentes_observados=max(
+                0, concorrentes_observados - sub_judice),
+            pendente_max=pendente_max, sub_judice=0, encerrada=encerrada,
+            unidade=unidade, _cenario=True)
+    if sub_judice > 0:
+        if cenario_cassado is not None:
+            # A suspensão fica em suspenso: as situações são calculadas
+            # normalmente e o veredito sai da comparação dos dois cenários.
+            sub_judice_em_jogo = False
+        elif not encerrada:
+            avisos.append(
+                f"{_br(sub_judice)} votos anulados sub judice podem ser "
+                "revalidados ou cassados por decisão judicial. Enquanto isso "
+                "não se resolve, a definição matemática fica suspensa "
+                "(§4.7).")
+        else:
+            avisos.append(
+                f"{_br(sub_judice)} votos anulados sub judice seguem "
+                "pendentes de decisão judicial, mesmo com a apuração "
+                "encerrada.")
 
     if not votos:
         return Definicao(unidade, vagas, concorrentes_observados, teto_total,
@@ -325,6 +368,34 @@ def avaliar(votos: dict[str, int], *, vagas: int,
             motivo=motivo,
         ))
 
+    # Sub judice decide ou não decide? Compara o cenário-base (votos sub
+    # judice contando) com o de cassação. Se cada candidato que não é sub
+    # judice tem a mesma situação nos dois, e nenhum sub judice ocupa lugar
+    # decisivo, a decisão judicial não muda o resultado — e a definição
+    # matemática pode ser afirmada, com o aviso de que os votos seguem
+    # pendentes.
+    if cenario_cassado is not None:
+        sjs = set(sub_judice_por_candidato or ())
+        b = {s.sqcand: s.estado for s in cenario_cassado.situacoes}
+        decisivos = {Estado.ELEITO, Estado.SEGUNDO_TURNO}
+        muda = any(s.estado in decisivos for s in situacoes
+                   if s.sqcand in sjs)
+        if not muda:
+            muda = any(b.get(s.sqcand) is not s.estado for s in situacoes
+                       if s.sqcand not in sjs)
+        sub_judice_em_jogo = muda
+        if muda:
+            avisos.append(
+                f"{_br(sub_judice)} votos anulados sub judice mudam quem se "
+                "define: a tela mostra os dois cenários — o de validação "
+                "(votos contam) e o de cassação — até a decisão judicial "
+                "(§4.7).")
+        else:
+            avisos.append(
+                f"{_br(sub_judice)} votos anulados sub judice seguem "
+                "pendentes de decisão judicial, mas não alteram o resultado: "
+                "validados ou cassados, os mesmos nomes se definem.")
+
     # Para o 2º turno com uma vaga: se exatamente dois candidatos não estão
     # eliminados, os dois nomes estão definidos.
     if vagas == 1 and tem_segundo_turno and not sub_judice_em_jogo:
@@ -347,6 +418,8 @@ def avaliar(votos: dict[str, int], *, vagas: int,
         resto_maximo_total=teto_total, resto_maximo_por_candidato=teto_ind,
         situacoes=tuple(situacoes), sub_judice_em_jogo=sub_judice_em_jogo,
         encerrada=encerrada, avisos=tuple(avisos),
+        situacoes_cassado=(cenario_cassado.situacoes
+                           if cenario_cassado is not None else None),
     )
 
 

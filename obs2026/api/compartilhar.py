@@ -75,7 +75,9 @@ def register(app) -> None:
                               if recorte.get("uf") else None),
                        "municipio": (str(recorte["municipio"])[:7]
                                      if recorte.get("municipio") else None),
-                       "camada": str(recorte.get("camada") or "lider")}
+                       "camada": str(recorte.get("camada") or "lider"),
+                       "eleicao": (str(recorte["eleicao"]).strip()
+                                   if recorte.get("eleicao") else None)}
             telas = None
         elif telas is not None:
             if (not isinstance(telas, list) or len(telas) > 60

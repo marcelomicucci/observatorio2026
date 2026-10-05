@@ -29,7 +29,9 @@ def registrar(app: typer.Typer, env_opt) -> None:
         cargo: str = typer.Argument(..., help="presidente|governador|senador"),
         uf: str = typer.Option(None, "--uf", help="UF, obrigatorio fora de presidente"),
         env_name: str = env_opt,
-        modelo: str = typer.Option("m1", help="m0 (baseline) ou m1"),
+        modelo: str = typer.Option(None,
+                                   help="m0 (baseline), m1 ou m2; padrão: "
+                                        "o escolhido na aba Configuração"),
         sims: int = typer.Option(None, help="numero de simulacoes"),
     ):
         """Roda a projeção de uma disputa e REGISTRA o que foi dito.
@@ -58,7 +60,7 @@ def registrar(app: typer.Typer, env_opt) -> None:
                   f"({reg.cobertura_pct:.2f}%)  ·  "
                   f"pendente: {br(ctx.pendente_min)}–{br(ctx.pendente_max)}")
         con.print(f"estado: [bold]{reg.estado_publicacao}[/]  ·  "
-                  f"modelo {modelo.upper()} semente {fc.seed} "
+                  f"modelo {str(reg.modelo).upper()} semente {fc.seed} "
                   f"({fc.n_sims} simulacoes, erro MC "
                   f"{fc.diagnostics['erro_monte_carlo_pp']:.4f} pp)")
 
@@ -268,6 +270,18 @@ def registrar_preparo(app: typer.Typer, env_opt) -> None:
                         baixadas += 1
                     except Exception:            # noqa: BLE001
                         falhas += 1
+
+        # Composição atual do Senado: as 27 cadeiras que seguem até 2031.
+        from .politics import senado as SEN
+        try:
+            doc = SEN.baixar()
+            con.print(f"senado: {len(SEN.remanescentes(2026, doc)['cadeiras'])}"
+                      " cadeiras remanescentes gravadas")
+        except Exception as exc:                 # noqa: BLE001
+            ant = SEN.carregar()
+            con.print(f"[yellow]senado: não baixou ({exc}); "
+                      + (f"segue a versão de {ant['obtido_em'][:10]}"
+                         if ant else "SEM composição em disco") + "[/]")
 
         malhas = [p for p in (DATA_DIR.parent / "web" / "geo").glob("*.json")]
         con.print()

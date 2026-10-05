@@ -41,7 +41,7 @@ from pathlib import Path
 
 from ..storage.raw import RawArchive, SnapshotRef
 from ..tse.parsers import ea20 as ea20_parser
-from . import models as M
+from . import models as M, territorio
 
 
 @dataclass
@@ -133,6 +133,8 @@ class CarregadorIncremental:
             self._obs[chave] = M.UnitObservation(
                 unit=f"{uf_ref}:{r.cdabr}", uf=uf_ref,
                 stratum=M.estrato(uf_ref, r.electorate.te), result=r,
+            # Só o M2 lê a marca; o estrato do M1 continua igual.
+            capital=territorio.e_capital(uf_ref, r.cdabr),
             )
             reparsadas += 1
         self._sujas.clear()

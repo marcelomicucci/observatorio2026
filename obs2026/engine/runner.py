@@ -17,7 +17,23 @@ from pathlib import Path
 from ..config import Environment, Thresholds
 from ..storage.raw import RawArchive
 from ..tse.parsers import ea20 as ea20_parser
+from ..tse.parsers.ea20 import DVT_ANULADO_SJ
 from . import audit, decided, models as M, pending as pend, simulate as S
+from . import territorio
+
+
+#: Modelo de produção. M2 desde 21/09/2026: no ensaio com a ordem real de
+#: 2022 (`scripts/ensaio2022.py`), calibrado em 2018 e testado em 2022, a
+#: cobertura do intervalo de 80% foi de 54-59% (M1) para 77-82% (M2), e no
+#: presidente a maior chance dada ao perdedor caiu de 91% para 56%. O M1
+#: continua disponível (`modelo="m1"`) para comparação e para voltar atrás.
+#:
+#: Desde 21/09/2026 este é só o padrão de fábrica: o modelo em produção é
+#: escolhido na aba Configuração e fica em `config/operacao.yaml`
+#: (`operacao.modelo_ativo()`), relido a cada projeção.
+MODELO_PADRAO = "m2"
+VERSOES = {"m0": "m0-0.1", "m1": "m1-0.1", "m2": "m2-0.1", "m3": "m3-0.1",
+           "m31": "m31-0.1", "m32": "m32-0.1"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +54,9 @@ class Contexto:
     pendente_max: int
     concorrentes_observados: int
     sub_judice: int
+    #: Votos sub judice por candidato — permite separar "há voto sub
+    #: judice" de "o voto sub judice decide" (engine/decided.py).
+    sub_judice_por_candidato: dict[str, int]
     encerrada: bool
     fonte_gerada_em: str | None
     #: Horario da fonte MAIS ANTIGA entre as unidades lidas. Durante a
@@ -97,6 +116,8 @@ def carregar_observacoes(archive: RawArchive, cargo: str,
         saida.append(M.UnitObservation(
             unit=f"{uf_ref}:{r.cdabr}", uf=uf_ref,
             stratum=M.estrato(uf_ref, r.electorate.te), result=r,
+            # Só o M2 lê a marca; o estrato do M1 continua igual.
+            capital=territorio.e_capital(uf_ref, r.cdabr),
         ))
     return saida
 
@@ -114,6 +135,11 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
     p_max = sum(o.pending.upper for o in obs)
     vvc = sum(o.result.votes.vvc for o in obs)
     sj = sum(o.result.votes.vansj for o in obs)
+    sj_cand: dict[str, int] = {}
+    for o in obs:
+        for c in o.result.cargo.candidatos:
+            if c.dvt == DVT_ANULADO_SJ:
+                sj_cand[c.sqcand] = sj_cand.get(c.sqcand, 0) + c.votos
     geradas = [o.result.generated_at for o in obs if o.result.generated_at]
     # Unidade sem dado: nenhuma secao apurada ainda. Nao e erro — e o comeco
     # da noite — mas precisa aparecer no registro.
@@ -127,6 +153,7 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
         secoes_totalizadas=st, secoes_total=ts,
         pendente_min=p_min, pendente_max=p_max,
         concorrentes_observados=vvc, sub_judice=sj,
+        sub_judice_por_candidato=sj_cand,
         # A disputa só está encerrada se TODAS as unidades estiverem.
         encerrada=all(o.result.is_final for o in obs),
         fonte_gerada_em=(max(geradas).isoformat() if geradas else None),
@@ -138,8 +165,8 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
 
 
 def executar(env: Environment, thr: Thresholds, *, cargo: str,
-             uf: str | None = None, modelo: str = "m1",
-             n_sims: int | None = None, model_version: str = "m1-0.1",
+             uf: str | None = None, modelo: str | None = None,
+             n_sims: int | None = None, model_version: str | None = None,
              archive: RawArchive | None = None,
              diario: audit.Diario | None = None,
              registrar: bool = True,
@@ -160,14 +187,26 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
     ctx = montar_contexto(obs, cargo=cargo, abrangencia=abrangencia,
                           unidade=unidade)
 
+    # Válidos e sub judice (ver `pending.observed_of`): o sub judice é
+    # projetado como "se os votos forem validados".
     candidatos = sorted({
         c.sqcand for o in obs for c in o.result.cargo.candidatos
-        if c.conta_como_valido
+        if c.conta_como_valido or c.dvt == ea20_parser.DVT_ANULADO_SJ
     })
     if not candidatos:
         raise ValueError("nenhum candidato valido na disputa")
 
-    build = M.build_m0 if modelo == "m0" else M.build_m1
+    if modelo is None:
+        # O modelo de produção é chave de operação, não constante: vale o
+        # que estiver escolhido na aba Configuração neste instante.
+        from ..operacao import modelo_ativo
+        modelo = modelo_ativo()
+    if modelo not in VERSOES:
+        raise ValueError(f"modelo desconhecido: {modelo}")
+    model_version = model_version or VERSOES[modelo]
+    build = {"m0": M.build_m0, "m1": M.build_m1, "m2": M.build_m2,
+             "m3": M.build_m3, "m31": M.build_m31,
+             "m32": M.build_m32}[modelo]
     units = build(obs, candidatos, seats=ctx.vagas)
     cfg = S.SimConfig(
         n_sims=n_sims or int(thr.monte_carlo.get("n_sims", 5000)),
@@ -181,6 +220,7 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
         votos_obs, vagas=ctx.vagas,
         concorrentes_observados=ctx.concorrentes_observados,
         pendente_max=ctx.pendente_max, sub_judice=ctx.sub_judice,
+        sub_judice_por_candidato=ctx.sub_judice_por_candidato,
         encerrada=ctx.encerrada, unidade=unidade,
     )
 
