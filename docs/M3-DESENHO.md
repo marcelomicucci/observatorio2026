@@ -12,7 +12,7 @@ fica em [METODOLOGIA.md](METODOLOGIA.md).
 | **M3.3** | M3 com os choques de preferência × 0,8 | **em produção**, homologado em 05/10/2026 |
 | M3.1 | resposta à inclinação por bloco ideológico | implementado, experimental, sem gate |
 | M3.2 | calibrador dinâmico da incerteza | implementado, reprovado no ensaio de 2018 |
-| M3.4 | PIB agropecuário como segunda covariável | implementado, não melhorou; só no ensaio |
+| M3a, M3.4 | PIB agropecuário como segunda covariável (sobre o M3 e sobre o M3.3) | passam no gate de 06/10 sem ganho consistente; não adotados |
 
 ## O problema que o M3 resolve
 
@@ -182,14 +182,35 @@ disputas; `data/exports/ensaio2022/calibracao_m32*_2018.md`):
   anterior com o que chegou depois, no agregado — ou reduzir o próprio erro
   central (M3.1).
 
-## M3.4 — PIB agropecuário (não melhorou)
+## M3a e M3.4 — PIB agropecuário (sem ganho consistente)
 
 Hipótese levantada em 05/10: o que a inclinação não explica acompanha o
 perfil econômico do município. Com o valor adicionado por setor do IBGE
 (SIDRA 5938, ano 2021; `scripts/economia_ibge.py`), o resíduo do presidente
 tem correlação de −0,38 com a fatia do agro. Como segunda covariável do
-nível (`build_m34`), porém, o erro não caiu: 0,458 × 0,459 pp, melhor em 18
-disputas e pior em 20. Fica no código para ensaio, sem gate.
+nível, porém, o erro no replay de 2026 não caiu: 0,458 × 0,459 pp, melhor em
+18 disputas e pior em 20.
+
+São duas variantes: o **M3a** põe o agro sobre o M3; o **M3.4**
+(`build_m34`), sobre o M3.3. No ensaio de 2022 chamam-se `m3a` e `m34`; no
+replay de 2026, `agro` e `agro+k0.8`.
+
+Gate de 2022 (06/10, 3.000 simulações, semente 7,
+`data/exports/ensaio2022/gate2022-agro.md`), erro mediano nas rodadas 1, 5 e
+9 e cobertura da faixa de 80%:
+
+| modelo | ordem real | ordem aleatória | cobertura real / aleatória |
+|---|---|---|---|
+| M3 | 1,69 / 0,62 / 0,21 | 1,97 / 0,40 / 0,12 | 82,7% / 81,7% |
+| M3.3 | 1,66 / 0,68 / 0,21 | 1,96 / 0,39 / 0,12 | 75,9% / 75,8% |
+| M3a | 1,74 / 0,67 / 0,19 | 1,84 / 0,43 / 0,13 | 83,1% / 81,0% |
+| M3.4 | 1,68 / 0,66 / 0,19 | 1,86 / 0,40 / 0,12 | 77,2% / 75,4% |
+
+As duas passam, e nenhuma deu 90% ou mais a um perdedor. O ganho aparece só
+na primeira rodada da ordem aleatória; na ordem real, que é o teste, ficam
+empatadas ou um pouco piores no começo. Não há motivo para trocar o modelo
+em produção. O M3 rodado de novo nesse gate reproduziu exatamente os números
+de 05/10.
 
 ## O que o 1º turno deixou em aberto
 

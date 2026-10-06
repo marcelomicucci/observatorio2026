@@ -204,7 +204,7 @@ localidade. As 55 disputas são projetadas e registradas a cada 2 minutos.
 | M2 | hierárquico: município → porte → grupo da capital → UF | não passou no gate |
 | M3 | M2 + inclinação histórica de cada município (o voto dele na eleição anterior) | foi o modelo do 1º turno |
 | **M3.3** | M3 com a faixa 20% mais estreita | **em produção** |
-| M3.1, M3.2, M3.4 | bloco ideológico, calibrador dinâmico, PIB agropecuário | experimentais, fora da produção |
+| M3.1, M3.2, M3a, M3.4 | bloco ideológico, calibrador dinâmico, PIB agropecuário | experimentais, fora da produção |
 
 O Senado tem tratamento próprio para as duas vagas de 2026: cada eleitor faz,
 em média, menos de duas escolhas válidas.

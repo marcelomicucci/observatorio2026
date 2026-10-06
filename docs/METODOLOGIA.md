@@ -102,7 +102,8 @@ preferência, o comparecimento e a incerteza de cada unidade pendente
 | M2 | disponível; não passou no gate |
 | M3 | passou no gate em 22/09; foi o modelo do 1º turno |
 | **M3.3** | **em produção**; passou no gate em 05/10 |
-| M3.1, M3.2, M3.4 | experimentais; sem gate, fora da produção |
+| M3.1, M3.2 | experimentais; sem gate, fora da produção |
+| M3a, M3.4 | experimentais; passam no gate sem ganho consistente; não adotados |
 
 ### M0 — extrapolação ingênua
 
@@ -213,9 +214,12 @@ gate:
   se estivesse pendente, e o desvio reescala a incerteza. No ensaio de 2018
   ficou neutro. O erro de cobertura vem de desvios compartilhados (o grupo ou
   a UF inteira se afastando), que um resíduo por município não enxerga.
-- **M3.4** — PIB agropecuário do município (IBGE, 2021) como segunda
-  covariável. O resíduo da inclinação acompanha o agro (correlação −0,38 no
-  presidente), mas a variante não reduziu o erro (0,458 × 0,459 pp).
+- **M3a e M3.4** — PIB agropecuário do município (IBGE, 2021) como segunda
+  covariável: o M3a sobre o M3, o M3.4 sobre o M3.3. O resíduo da inclinação
+  acompanha o agro (correlação −0,38 no presidente), mas no replay de 2026 o
+  erro não caiu (0,458 × 0,459 pp). No gate de 2022 (06/10) as duas passam,
+  sem ganho consistente: melhoram a primeira rodada da ordem aleatória e
+  empatam ou pioram um pouco na ordem real. Não foram adotadas.
 
 ## Senado: duas vagas, duas escolhas
 
@@ -315,6 +319,8 @@ simulações. Para ser homologado, o modelo precisa:
 | M2 | 17 de 18 | 78,2% / 80,8% | 1 disputa | não passou |
 | M3 | 18 de 18 | 81,6% / 81,2% | nenhuma | passou (22/09) |
 | M3.3 | 18 de 18 | 75,9% / 75,8% | nenhuma | passou (05/10) |
+| M3a | 18 de 18 | 83,1% / 81,0% | nenhuma | passou (06/10); não adotado |
+| M3.4 | 18 de 18 | 77,2% / 75,4% | nenhuma | passou (06/10); não adotado |
 
 Na ordem real, o erro mediano do M3 é cerca de metade do erro do M0 (rodada
 1: 1,69 × 3,32 pp; rodada 5: 0,68 × 1,50 pp).
