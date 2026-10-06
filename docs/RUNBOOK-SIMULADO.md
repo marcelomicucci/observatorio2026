@@ -1,5 +1,10 @@
 # Runbook — simulados de 22, 23 e 24 de setembro
 
+> Escrito para os simulados de setembro. O sistema está em produção desde o
+> 1º turno (04/10/2026), no ambiente `oficial2026`, com o modelo M3.3. Os
+> passos de operação continuam valendo; horários, ambiente e o que se
+> queria provar em cada janela são os de setembro.
+
 Janelas anunciadas pelo TSE: **9h–12h e 14h–17h**, nos três dias.
 Reconfirmar horário e parâmetros na [página
 técnica](https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados)
@@ -278,10 +283,11 @@ telão roda sozinho pelo roteiro do arquivo, sem controle ao vivo.
 A aba **Configuração** do painel reúne as chaves que se mexem com o sistema
 no ar — todas gravam em arquivo e valem na próxima passada, sem reiniciar:
 
-- **Modelo de projeção**: M3 (em produção desde 22/09, homologado), M2, M1
-  ou M0 (referência); M3.1 e M3.2 aparecem como "em teste" e não devem ser
-  ligados sem passar no gate. Projeções já registradas ficam com o modelo
-  com que foram feitas;
+- **Modelo de projeção**: M3.3 (em produção desde 05/10, homologado), M3
+  (o modelo do 1º turno), M2, M1 ou M0 (referência); M3.1 e M3.2 aparecem
+  como "em teste" e não devem ser ligados sem passar no gate. Trocar o
+  modelo derruba a homologação até nova assinatura. Projeções já
+  registradas ficam com o modelo com que foram feitas;
 - **Coleta**: pular finalizados, buscar deputados federais, **parar o
   coletor quando o TSE encerrar** (ele espera 10 min pelos últimos arquivos
   e sai; só vale se tiver visto a apuração aberta na própria execução),

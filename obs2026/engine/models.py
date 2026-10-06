@@ -1,4 +1,7 @@
-"""Construção das entradas do modelo: M0 (diagnóstico) e M1 (produção).
+"""Construção das entradas do modelo, do M0 (referência) à família M3.
+
+Em produção desde 05/10/2026: M3.3 (`build_m33`). M1 e M2 ficam para
+comparação; a escolha é chave de `config/operacao.yaml`.
 
 **M0 — extrapolação ingênua (§4.4).** Aplica a preferência, o comparecimento
 e a taxa de válidos *nacionais já contados* a todo o eleitorado pendente. É

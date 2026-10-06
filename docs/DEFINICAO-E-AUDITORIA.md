@@ -69,6 +69,17 @@ Nos dados de teste de 2026 isso acontece de verdade: o arquivo presidencial
 tem 10.503.573 votos sub judice, e a definição fica suspensa mesmo com a
 apuração encerrada.
 
+### Segundo turno: dois rótulos, não um
+
+Corrigido na noite do 1º turno, com a apuração no ar. Estar garantido entre
+os dois primeiros não é estar no 2º turno: se o líder ainda pode alcançar a
+maioria absoluta, a eleição pode acabar ali.
+
+- **"entre os 2 primeiros"** — o candidato não sai mais das duas primeiras
+  posições;
+- **"2º turno definido"** — além disso, ninguém alcança mais a maioria
+  absoluta (`Definicao.maioria_absoluta_possivel` é falso).
+
 ---
 
 ## Auditoria das projeções
@@ -121,24 +132,27 @@ contagem — e o relatório grita, em vez de diluir o caso numa média.
 
 ### O que a auditoria já encontrou
 
-Rodando o ensaio sobre os dados reais do simulado, com apuração progressiva
-reconstruída:
+**No simulado (setembro).** Com o M1, a faixa de 80% cobria de 10% a 30% no
+Senado nas fases iniciais — estreita demais. A medida foi o que levou ao M2
+e ao choque de grupo, calibrados em 2018 e testados em 2022.
 
-```
-Senador AL — cobertura dos intervalos de 80%
-   1,0% apurado   10%
-   5,1% apurado   20%
-  10,1% apurado   30%
-  25,2% apurado   20%
-  51,1% apurado   60%
-```
+**No 1º turno (04/10/2026).** O diário da noite, 26.835 registros nas 55
+disputas com o M3, contra o resultado final:
 
-O nominal é 80%. Os intervalos estão **estreitos demais** nas fases
-iniciais, e o problema é maior no Senado, onde dez candidatos ficam
-concentrados perto de 10% e diferenças pequenas decidem vagas.
+- o número central errou de metade a um terço do que errou o percentual
+  apurado, até 95% apurado;
+- a faixa de 80% conteve o resultado em 96–100% dos casos até 95% apurado —
+  **larga demais**, o contrário do defeito de setembro;
+- acima de 95% apurado a faixa encolhia a 0,1 pp e deixava de conter o
+  resultado;
+- com 0,0% apurado houve probabilidade acima de 90% para quem não venceu;
+  depois de 0,04%, nenhuma.
 
-Isso não é surpresa nova — era a suspeita registrada em
-[METODOLOGIA.md](METODOLOGIA.md). O que mudou é que agora **é medido
-automaticamente a cada execução**, em vez de depender de alguém lembrar de
-conferir. A correção (fazer os σ crescerem quando a cobertura cai) precisa de
-dados históricos reais, não de ajuste contra o simulado sintético.
+Cada achado virou regra ou modelo antes do 2º turno: o **M3.3**, em produção
+desde 05/10, estreita a faixa em 20%; a probabilidade só é publicada a partir
+de 6% apurado; e a largura trava acima de 95%. A tabela completa está em
+[METODOLOGIA.md](METODOLOGIA.md).
+
+O diário guarda o número que o modelo produziu, não o que foi à tela: as
+regras de publicação se aplicam na saída, e o registro bruto continua
+conferível.

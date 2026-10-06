@@ -1,8 +1,18 @@
 # M3 — projeção pela mudança em relação à eleição anterior
 
-Desenho aberto em 22/09/2026, durante o simulado do TSE. Estado: **M3.0
-implementado e em teste**; M3.1 (bloco ideológico) e M3.2 (calibrador
-dinâmico) desenhados.
+Desenho aberto em 22/09/2026, durante o simulado do TSE. Este documento
+guarda o histórico do desenho e as referências; o método como está em uso
+fica em [METODOLOGIA.md](METODOLOGIA.md).
+
+**Estado em 06/10/2026:**
+
+| variante | o que é | situação |
+|---|---|---|
+| M3 (M3.0) | M2 + inclinação histórica de cada município | passou no gate em 22/09; foi o modelo do 1º turno (04/10) |
+| **M3.3** | M3 com os choques de preferência × 0,8 | **em produção**, homologado em 05/10/2026 |
+| M3.1 | resposta à inclinação por bloco ideológico | implementado, experimental, sem gate |
+| M3.2 | calibrador dinâmico da incerteza | implementado, reprovado no ensaio de 2018 |
+| M3.4 | PIB agropecuário como segunda covariável | implementado, não melhorou; só no ensaio |
 
 ## O problema que o M3 resolve
 
@@ -47,7 +57,7 @@ escolha.
 
 Não se encontrou modelo público de projeção durante a apuração no Brasil.
 
-## M3.0 — implementado (22/09)
+## M3.0 — o modelo do 1º turno
 
 `engine/models.build_m3`, sobre a hierarquia do M2 (município → porte →
 grupo da capital → UF), sem mexer na simulação:
@@ -71,10 +81,46 @@ Primeiro teste (22/09, MG, BA e PA, 6 disputas, 500 simulações): M3 vence o
 M0 no erro mediano em 18 de 18 rodadas, com erro 2 a 4 vezes menor (ordem
 real, rodada 1: M0 1,68 pp, M2 3,73, M3 1,21). Intervalo largo demais:
 cobertura 85,8% (real) — esperado, pois herda a incerteza de um modelo que
-erra mais. Gate completo com 3.000 simulações em
-`data/exports/ensaio2022/gate2022.md`.
+erra mais.
 
-## M3.1 — bloco ideológico (desenhado)
+Gate completo (22/09, 55 disputas, 3.000 simulações,
+`data/exports/ensaio2022/gate2022.md`): **passou**. Vence o M0 nas 18
+rodadas, com cerca de metade do erro na ordem real; cobertura da faixa de
+80% em 81,6% (real) e 81,2% (aleatória); nenhuma disputa com 90% ou mais
+dado a um perdedor. Homologado e posto em produção no mesmo dia.
+
+Na noite de 04/10/2026 o M3 projetou as 55 disputas do 1º turno. O número
+central foi bom desde o início (erro médio de 1,40 pp com menos de 6%
+apurado, contra 2,52 pp do percentual apurado), mas a faixa de 80% conteve o
+resultado em 96–100% dos casos: larga demais.
+
+## M3.3 — em produção (05/10)
+
+`engine/models.build_m33`: o número central do M3, com os três choques de
+preferência do simulador multiplicados por `FATOR_M33 = 0,8`
+(`simulate.estreitar`). Nada mais muda.
+
+Cobertura da faixa de 80% com cada fator testado:
+
+| fator | 2026 (noite real) | 2022 (ensaio) | 2018 (ensaio) |
+|---|---|---|---|
+| 1,0 (M3) | 96–100% | 82% | 81–82% |
+| **0,8** | 92–100% | 76% | 74–76% |
+| 0,65 | 89–99% | 70% | 67–70% |
+| 0,5 | 81–98% | 60% | 57–61% |
+
+O ensaio sintético é mais duro que a noite real; só o 0,8 passa nas três. Com
+0,65 o modelo já dava 90% ou mais a um perdedor em 2022.
+
+Gate oficial (05/10, mesmos parâmetros do M3): **passou** — vence o M0 nas
+18 rodadas, cobertura 75,9% / 75,8%, nenhum perdedor com 90% ou mais. A
+margem é pequena (o piso é 75%); 0,85 daria 78,3% / 77,6% e 0,9, 79,9% /
+79,2%. A rever depois do 2º turno, com duas noites reais.
+
+Homologado e assinado em 05/10/2026. A evidência do M3, de 22/09, continua
+intacta no mesmo arquivo.
+
+## M3.1 — bloco ideológico (experimental)
 
 Proposta do usuário (22/09): medir a "inclinação ideológica" dos dados que
 chegam. Com a classificação assinada (`config/classificacao_2026.yaml`):
@@ -89,7 +135,13 @@ chegam. Com a classificação assinada (`config/classificacao_2026.yaml`):
 - Risco: alianças locais que atravessam blocos; mitigado por deixar o
   coeficiente ser aprendido na noite, não imposto.
 
-## M3.2 — calibrador dinâmico (desenhado)
+O que foi implementado (`build_m31`) é mais estreito que esse desenho: igual
+ao M3, menos a resposta de cada candidato à inclinação, que em vez de
+encolher para zero encolhe para a média do bloco ideológico dele, com peso
+dado pelo erro-padrão da regressão. Mira o candidato regional cujo voto não
+segue o eixo presidencial. Não passou por gate; fora da produção.
+
+## M3.2 — calibrador dinâmico (reprovado no ensaio)
 
 Também da proposta do usuário: o intervalo se auto-avalia durante a noite.
 
@@ -129,6 +181,27 @@ disputas; `data/exports/ensaio2022/calibracao_m32*_2018.md`):
   o erro compartilhado é o desenho original acima — comparar a projeção
   anterior com o que chegou depois, no agregado — ou reduzir o próprio erro
   central (M3.1).
+
+## M3.4 — PIB agropecuário (não melhorou)
+
+Hipótese levantada em 05/10: o que a inclinação não explica acompanha o
+perfil econômico do município. Com o valor adicionado por setor do IBGE
+(SIDRA 5938, ano 2021; `scripts/economia_ibge.py`), o resíduo do presidente
+tem correlação de −0,38 com a fatia do agro. Como segunda covariável do
+nível (`build_m34`), porém, o erro não caiu: 0,458 × 0,459 pp, melhor em 18
+disputas e pior em 20. Fica no código para ensaio, sem gate.
+
+## O que o 1º turno deixou em aberto
+
+- **Deriva dentro do município.** O voto que falta de um município parcial
+  difere do que já chegou dele (presidente: 0,9 a 1,8 pp). Não depende do
+  perfil econômico — é uniforme. Um estimador medido na hora ajudou em 6 de
+  10 disputas e atrapalhou em 2 ou 3; falta freio e ensaio próprio.
+- **Calibrador dinâmico.** A largura do próprio modelo é o melhor preditor
+  do erro (Spearman 0,48); as outras variáveis testadas acrescentam cerca de
+  1 ponto de R².
+- **`K_INCLINACAO` não pesa no presidente**, que tem milhões de votos desde
+  o primeiro boletim.
 
 ## Critério de entrada em produção
 
