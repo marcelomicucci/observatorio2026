@@ -200,7 +200,7 @@ localidade. As 55 disputas são projetadas e registradas a cada 2 minutos.
 | modelo | o que é | situação |
 |---|---|---|
 | M0 | extrapolação ingênua do já contado | referência: existe para ser batido |
-| M1 | município encolhido para o estrato (UF × porte × capital) | aposentado: subestimava a incerteza |
+| M1 | município encolhido para o estrato (UF × porte) | aposentado: subestimava a incerteza |
 | M2 | hierárquico: município → porte → grupo da capital → UF | não passou no gate |
 | M3 | M2 + inclinação histórica de cada município (o voto dele na eleição anterior) | foi o modelo do 1º turno |
 | **M3.3** | M3 com a faixa 20% mais estreita | **em produção** |

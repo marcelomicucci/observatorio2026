@@ -1,7 +1,9 @@
 """Operação da coleta na noite de 04/10/2026: capturas, latência, erros."""
-import json, collections, statistics as st
+import json, collections, statistics as st, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+# O console do Windows (cp1252) não aceita o sinal de menos tipográfico.
+sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parents[2] / "data" / "raw" / "oficial2026" / "manifest"
 TZ = timezone(timedelta(hours=-3))
 kinds = collections.Counter(); status = collections.Counter(); lat = collections.defaultdict(list); por_hora = collections.Counter(); dedup = collections.Counter()

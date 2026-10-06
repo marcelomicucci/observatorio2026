@@ -113,7 +113,7 @@ não vence a extrapolação ingênua não merece ir ao ar.
 ### M1 — município encolhido para o estrato
 
 Cada unidade usa o próprio dado, encolhido na direção do estrato (UF × porte
-eleitoral × capital/interior):
+eleitoral; a marca de capital só é lida a partir do M2):
 
 ```
 w = n_observado / (n_observado + k₀)        k₀ = 500 votos
