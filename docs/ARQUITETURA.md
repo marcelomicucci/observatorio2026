@@ -38,7 +38,7 @@ resultado.
 | Banco ao vivo | `storage/models.py` | 16 tabelas, SQLite |
 | Motor | `engine/` | modelos, simulação, definição matemática, chamada, alertas |
 | Registro contínuo | `engine/registro_continuo.py` | projeta as 55 disputas e grava no diário |
-| Diário | `engine/audit.py` | projeções em JSONL, só acréscimo |
+| Diário | `engine/audit.py`, `engine/conjuntos.py` | projeções em JSONL, só acréscimo; o conjunto de capturas de cada uma se confere contra o manifesto |
 | Histórico | `history/` | importador, banco histórico, anos congelados |
 | Política | `politics/` | partidos, classificação, linhagem, Senado, Câmara |
 | API | `api/` | cerca de 50 rotas FastAPI |

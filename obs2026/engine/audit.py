@@ -180,6 +180,29 @@ class Diario:
             fh.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
         return r
 
+    @property
+    def caminho_conjuntos(self) -> Path:
+        return self.caminho.with_name(f"conjuntos-{self.ambiente}.jsonl")
+
+    def anotar_conjunto(self, *, registro_id: str, snapshot_set_id: str,
+                        cargo: str, unidade: str, unidades: int,
+                        manifesto_ate: dict[str, int]) -> None:
+        """Grava, ao lado do diário, até onde o manifesto tinha sido lido
+        quando o conjunto de capturas de um registro foi montado.
+
+        O `snapshot_set_id` do registro diz QUAL conjunto; esta linha diz
+        COMO refazê-lo: a captura mais recente de cada município entre as
+        linhas do manifesto até estes deslocamentos. Fica num arquivo à
+        parte, e não no registro, para o formato do diário não mudar — um
+        servidor que não foi reiniciado continua lendo o diário novo.
+        """
+        linha = {"registro_id": registro_id,
+                 "snapshot_set_id": snapshot_set_id, "cargo": cargo,
+                 "unidade": unidade, "unidades": unidades,
+                 "manifesto_ate": manifesto_ate}
+        with open(self.caminho_conjuntos, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
+
     @staticmethod
     def _decodificar(linha: str) -> Registro:
         d = json.loads(linha)

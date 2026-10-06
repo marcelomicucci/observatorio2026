@@ -93,7 +93,7 @@ class RegistradorContinuo:
         return [None] if cargo == "1" else list(UFS)
 
     def _projetar_uma(self, cargo: str, uf: str | None,
-                      obs) -> bool:
+                      obs, posicao: dict[str, int] | None = None) -> bool:
         """Roda e registra uma disputa. Devolve se registrou."""
         if not obs:
             self.stats.disputas_sem_dado += 1
@@ -105,6 +105,7 @@ class RegistradorContinuo:
                 self.env, load_thresholds(), cargo=cargo, uf=uf,
                 n_sims=self.n_sims, archive=self.archive,
                 diario=self.diario, registrar=True, observacoes=obs,
+                posicao=posicao,
             )
             return True
         except Exception as exc:                 # noqa: BLE001
@@ -123,9 +124,12 @@ class RegistradorContinuo:
         for cargo in self.cargos:
             carregador = self._carregador(cargo)
             detalhe[cargo] = carregador.atualizar()
+            # As observações só mudam em `atualizar()`: a posição lida aqui
+            # vale para todas as disputas deste cargo na rodada.
+            posicao = carregador.posicao()
             for uf in self._disputas(cargo):
                 obs = carregador.observacoes(uf)
-                if self._projetar_uma(cargo, uf, obs):
+                if self._projetar_uma(cargo, uf, obs, posicao):
                     registradas += 1
         self.stats.rodadas += 1
         self.stats.registros += registradas

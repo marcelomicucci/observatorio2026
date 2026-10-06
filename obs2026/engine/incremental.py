@@ -135,6 +135,7 @@ class CarregadorIncremental:
                 stratum=M.estrato(uf_ref, r.electorate.te), result=r,
             # Só o M2 lê a marca; o estrato do M1 continua igual.
             capital=territorio.e_capital(uf_ref, r.cdabr),
+            sha256=ref.sha256,
             )
             reparsadas += 1
         self._sujas.clear()
@@ -144,6 +145,14 @@ class CarregadorIncremental:
             "unidades_totais": len(self._obs),
             "cache_payloads": len(self._por_hash),
         }
+
+    def posicao(self) -> dict[str, int]:
+        """Até onde o manifesto foi lido: dia -> deslocamento em bytes.
+
+        Uma cópia, tirada logo depois de `atualizar()`: é o que permite
+        refazer depois o conjunto de capturas de cada projeção da rodada.
+        """
+        return dict(self._offsets)
 
     def observacoes(self, uf: str | None = None
                     ) -> list[M.UnitObservation]:

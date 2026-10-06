@@ -11,6 +11,8 @@ carrega o horário de geração no TSE, que é o que datar uma projeção exige.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +23,7 @@ from ..tse.parsers.ea20 import DVT_ANULADO_SJ
 from . import audit, decided, models as M, pending as pend, simulate as S
 from . import territorio
 
+log = logging.getLogger("obs2026.runner")
 
 #: Modelo de produção. M2 desde 21/09/2026: no ensaio com a ordem real de
 #: 2022 (`scripts/ensaio2022.py`), calibrado em 2018 e testado em 2022, a
@@ -86,16 +89,42 @@ class Contexto:
         return (b - a).total_seconds()
 
 
-def carregar_observacoes(archive: RawArchive, cargo: str,
-                         uf: str | None = None) -> list[M.UnitObservation]:
-    """Últimas observações municipais de uma disputa, do arquivo bruto.
+def id_do_conjunto(obs: list[M.UnitObservation]) -> str | None:
+    """Identidade do conjunto de capturas que alimentou uma projeção.
+
+    É o SHA-256 da lista ordenada dos hashes de conteúdo das capturas, uma
+    por linha. Depende só do conteúdo: o mesmo conjunto de arquivos dá o
+    mesmo identificador, em qualquer máquina, e qualquer arquivo diferente
+    muda o resultado. Com a posição do manifesto gravada ao lado do diário
+    (`audit.Diario.anotar_conjunto`), o conjunto se refaz e se confere sem
+    depender do horário (`scripts/artigo/conferir_conjuntos.py`).
+
+    `None` se alguma observação não veio do arquivo bruto: identificar pela
+    metade seria afirmar mais do que se sabe.
+    """
+    if not obs or any(o.sha256 is None for o in obs):
+        return None
+    h = hashlib.sha256()
+    for s in sorted(o.sha256 for o in obs):
+        h.update(s.encode("ascii"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def carregar_com_posicao(archive: RawArchive, cargo: str,
+                         uf: str | None = None
+                         ) -> tuple[list[M.UnitObservation], dict[str, int]]:
+    """Últimas observações municipais de uma disputa e até onde o manifesto
+    foi lido (dia -> deslocamento em bytes).
 
     Mantém apenas a captura mais recente por município: duas capturas da
     mesma unidade somadas seriam dupla contagem.
     """
     ultimos: dict[tuple[str, str], tuple[str, object]] = {}
+    posicao: dict[str, int] = {}
     for dia in archive.days():
-        for ref in archive.manifest(dia):
+        for ref, fim in archive.manifest_desde(dia):
+            posicao[dia] = fim
             if ref.kind != "ea20" or not ref.path or not ref.mun:
                 continue
             if ref.cargo != cargo:
@@ -118,8 +147,15 @@ def carregar_observacoes(archive: RawArchive, cargo: str,
             stratum=M.estrato(uf_ref, r.electorate.te), result=r,
             # Só o M2 lê a marca; o estrato do M1 continua igual.
             capital=territorio.e_capital(uf_ref, r.cdabr),
+            sha256=ref.sha256,
         ))
-    return saida
+    return saida, posicao
+
+
+def carregar_observacoes(archive: RawArchive, cargo: str,
+                         uf: str | None = None) -> list[M.UnitObservation]:
+    """Últimas observações municipais de uma disputa, do arquivo bruto."""
+    return carregar_com_posicao(archive, cargo, uf)[0]
 
 
 def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
@@ -160,7 +196,7 @@ def montar_contexto(obs: list[M.UnitObservation], *, cargo: str,
         fonte_mais_antiga=(min(geradas).isoformat() if geradas else None),
         unidades_sem_dado=len(sem_dado),
         eleitorado_sem_dado=sum(o.result.electorate.te for o in sem_dado),
-        snapshot_set_id=None, unidades=len(obs), nomes=nomes,
+        snapshot_set_id=id_do_conjunto(obs), unidades=len(obs), nomes=nomes,
     )
 
 
@@ -170,18 +206,23 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
              archive: RawArchive | None = None,
              diario: audit.Diario | None = None,
              registrar: bool = True,
-             observacoes: list[M.UnitObservation] | None = None):
+             observacoes: list[M.UnitObservation] | None = None,
+             posicao: dict[str, int] | None = None):
     """Roda a projeção de uma disputa e registra o resultado.
 
     Devolve `(forecast, definicao, contexto, registro)`.
 
     `observacoes` permite reaproveitar uma carga incremental: durante a
     apuração, reler o bruto inteiro a cada projeção custaria segundos que
-    crescem com o manifesto (ver `incremental.py`).
+    crescem com o manifesto (ver `incremental.py`). Quem passa `observacoes`
+    passa também `posicao` — até onde o manifesto tinha sido lido quando
+    elas foram montadas —, para o conjunto poder ser refeito depois.
     """
     archive = archive or RawArchive(Path("data/raw"), env.name)
-    obs = (observacoes if observacoes is not None
-           else carregar_observacoes(archive, cargo, uf))
+    if observacoes is not None:
+        obs = observacoes
+    else:
+        obs, posicao = carregar_com_posicao(archive, cargo, uf)
     abrangencia = "br" if uf is None else "uf"
     unidade = uf or "br"
     ctx = montar_contexto(obs, cargo=cargo, abrangencia=abrangencia,
@@ -261,4 +302,16 @@ def executar(env: Environment, thr: Thresholds, *, cargo: str,
             unidades_sem_dado=ctx.unidades_sem_dado,
             eleitorado_sem_dado=ctx.eleitorado_sem_dado,
         ))
+        if ctx.snapshot_set_id and posicao:
+            try:
+                diario.anotar_conjunto(
+                    registro_id=registro.registro_id,
+                    snapshot_set_id=ctx.snapshot_set_id, cargo=cargo,
+                    unidade=unidade, unidades=ctx.unidades,
+                    manifesto_ate=posicao)
+            except Exception as exc:              # noqa: BLE001
+                # A anotação serve à reprodução, não à noite: se o disco
+                # recusar, a projeção já está no diário e segue valendo.
+                log.warning("conjunto nao anotado (%s): %r",
+                            registro.registro_id, exc)
     return fc, dfn, ctx, registro

@@ -388,8 +388,11 @@ primeira prova é 25/10/2026.
   `min_strata_with_data_pct` estão em `thresholds.yaml`, mas a publicação
   hoje é regida pelas regras de `engine/nivel.py` e `engine/chamada.py`; no
   1º turno a projeção ficou disponível desde 0,01% apurado.
-- **`snapshot_set_id` não é preenchido** no diário: o registro não aponta os
-  arquivos exatos que o motor leu.
+- **`snapshot_set_id` só existe a partir de 06/10/2026.** Os 26.835
+  registros do 1º turno não o têm: o conjunto de capturas de cada um se
+  refaz pelo horário. Do 2º turno em diante cada registro leva o hash do
+  conjunto, e ele se confere contra o manifesto
+  ([DEFINICAO-E-AUDITORIA.md](DEFINICAO-E-AUDITORIA.md)).
 - **Unidade mínima é o município.** Zonas só entram no ensaio, para fatiar
   cidades grandes.
 - **Proporcionais não são projetados.**

@@ -72,6 +72,10 @@ class UnitObservation:
     stratum: str
     result: Ea20
     capital: bool = False
+    #: Hash do conteúdo da captura de onde a observação saiu. É o que entra
+    #: no `snapshot_set_id` do registro (`runner.id_do_conjunto`). `None` em
+    #: observações montadas fora do arquivo bruto (ensaios, testes).
+    sha256: str | None = None
 
     @property
     def obs(self):

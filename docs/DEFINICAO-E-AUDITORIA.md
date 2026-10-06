@@ -107,6 +107,36 @@ intervalo de 80% cobre 80% das vezes" verificável em vez de decorativa.
 O diário é **append-only**. Reprocessar não reescreve o passado: alterar o
 valor de uma projeção antiga é falsificação do histórico, não correção.
 
+### Com que arquivos cada projeção foi feita
+
+Durante a apuração a entrada muda a cada segundo, e guardar a lista de
+arquivos a cada registro custaria 5.757 hashes por projeção presidencial, a
+cada dois minutos. Duas anotações pequenas fazem o mesmo serviço (desde
+06/10/2026):
+
+- **`snapshot_set_id`**, no registro: o SHA-256 da lista ordenada dos hashes
+  de conteúdo das capturas que o motor leu. Diz *qual* conjunto;
+- **`manifesto_ate`**, em `data/previsoes/conjuntos-<ambiente>.jsonl`: até
+  que byte de cada manifesto diário o motor tinha lido. Diz *como refazer*.
+
+O manifesto só cresce, então "a captura mais recente de cada município entre
+as linhas até este byte" dá sempre o mesmo resultado. Refeito o conjunto, o
+hash tem de bater com o do registro:
+
+```bash
+python scripts/artigo/conferir_conjuntos.py
+```
+
+A posição fica num arquivo ao lado, e não no registro, para o formato do
+diário não mudar: um servidor que não foi reiniciado continua lendo o diário
+novo. Os registros do 1º turno são anteriores a isso e têm o campo vazio;
+para eles o conjunto se refaz pelo horário, como faz `scripts/ensaio2026.py`.
+
+Validado com a noite real de 04/10: liberando o manifesto aos poucos, 29
+conjuntos da Presidência e de três governos foram refeitos só pelo manifesto
+e bateram todos; a carga incremental e a completa dão o mesmo identificador;
+e os números projetados são idênticos aos de antes da mudança.
+
 ### Como se avalia
 
 ```bash

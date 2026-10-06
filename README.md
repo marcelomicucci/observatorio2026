@@ -119,7 +119,7 @@ E não esconde incerteza — quando não dá para afirmar, a tela diz que não d
 | **Modelo em produção** | **M3.3**, homologado e assinado em 05/10/2026 (gate sobre 2022: vence o baseline em todas as rodadas; cobertura da faixa de 80% em 75,9% / 75,8%, tolerância ±5) |
 | **Classificação ideológica** | assinada, com versão por ano (2018, 2022, 2026) e linhagem partidária |
 | **Históricos** | 2014 (Senado), 2018 e 2022 importados e conferidos contra o oficial |
-| **Testes** | 217 passando, 1 pulado |
+| **Testes** | 223 passando, 1 pulado |
 | **2º turno (25/10/2026)** | códigos de eleição do TSE (6258/6260) ainda a conferir no catálogo; a seleção de turno no painel e no telão não foi exercitada com dado real |
 
 ## Stack
@@ -315,7 +315,7 @@ web/                 index.html (painel), telao.html, mapa.js, politico.js,
                      telas.js, geo/ (malha do IBGE)
 scripts/             ensaios e gate sobre 2018/2022/2026, medições, atalhos
   artigo/            avaliação e figuras do estudo acadêmico
-tests/               217 testes; fixtures com payloads reais do TSE
+tests/               223 testes; fixtures com payloads reais do TSE
 docs/                achados, metodologia, arquitetura, runbook, especificação
 data/                arquivo bruto, bancos, diário, exports (fora do git)
 ```
