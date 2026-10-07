@@ -632,7 +632,9 @@ const PLACAR = (() => {
             el('span', {cls: 'forte'}, fr.forte),
             el('span', {cls: 'txt'}, fr.texto),
             temPj ? el('span', {cls: 'pj-txt'},
-              `projeção ${A.nome.split(' ')[0]} `
+              // Nome inteiro: o primeiro pedaço de "Dr. Daniel" é "Dr."
+              // (visto na reprise de 07/10).
+              `projeção ${A.nome} `
               + `${pct(pj[A.sq].projecao.pct_mediana, 1)} (${faixaPj(pj[A.sq])})`)
               : null));
 

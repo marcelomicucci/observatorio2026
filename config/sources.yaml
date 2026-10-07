@@ -38,6 +38,25 @@ environments:
       cd_pleito: "3220"
       elections: ["6257", "6259", "6261"]
 
+  reprise2026:
+    label: "REPRISE — 1º turno de 2026 em replay (ensaio)"
+    # Ensaio com a apuração em andamento (`scripts/reprise2026.py`): os
+    # retratos que o coletor guardou em 04/10/2026 voltam a entrar na ordem
+    # real, em tempo acelerado, num banco, manifesto e diário próprios. Os
+    # dados são os oficiais (fase "o"), por isso `official: true` — senão a
+    # leitura os marcaria como ambiente contaminado —, e a faixa de aviso
+    # vem de `aviso`. O coletor RECUSA este ambiente (`demonstracao`): nada
+    # aqui é buscado no TSE.
+    demonstracao: true
+    aviso: "REPRISE — 1º turno de 04/10/2026 em replay, não é apuração ao vivo"
+    base: "https://resultados.tse.jus.br"
+    ambiente: "oficial"
+    official: true
+    seed:
+      ciclo: "ele2026"
+      cd_pleito: "3220"
+      elections: ["6257", "6259", "6261"]
+
   demo2022:
     label: "Demonstração — resultado real de 2022 (Senado: 2018)"
     # Banco montado por `python scripts/demo2022.py` a partir dos arquivos

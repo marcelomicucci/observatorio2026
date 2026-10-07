@@ -242,7 +242,9 @@ def envelope(dados: Any, *, snapshots: list[SourceSnapshot],
             "oficial": env.official,
             # Barreira visível: nenhum consumidor pode confundir simulado com
             # resultado oficial por descuido de leitura.
-            "aviso": (None if env.official else env.aviso or
+            # `aviso` declarado vale mesmo com dado oficial: a reprise da
+            # noite do 1º turno usa os arquivos oficiais e não é ao vivo.
+            "aviso": env.aviso or (None if env.official else
                       "AMBIENTE DE SIMULADO — dados de teste do TSE, "
                       "não são resultado eleitoral"),
             # Eleição passada (seletor de anos): ano, turno e as UFs cujo
