@@ -620,6 +620,9 @@ const MAPA = (() => {
       p.setAttribute('aria-label', dado
         ? resumoTexto(dado, camada, ctx)
         : f.properties.cd + ': sem dado');
+      // Código da feição no próprio traço: quem desenha por cima (rótulos
+      // do placar) acha o território sem refazer a projeção.
+      p.setAttribute('data-cd', f.properties.cd);
       if (dado) {
         p.addEventListener('mouseenter', () => mostrarDica(dado));
         p.addEventListener('mouseleave', esconderDica);

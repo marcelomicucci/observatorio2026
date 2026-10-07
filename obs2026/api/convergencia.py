@@ -40,6 +40,29 @@ def register(app) -> None:
     from ..engine import audit as A
     from ..engine.denominators import Base as DenBase
 
+    @app.get("/api/v1/serie-apuracao")
+    def serie_apuracao(cargo: str, uf: str | None = None, top: int = 2):
+        """Apurado e projetado de uma disputa ao longo da apuração, da
+        tabela pronta (`engine/serie_apuracao.py`), não do diário inteiro.
+
+        É a mesma informação de `/convergencia` para uma disputa só, com as
+        colunas que o gráfico do placar usa. Não roda o motor."""
+        from ..engine import serie_apuracao as SA
+        env = load_environment(M.env_atual())
+        raiz = DATA_DIR / "previsoes"
+        # Barato quando a tabela está em dia; é o que a põe em dia quando o
+        # registro não conseguiu (ou quando ela ainda não existe).
+        SA.sincronizar(raiz, env.name)
+        d = SA.consultar(raiz, env.name, cargo,
+                         uf.lower() if uf else "br", top=top)
+        if d is None:
+            return M.envelope(
+                None, snapshots=[], estado="sem_registros",
+                motivo="nenhuma projeção registrada para esta disputa")
+        return M.envelope(d, snapshots=[], estado="convergencia",
+                          denominador=DenBase.VALIDOS_COMPUTADOS,
+                          extra={"eixo_x": "cobertura_pct"})
+
     @app.get("/api/v1/convergencia")
     def convergencia(serie: str | None = None, ambiente: str | None = None,
                      top: int = 6):

@@ -226,6 +226,11 @@ def register(app) -> None:
         """
         return M._html_com_versao(_WEB / "telao.html")
 
+    @app.get("/placar", include_in_schema=False)
+    def placar():
+        """Tela de teste do placar (07/10/2026): fora do roteiro do telão."""
+        return M._html_com_versao(_WEB / "placar.html")
+
     @app.get("/mapa.js", include_in_schema=False)
     def mapa_js():
         # `no-cache` não é "não guarde": é "confira antes de usar". Sem

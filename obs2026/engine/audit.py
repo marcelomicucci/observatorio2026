@@ -178,6 +178,16 @@ class Diario:
     def registrar(self, r: Registro) -> Registro:
         with open(self.caminho, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(asdict(r), ensure_ascii=False) + "\n")
+        # Tabela pronta do gráfico "ao longo da apuração": alimentada a cada
+        # projeção registrada. É derivada do diário e nunca pode atrapalhar
+        # o registro — espera curta, e qualquer falha fica para a rota, que
+        # põe a tabela em dia na consulta seguinte.
+        try:
+            from . import serie_apuracao
+            serie_apuracao.sincronizar(self.caminho.parent, self.ambiente,
+                                       espera_s=2.0)
+        except Exception:                                  # noqa: BLE001
+            pass
         return r
 
     @property

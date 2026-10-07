@@ -1024,6 +1024,27 @@ async function viewTelao() {
       style: 'border-color:#25d366',
     }, '📷 WhatsApp: roteiro inteiro')));
 
+  /* Placar (tela de teste, 07/10/2026): duelo de uma vaga, presidente ou
+   * governador, com ou sem municípios no mapa. Abre em janela própria e
+   * NÃO faz parte do roteiro: o carrossel e os comandos acima não a
+   * alcançam. */
+  const ufPlacar = el('select', {title: 'Estado do placar de governador'},
+    ...UFS.map(u => el('option', {value: u}, u.toUpperCase())));
+  ufPlacar.value = 'sp';
+  const abrirPlacar = qs => window.open('/placar' + (qs ? '?' + qs : ''),
+                                        'placar-observatorio');
+  out.push(el('div', {cls: 'visoes', style: 'align-items:center'},
+    el('span', {style: 'color:var(--muted);font-size:13px'},
+       'Placar (teste):'),
+    el('button', {onclick: () => abrirPlacar('')}, 'Presidente ↗'),
+    el('button', {onclick: () => abrirPlacar('mapa=municipios')},
+       'Presidente · municípios ↗'),
+    ufPlacar,
+    el('button', {onclick: () => abrirPlacar(
+      `cargo=3&uf=${ufPlacar.value}`)}, 'Governador · municípios ↗'),
+    el('button', {onclick: () => abrirPlacar(
+      `cargo=3&uf=${ufPlacar.value}&mapa=estados`)}, 'Governador ↗')));
+
   out.push(editorRoteiro());
 
   const ruins = r.dados.filter(t => t.erro);
