@@ -290,14 +290,18 @@ const PLACAR = (() => {
 
     // Faixas primeiro, depois projeção, por fim o apurado — que fica por cima.
     for (const l of linhas) {
-      const comFaixa = l.pts.filter(q => q.pct_q100 != null
-                                         && q.pct_q900 != null);
+      // A faixa PUBLICADA em cada registro (80% no começo, 90% a partir
+      // de 15% apurado, largura travada aos 95%) — a mesma dos números ao
+      // lado. O intervalo bruto de 80% estreitava demais no fim e deixava
+      // o resultado de fora por centésimos (reprise de 07/10).
+      const comFaixa = l.pts.filter(q => q.faixa_min != null
+                                         && q.faixa_max != null);
       if (comFaixa.length > 1) {
         no('path', {'clip-path': 'url(#corte-grafico)', fill: '#b98ae8',
           'fill-opacity': .16, stroke: 'none',
-          d: caminho(comFaixa, 'pct_q900') + comFaixa.slice().reverse()
+          d: caminho(comFaixa, 'faixa_max') + comFaixa.slice().reverse()
             .map(q => 'L' + X(q.cobertura_pct).toFixed(1) + ' '
-                      + Y(q.pct_q100).toFixed(1)).join('') + 'Z'});
+                      + Y(q.faixa_min).toFixed(1)).join('') + 'Z'});
       }
     }
     for (const l of linhas) {
@@ -694,7 +698,7 @@ const PLACAR = (() => {
                 el('i', {style: `border-color:${c.cor}`}), c.nome)),
               el('span', {}, el('i', {cls: 'tr', style: 'border-color:#c7ced9'}),
                  'nossa projeção'),
-              el('span', {}, el('i', {cls: 'fx'}), 'intervalo')),
+              el('span', {}, el('i', {cls: 'fx'}), 'faixa publicada')),
             alvoGrafico));
 
         // ---- coluna direita: regiões em cima, estados mais apertados embaixo

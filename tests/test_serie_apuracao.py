@@ -6,17 +6,22 @@ from obs2026.engine import serie_apuracao as SA
 
 
 def _linha(momento, apurado, votos, *, turno="1", modelo="m33",
-           cargo="1", unidade="br"):
+           cargo="1", unidade="br", largura=10.0):
     total = sum(votos.values())
     return json.dumps({
         "eleicao": "6257", "turno": turno, "cargo": cargo,
         "unidade": unidade, "modelo": modelo, "momento": momento,
         "eleitorado_total": 1000, "eleitorado_apurado": apurado,
         "pendente_max": 1000 - apurado, "concorrentes_observados": total,
+        "secoes_total": 1000, "secoes_totalizadas": apurado,
         "candidatos": [{
             "sqcand": sq, "nome": sq.upper(), "votos_observados": v,
-            "pct_concorrentes_q100": 40.0, "pct_concorrentes_q500": 50.0,
-            "pct_concorrentes_q900": 60.0} for sq, v in votos.items()],
+            "pct_concorrentes_q100": 50.0 - largura,
+            "pct_concorrentes_q500": 50.0,
+            "pct_concorrentes_q900": 50.0 + largura,
+            "pct_concorrentes_q050": 50.0 - 2 * largura,
+            "pct_concorrentes_q950": 50.0 + 2 * largura}
+            for sq, v in votos.items()],
     }) + "\n"
 
 
@@ -97,3 +102,27 @@ def test_sem_diario_e_sem_disputa(tmp_path):
         encoding="utf-8")
     SA.sincronizar(tmp_path, "teste")
     assert SA.consultar(tmp_path, "teste", "3", "sp") is None
+
+
+def test_faixa_publicada_sobe_de_nivel_e_trava_a_largura(tmp_path):
+    """80% abaixo de 15% apurado, 90% dali em diante; acima de 95% a faixa
+    não fica mais estreita que a do último registro abaixo disso."""
+    _diario(tmp_path).write_text(
+        _linha("2026-10-04T20:00:00+00:00", 100, {"a": 60, "b": 40})
+        + _linha("2026-10-04T21:00:00+00:00", 500, {"a": 60, "b": 40},
+                 largura=4.0)
+        + _linha("2026-10-04T22:00:00+00:00", 940, {"a": 60, "b": 40},
+                 largura=1.0)
+        + _linha("2026-10-04T23:00:00+00:00", 990, {"a": 60, "b": 40},
+                 largura=0.1)
+        + _linha("2026-10-05T00:00:00+00:00", 1000, {"a": 60, "b": 40},
+                 largura=0.0), encoding="utf-8")
+    SA.sincronizar(tmp_path, "teste")
+    p = SA.consultar(tmp_path, "teste", "1", "br")["candidatos"][0]["pontos"]
+    assert [(x["faixa_nivel"], x["faixa_min"], x["faixa_max"]) for x in p] == [
+        (80, 40.0, 60.0),      # 10% apurado: tendência, 80%
+        (90, 42.0, 58.0),      # 50%: 90%, o dobro da largura do teste
+        (90, 48.0, 52.0),      # 94%: último antes da trava
+        (90, 48.0, 52.0),      # 99%: o modelo diz ±0,2; publica-se ±2
+        (90, 50.0, 50.0),      # encerrada: sem trava, é o resultado
+    ]

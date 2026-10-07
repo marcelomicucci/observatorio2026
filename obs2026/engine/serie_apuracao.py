@@ -32,13 +32,16 @@ import json
 import sqlite3
 from pathlib import Path
 
+from . import nivel as NV
+
 _ESQUEMA = """
 create table if not exists ponto (
   eleicao text not null, turno text not null, cargo text not null,
   unidade text not null, modelo text not null, momento text not null,
   cobertura_pct real not null, pendente_max integer,
   concorrentes integer not null, sqcand text not null, nome text,
-  votos integer not null, pct_projetado real, pct_q100 real, pct_q900 real
+  votos integer not null, pct_projetado real, pct_q100 real, pct_q900 real,
+  secoes_pct real, pct_q050 real, pct_q950 real, pct_q025 real, pct_q975 real
 );
 create index if not exists ix_ponto_disputa
   on ponto (cargo, unidade, eleicao, turno, modelo, momento);
@@ -55,6 +58,11 @@ def caminho(raiz: Path, ambiente: str) -> Path:
 def _abrir(raiz: Path, ambiente: str, espera_s: float) -> sqlite3.Connection:
     con = sqlite3.connect(caminho(raiz, ambiente), timeout=espera_s,
                           isolation_level=None)
+    # Tabela de versão anterior (sem os quantis da faixa publicada): é
+    # derivada do diário, então some e se refaz na próxima sincronização.
+    colunas = {r[1] for r in con.execute("pragma table_info(ponto)")}
+    if colunas and "pct_q050" not in colunas:
+        con.executescript("drop table ponto; drop table if exists leitura;")
     con.executescript(_ESQUEMA)
     return con
 
@@ -93,6 +101,9 @@ def sincronizar(raiz: Path, ambiente: str, *, espera_s: float = 30.0) -> int:
                     r = json.loads(bruta)
                     tot = r.get("eleitorado_total") or 0
                     cob = 100.0 * r["eleitorado_apurado"] / tot if tot else 0.0
+                    sec = r.get("secoes_total") or 0
+                    cob_sec = (100.0 * (r.get("secoes_totalizadas") or 0)
+                               / sec if sec else 0.0)
                     base = (str(r["eleicao"]), str(r["turno"]),
                             str(r["cargo"]), str(r["unidade"]), r["modelo"],
                             r["momento"], cob, r.get("pendente_max"),
@@ -103,13 +114,18 @@ def sincronizar(raiz: Path, ambiente: str, *, espera_s: float = 30.0) -> int:
                             c["votos_observados"],
                             c.get("pct_concorrentes_q500"),
                             c.get("pct_concorrentes_q100"),
-                            c.get("pct_concorrentes_q900")))
+                            c.get("pct_concorrentes_q900"), cob_sec,
+                            c.get("pct_concorrentes_q050"),
+                            c.get("pct_concorrentes_q950"),
+                            c.get("pct_concorrentes_q025"),
+                            c.get("pct_concorrentes_q975")))
                     rodadas += 1
                 except (ValueError, KeyError, TypeError):
                     continue                    # linha estragada: pula
         if novas:
             con.executemany(
-                "insert into ponto values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "insert into ponto values "
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 novas)
         con.execute("insert into leitura (id, pos) values (1, ?) "
                     "on conflict (id) do update set pos = excluded.pos",
@@ -160,16 +176,38 @@ def consultar(raiz: Path, ambiente: str, cargo: str, unidade: str, *,
             serie + (momento, max(1, top))).fetchall()
         candidatos = []
         for sq, nome in escolhidos:
-            pontos = [{
-                "momento": m, "cobertura_pct": cob,
-                # Sem voto contado o apurado é nulo, não zero (§9).
-                "pct_apurado": 100.0 * v / den if den > 0 else None,
-                "pct_projetado": pj, "pct_q100": q1, "pct_q900": q9,
-            } for m, cob, v, den, pj, q1, q9 in con.execute(
-                "select momento, cobertura_pct, votos, concorrentes, "
-                f"pct_projetado, pct_q100, pct_q900 from ponto where {onde} "
-                "and sqcand = ? order by cobertura_pct, momento",
-                serie + (sq,))]
+            pontos, ref = [], None
+            # Em ordem de registro, para a trava de largura: acima de 95%
+            # apurado a faixa publicada mantém a largura do último registro
+            # abaixo disso (`engine/nivel.py`), como na rota /projection.
+            for (m, cob, pend, v, den, q500, q100, q900, sec, q050, q950,
+                 q025, q975) in con.execute(
+                    "select momento, cobertura_pct, pendente_max, votos, "
+                    "concorrentes, pct_projetado, pct_q100, pct_q900, "
+                    "secoes_pct, pct_q050, pct_q950, pct_q025, pct_q975 "
+                    f"from ponto where {onde} and sqcand = ? "
+                    "order by momento", serie + (sq,)):
+                qs = {"q500": q500, "q100": q100, "q900": q900,
+                      "q050": q050, "q950": q950, "q025": q025, "q975": q975}
+                if cob < NV.TRAVA_LARGURA_APURADO:
+                    ref = qs
+                    publicados = qs
+                else:
+                    publicados = NV.travar_largura(qs, ref) if pend else qs
+                nivel, _ = NV.nivel_por_apurado(sec)
+                lo, hi = NV.faixa(publicados, nivel)
+                if publicados.get(NV.CHAVES[nivel][0]) is None:
+                    nivel = 80         # registro antigo, sem os quantis largos
+                pontos.append({
+                    "momento": m, "cobertura_pct": cob,
+                    # Sem voto contado o apurado é nulo, não zero (§9).
+                    "pct_apurado": 100.0 * v / den if den > 0 else None,
+                    "pct_projetado": q500, "pct_q100": q100, "pct_q900": q900,
+                    # A faixa PUBLICADA naquele registro: o nível sobe de 80%
+                    # para 90% aos 15% apurado, e a largura trava aos 95%.
+                    "faixa_min": lo, "faixa_max": hi, "faixa_nivel": nivel,
+                })
+            pontos.sort(key=lambda x: (x["cobertura_pct"], x["momento"]))
             candidatos.append({"sqcand": sq, "nome": nome, "pontos": pontos})
         return {"eleicao": ult[0], "turno": ult[1], "cargo": cargo,
                 "unidade": unidade, "modelo": modelo, "execucoes": rodadas,
