@@ -228,8 +228,16 @@ def register(app) -> None:
 
     @app.get("/placar", include_in_schema=False)
     def placar():
-        """Tela de teste do placar (07/10/2026): fora do roteiro do telão."""
+        """O placar numa janela própria, fora do carrossel — para ensaio.
+        No telão ele é o tipo de tela `placar` do roteiro; os dois usam o
+        mesmo `placar.js`."""
         return M._html_com_versao(_WEB / "placar.html")
+
+    @app.get("/placar.js", include_in_schema=False)
+    def placar_js():
+        return FileResponse(_WEB / "placar.js",
+                            media_type="application/javascript",
+                            headers={"Cache-Control": "no-cache"})
 
     @app.get("/mapa.js", include_in_schema=False)
     def mapa_js():

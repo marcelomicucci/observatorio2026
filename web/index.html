@@ -634,6 +634,14 @@ const ROTEIRO = {
         + ' — os 27 estados';
     }
     if (it.tipo === 'duelo') return 'Presidente — estado a estado';
+    if (it.tipo === 'placar') {
+      return (it.cargo === '3'
+        ? `Governador — placar (${(it.uf || '').toUpperCase()})`
+        : 'Presidente — placar')
+        + (it.abrangencia === 'mu' && it.cargo !== '3' ? ' · municípios'
+           : it.abrangencia === 'uf' && it.cargo === '3' ? ' · sem municípios'
+           : '');
+    }
     if (it.tipo === 'blocos') {
       return 'Blocos nas esferas — '
         + (it.uf ? it.uf.toUpperCase() : 'Brasil');
@@ -839,13 +847,19 @@ function editorRoteiro() {
     }
   }
 
-  /* Telas prontas de partido, ideologia e composição. Não dependem de
-   * cargo ou UF escolhidos na pesquisa: entram direto no fim do roteiro. */
-  const prontas = el('div', {cls: 'visoes', style: 'margin-top:4px'},
-    el('span', {style: 'font-size:12.5px;color:var(--muted);'
-                     + 'align-self:center;margin-right:4px'},
-       'Acrescentar tela pronta:'),
-    ...[
+  /* Telas prontas: entram direto no fim do roteiro. Lista suspensa
+   * (07/10/2026): eram quinze botões em fila, e a aba ficava tomada por
+   * eles. As do fim usam a UF escolhida na pesquisa. */
+  const TELAS_PRONTAS = [
+      ['Placar: Presidente', {tipo: 'placar', cargo: '1'}],
+      ['Placar: Presidente, mapa por município',
+       {tipo: 'placar', cargo: '1', abrangencia: 'mu'}],
+      ...(st.uf ? [
+        [`Placar: Governador ${st.uf.toUpperCase()}`,
+         {tipo: 'placar', cargo: '3', uf: st.uf}],
+        [`Placar: Governador ${st.uf.toUpperCase()}, sem municípios`,
+         {tipo: 'placar', cargo: '3', uf: st.uf, abrangencia: 'uf'}],
+      ] : []),
       ['Presidente: onde cada um lidera',
        {tipo: 'politico', cargo: '1', abrangencia: 'mu'}],
       ['Governadores: partido e ideologia',
@@ -874,12 +888,25 @@ function editorRoteiro() {
       ] : []),
       ['Presidente: evolução 2018-2026',
        {tipo: 'comparativo', cargo: '1', anos: '2018,2022,2026'}],
-    ].map(([rot, t]) => el('button', {onclick: () => {
-      ROTEIRO.itens.push({tipo: 'mapa', casa: null, abrangencia: null,
-        cargo: '1', uf: null, municipio: null, municipio_nome: null,
-        camada: 'lider', segundos: 25, titulo: null, ...t});
-      mudou(true);
-    }}, '＋ ' + rot)));
+  ];
+  const escolha = el('select', {title: 'Acrescenta a tela escolhida ao fim '
+      + 'do roteiro. Vale depois de gravar.'},
+    el('option', {value: ''}, '＋ acrescentar tela pronta…'),
+    ...TELAS_PRONTAS.map(([rot], i) => el('option', {value: i}, rot)));
+  escolha.onchange = () => {
+    const pronta = TELAS_PRONTAS[escolha.value];
+    escolha.value = '';
+    if (!pronta) return;
+    ROTEIRO.itens.push({tipo: 'mapa', casa: null, abrangencia: null,
+      cargo: '1', uf: null, municipio: null, municipio_nome: null,
+      camada: 'lider', segundos: 25, titulo: null, ...pronta[1]});
+    mudou(true);
+  };
+  const prontas = el('div', {cls: 'visoes', style: 'margin-top:4px'},
+    escolha,
+    st.uf ? null : el('span', {style: 'font-size:12.5px;color:var(--muted);'
+        + 'align-self:center'},
+      'escolha um estado na pesquisa para ver as telas por UF'));
   raiz.insertBefore(prontas, tabela);
 
   const botao = (txt, acao, titulo, desligado) => el('button', {
@@ -917,6 +944,7 @@ function editorRoteiro() {
           ? el('span', {cls: 'tag'}, it.tipo === 'composicao'
               ? 'hemiciclo' : it.tipo === 'recordes' ? 'cartões'
               : it.tipo === 'comparativo' ? 'ano a ano'
+              : it.tipo === 'placar' ? 'placar'
               : 'partido + ideologia')
           : el('select', {
           onchange: e => { it.camada = e.target.value; mudou(); },
@@ -1023,27 +1051,6 @@ async function viewTelao() {
            + 'números, pronto para mandar no WhatsApp',
       style: 'border-color:#25d366',
     }, '📷 WhatsApp: roteiro inteiro')));
-
-  /* Placar (tela de teste, 07/10/2026): duelo de uma vaga, presidente ou
-   * governador, com ou sem municípios no mapa. Abre em janela própria e
-   * NÃO faz parte do roteiro: o carrossel e os comandos acima não a
-   * alcançam. */
-  const ufPlacar = el('select', {title: 'Estado do placar de governador'},
-    ...UFS.map(u => el('option', {value: u}, u.toUpperCase())));
-  ufPlacar.value = 'sp';
-  const abrirPlacar = qs => window.open('/placar' + (qs ? '?' + qs : ''),
-                                        'placar-observatorio');
-  out.push(el('div', {cls: 'visoes', style: 'align-items:center'},
-    el('span', {style: 'color:var(--muted);font-size:13px'},
-       'Placar (teste):'),
-    el('button', {onclick: () => abrirPlacar('')}, 'Presidente ↗'),
-    el('button', {onclick: () => abrirPlacar('mapa=municipios')},
-       'Presidente · municípios ↗'),
-    ufPlacar,
-    el('button', {onclick: () => abrirPlacar(
-      `cargo=3&uf=${ufPlacar.value}`)}, 'Governador · municípios ↗'),
-    el('button', {onclick: () => abrirPlacar(
-      `cargo=3&uf=${ufPlacar.value}&mapa=estados`)}, 'Governador ↗')));
 
   out.push(editorRoteiro());
 

@@ -195,6 +195,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
 <script src="/mapa.js"></script>
 <script src="/politico.js"></script>
 <script src="/telas.js"></script>
+<script src="/placar.js"></script>
 <script>
 const API = '/api/v1';
 const fmt = n => n == null ? '—' : n.toLocaleString('pt-BR');
@@ -1929,6 +1930,41 @@ async function carregarResumoAnos(anos, desatualizada) {
     'resultado final do TSE em 2018 e 2022 · 2026 ao vivo');
 }
 
+/* Placar (07/10/2026): o duelo de uma vaga — presidente, ou governador de
+ * uma UF — numa tela só. O desenho é o de web/placar.js, o mesmo da página
+ * de ensaio /placar. `abrangencia` do roteiro diz se o mapa vai com (mu) ou
+ * sem (uf) municípios. */
+async function carregarPlacar(minhaCarga, desatualizada) {
+  const gov = recorte.cargo === '3';
+  const uf = gov ? String(recorte.uf || '').toLowerCase() : null;
+  const corpo = document.getElementById('corpo');
+  document.getElementById('titulo').textContent =
+    gov ? 'Governador' : 'Presidente';
+  document.getElementById('onde').textContent = gov
+    ? (POLITICO.NOME_UF[uf] || (uf || '').toUpperCase())
+    : 'Brasil · inclui o exterior';
+  document.getElementById('vagas').hidden = true;
+  // As outras telas comparam assinatura para não redesenhar; ao sair daqui
+  // elas têm de desenhar de novo.
+  assinaturaPolitica = null;
+  const res = await PLACAR.desenhar(corpo, {
+    cargo: gov ? '3' : '1', uf, get, velha: desatualizada,
+    municipios: recorte.abrangencia ? recorte.abrangencia === 'mu' : null,
+    semTitulo: true, propagar: true, esperar: ESTATICO,
+    aoAmbiente: amb => {
+      faixaAmbiente(amb);
+      // A grade da tela muda junto com o conteúdo, não antes: até o
+      // primeiro dado chegar fica a tela anterior, inteira.
+      corpo.dataset.tipo = 'placar';
+      corpo.className = 'corpo recordes';
+    },
+  });
+  if (desatualizada() || !res) return;
+  rodapePolitico(res.source_generated_at,
+    (res.denominador && res.denominador.rotulo)
+    + ' · tracejado e roxo = projeção, não resultado');
+}
+
 async function carregar() {
   const minhaCarga = ++cargaAtual;
   const desatualizada = () => minhaCarga !== cargaAtual;
@@ -1937,7 +1973,8 @@ async function carregar() {
     composicao: carregarComposicao, recordes: carregarRecordes,
     comparativo: carregarComparativo, panorama: carregarPanorama,
     duelo: carregarDuelo, participacao: carregarParticipacao,
-    estado: carregarEstado, blocos: carregarBlocos};
+    estado: carregarEstado, blocos: carregarBlocos,
+    placar: carregarPlacar};
   if (ESPECIAIS[recorte.tipo]) {
     try {
       await (ESPECIAIS[recorte.tipo])(

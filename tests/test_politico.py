@@ -687,6 +687,31 @@ def test_alerta_de_segundo_turno_exige_que_ninguem_alcance_a_maioria():
     assert "Ana × Bia" in a[0].texto
 
 
+def test_roteiro_aceita_o_placar(cliente):
+    """Placar: disputa de uma vaga. Presidente dispensa UF, governador a
+    exige, senador é recusado; `abrangencia` (mapa com ou sem municípios)
+    vai e volta do arquivo."""
+    r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [
+        {"tipo": "placar", "cargo": "presidente"},
+        {"tipo": "placar", "cargo": "presidente", "abrangencia": "mu"},
+        {"tipo": "placar", "cargo": "governador", "uf": "sp",
+         "abrangencia": "uf"},
+    ]})
+    assert r.status_code == 200, r.text
+    telas = cliente.get("/api/v1/telao/roteiro").json()["dados"]
+    assert [t["tipo"] for t in telas] == ["placar"] * 3
+    assert not any(t["erro"] for t in telas)
+    assert [t["abrangencia"] for t in telas] == [None, "mu", "uf"]
+    assert telas[0]["uf"] is None and telas[2]["uf"] == "sp"
+    assert "SP" in telas[2]["titulo"]
+    for ruim in ({"tipo": "placar", "cargo": "senador", "uf": "sp"},
+                 {"tipo": "placar", "cargo": "governador"},
+                 {"tipo": "placar", "cargo": "presidente",
+                  "abrangencia": "zona"}):
+        r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [ruim]})
+        assert r.status_code == 422, (ruim, r.text)
+
+
 def test_roteiro_aceita_as_telas_de_resumo(cliente):
     r = cliente.post("/api/v1/telao/roteiro", json={"roteiro": [
         {"tipo": "panorama", "cargo": "governador"},

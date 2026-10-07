@@ -77,7 +77,16 @@ TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo",
          #                 senadores e deputados federais
          #   blocos        os blocos ideológicos em todas as esferas —
          #                 do país ou, com `uf`, de um estado
-         "panorama", "duelo", "participacao", "estado", "blocos")
+         "panorama", "duelo", "participacao", "estado", "blocos",
+         # 07/10/2026 (web/placar.js):
+         #   placar        o duelo de uma vaga numa tela só — presidente,
+         #                 ou governador de uma `uf`: placar dos dois
+         #                 primeiros, "ainda pode virar?", mapa, regiões e
+         #                 o apurado e a projeção ao longo da apuração.
+         #                 `abrangencia: mu | uf` põe ou tira os municípios
+         #                 do mapa (padrão: uf em presidente, mu em
+         #                 governador)
+         "placar")
 CASAS = ("senado", "camara", "assembleia")
 #: Nomes de antes da fusão das camadas do mapa. Continuam aceitos para que
 #: nenhum roteiro já escrito quebre, mas são traduzidos aqui — o telão
@@ -105,15 +114,21 @@ CABECALHO = """\
 #   cargo       presidente | governador | senador        (obrigatório)
 #   uf          sigla, obrigatória para governador e senador
 #   municipio   código TSE (5 dígitos) ou IBGE (7), OU nome + uf
-#   tipo        mapa | politico | composicao    (opcional, padrão mapa)
+#   tipo        mapa | politico | composicao | placar | ...
+#                                               (opcional, padrão mapa)
 #                 mapa        a tela de apuração de sempre
 #                 politico    presidente ou governador: mapa por partido e
 #                             mapa ideológico lado a lado, votos e governos
 #                             por bloco. Governador sem `uf`: os 27 estados
 #                 composicao  hemiciclo; exige `casa: senado` ou
 #                             `casa: camara` e dispensa `cargo`
+#                 placar      presidente, ou governador de uma `uf`: o
+#                             duelo dos dois primeiros numa tela só. Não
+#                             vale para senador (duas vagas)
 #   abrangencia mu | uf        (tipo politico) presidente por município ou
 #                              por estado; padrão mu
+#                              (tipo placar) mapa com ou sem municípios;
+#                              padrão uf em presidente e mu em governador
 #   camada      lider | apurar | partido | ideologia       (tipo mapa)
 #                 lider     quem lidera: cor do 1o, tom pela margem sobre o
 #                           2o, contorno amarelo se matematicamente definido
@@ -272,6 +287,16 @@ def register(app) -> None:
                 if cd != "1":
                     erro = ("duelo estado a estado é de presidente; em "
                             "governador e senador, use o mapa da UF")
+            elif tipo == "placar":
+                if cd not in ("1", "3"):
+                    erro = ("placar é de presidente ou governador: disputa "
+                            "de uma vaga")
+                elif cd == "1":
+                    uf = None
+                elif uf not in UF_DISPUTAS:
+                    erro = "governador é decidido por UF; informe `uf`"
+                if abrangencia not in (None, "mu", "uf"):
+                    erro = erro or "abrangencia deve ser mu ou uf"
             elif tipo == "participacao":
                 if cd is None:
                     erro = (f"cargo {item.get('cargo')!r} desconhecido; "
@@ -344,6 +369,9 @@ def register(app) -> None:
                 titulo = ("Governadores" if cd == "3" else "Senadores")                     + " — os 27 estados"
             elif tipo == "duelo":
                 titulo = "Presidente — estado a estado"
+            elif tipo == "placar":
+                titulo = ("Presidente — placar" if cd == "1"
+                          else f"Governador — placar ({(uf or '').upper()})")
             elif tipo == "participacao":
                 titulo = (f"{cargo_nome.title()} — ausentes, brancos e nulos"
                           + (f" ({uf.upper()})" if uf else ""))
@@ -383,7 +411,8 @@ def register(app) -> None:
                 "eleicao": eleicao,
                 "anos": (str(item.get("anos") or "2018,2022,2026")
                          if tipo == "comparativo" else None),
-                "abrangencia": abrangencia if tipo == "politico" else None,
+                "abrangencia": (abrangencia
+                                if tipo in ("politico", "placar") else None),
                 "titulo": titulo,
                 # O título escrito à mão, separado do montado: sem isso, gravar
                 # de volta congelaria no arquivo um título automático que
@@ -473,7 +502,7 @@ def register(app) -> None:
                     str(it.get("cargo", "")), cargo)
             else:
                 d["cargo"] = cargo
-            if tipo == "politico" and it.get("abrangencia"):
+            if tipo in ("politico", "placar") and it.get("abrangencia"):
                 d["abrangencia"] = str(it["abrangencia"]).strip().lower()
             if it.get("uf"):
                 d["uf"] = str(it["uf"]).strip().lower()[:2]
