@@ -386,11 +386,11 @@ const PLACAR = (() => {
 .pk-raiz .pl{display:flex;justify-content:space-between;gap:.8vw;font-size:1.15vw; font-variant-numeric:tabular-nums;padding:.2vh 0}
 .pk-raiz .pl b{font-weight:700}
 .pk-raiz .pl span{color:#e0cdf5}
-.pk-raiz .linhas{display:grid;gap:.5vh;flex:1;min-height:0}
-.pk-raiz .dl{display:grid;align-items:center;gap:.6vw;min-height:0; grid-template-columns:var(--c1) 3.4vw 1fr 3.4vw}
+.pk-raiz .linhas{display:grid;grid-auto-rows:minmax(0,1fr);gap:.5vh;flex:1;min-height:0;container-type:size;--n:5;--lh:calc((100cqh - (var(--n) - 1) * .5vh) / var(--n))}
+.pk-raiz .dl{display:grid;align-items:center;gap:.6vw;min-height:0;overflow:hidden; grid-template-columns:var(--c1) 3.4vw 1fr 3.4vw}
 .pk-raiz .dl .onde{min-width:0;line-height:1.15}
-.pk-raiz .dl .onde b{display:block;font-size:1.05vw;font-weight:650;white-space:nowrap; overflow:hidden;text-overflow:ellipsis}
-.pk-raiz .dl .onde small{font-size:.72vw;color:var(--muted);white-space:nowrap}
+.pk-raiz .dl .onde b{display:block;font-size:min(1.05vw, calc(var(--lh) * .5));font-weight:650;white-space:nowrap; overflow:hidden;text-overflow:ellipsis}
+.pk-raiz .dl .onde small{display:block;font-size:min(.72vw, calc(var(--lh) * .33));line-height:1.1;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pk-raiz .dl .pa,.pk-raiz .dl .pb{font-size:1.1vw;font-weight:700; font-variant-numeric:tabular-nums}
 .pk-raiz .dl .pa{text-align:right}
 .pk-raiz .dl .perde{opacity:.6;font-weight:500}
@@ -696,7 +696,7 @@ const PLACAR = (() => {
             alvoGrafico));
 
         // ---- coluna direita: regiões em cima, estados mais apertados embaixo
-        const caixaRegioes = el('div', {cls: 'caixa', style: 'flex:5;display:flex;'
+        const caixaRegioes = el('div', {cls: 'caixa', style: 'flex:6;display:flex;'
               + 'flex-direction:column'},
             GOV ? [
               el('div', {cls: 'rot'}, 'Maiores municípios ',
@@ -725,11 +725,12 @@ const PLACAR = (() => {
           caixaRegioes,
           el('div', {cls: 'caixa', style: 'flex:8;display:flex;'
               + 'flex-direction:column'},
-            el('div', {cls: 'rot'}, GOV ? 'Mais apertados entre os maiores '
+            el('div', {cls: 'rot'}, GOV ? 'Mais apertados '
                                         : 'Estados mais apertados ',
               el('small', {}, GOV
-                ? `${apertados.length} dos ${comDois.length} maiores municípios `
-                  + '· município não elege governador'
+                // Curto, para o título não quebrar em duas linhas e tirar
+                // altura da lista.
+                ? `entre os ${comDois.length} maiores · recorte, não elege`
                 : `${apertados.length} de ${comDois.length} · `
                   + 'estado não elege presidente')),
             el('div', {cls: 'linhas'}, ...apertados.map(x => {
@@ -778,6 +779,9 @@ const PLACAR = (() => {
             ? desenhados.find(d => d.uf === UF) : null;
           pintura = MAPA.desenhar(alvo, desenhados, {
             malha: mapa.malha, camada: 'partido', recorte: mapa.recorte_ibge,
+            // Presidente por município: enquadra pela malha dos estados,
+            // a mesma da camada de divisas que vai por cima.
+            moldura: !GOV && MAPA_MUN ? base.malha : null,
             foco: daUf && daUf.cd_ibge, destaque: daUf && daUf.cd_ibge,
             largura: 900, altura: 900,
           }).then(r => {
@@ -810,6 +814,13 @@ const PLACAR = (() => {
           assinaturaMapa = assin;
         }
 
+        // Cada lista diz quantas linhas tem: o estilo tira daí a altura de
+        // uma linha e limita a letra a ela. Com a faixa de alertas ligada a
+        // coluna encolhe, e a segunda linha de cada região caía sobre a de
+        // baixo (visto em 07/10).
+        for (const l of colDir.querySelectorAll('.linhas')) {
+          l.style.setProperty('--n', l.children.length);
+        }
         if (velha()) return null;
         poe(corpo, colEsq, caixaMapa, colDir);
         entrar();

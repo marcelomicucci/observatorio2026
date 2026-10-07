@@ -555,8 +555,15 @@ const MAPA = (() => {
     const foco = opts.foco
       ? feicoes.filter(f => String(f.properties.cd) === String(opts.foco))
       : [];
+    /* `moldura`: outra malha dá o enquadramento. Serve para sobrepor dois
+     * mapas do mesmo território (municípios embaixo, divisas dos estados
+     * por cima): cada malha tem a sua borda — a de municípios vai até
+     * Fernando de Noronha, a de estados não — e, enquadrado cada um pela
+     * própria, as divisas não caem sobre os municípios (visto em 07/10). */
+    const quadro = (opts.moldura && opts.moldura !== opts.malha)
+      ? (await malha(opts.moldura)).features : feicoes;
     const proj = foco.length ? projetor(foco, W, H, 8, 3.2)
-                             : projetor(feicoes, W, H);
+                             : projetor(quadro, W, H);
     const svg = svgEl('svg', {
       viewBox: `0 0 ${W} ${H}`, width: '100%', role: 'img',
       'aria-label': 'Mapa: ' + camada.rotulo,
