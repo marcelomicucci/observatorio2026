@@ -525,9 +525,11 @@ def register(app) -> None:
             return _assembleia(ideo, meta, uf.lower() if uf else None)
         return _senado(s, ideo, meta)
 
-    def _leitor_camara() -> CAM.LeitorCamara:
+    def _leitor_camara(nome: str | None = None) -> CAM.LeitorCamara:
+        """Câmara do ambiente do pedido, ou de `nome` (a comparação ano a
+        ano lê a de 2026 do 1º turno quando o servidor está no 2º)."""
         from ..config import load_environment
-        env = load_environment(M.env_atual())
+        env = load_environment(nome or M.env_atual())
         leitor = _leitores.get(env.name)
         if leitor is None:
             leitor = _leitores[env.name] = CAM.LeitorCamara(

@@ -1226,7 +1226,9 @@ async function carregarParticipacao(minhaCarga, desatualizada) {
   document.getElementById('titulo').textContent =
     'Ausentes, brancos e nulos';
   document.getElementById('vagas').hidden = true;
-  const r = await get(`/comparativo?cargo=${cargo}&anos=2026`
+  // `turno=2`: o ao vivo. Com o servidor no 2º turno, o turno 1 de 2026 é
+  // o banco fechado de 04/10 (24/10/2026); no 1º turno, dá no mesmo.
+  const r = await get(`/comparativo?cargo=${cargo}&anos=2026&turno=2`
     + (uf ? `&uf=${uf}` : ''));
   if (desatualizada()) return;
   faixaAmbiente(r.ambiente);

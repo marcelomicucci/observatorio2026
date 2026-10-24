@@ -179,7 +179,11 @@ class EleicaoPorPedido:
         from ..contexto import ANO_ELEICAO
         meta = _meta_congelado(load_environment(nome)) or {}
         token = _ENV_PEDIDO.set(nome)
-        token_ano = ANO_ELEICAO.set(meta.get("ano"))
+        # O 1º turno de 2026 também é escolhido por aqui, mas partido e
+        # ideologia dele são os de hoje: o ano "passado" é só o anterior.
+        from ..politics.classification import ANO_CADASTRO
+        ano = meta.get("ano")
+        token_ano = ANO_ELEICAO.set(None if ano == ANO_CADASTRO else ano)
         try:
             await self.app(scope, receive, send)
         finally:

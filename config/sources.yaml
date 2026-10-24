@@ -29,14 +29,44 @@ environments:
     # 6257 = federal (Presidente), 6259 = estadual (Governador, Senador,
     # Deputado Federal), 6261 = municipal (Conselheiro Distrital, fora do
     # produto). EA12, EA14 e EA20 conferidos nesses caminhos no mesmo dia.
-    # 2º turno (25/10): 6258 e 6260, ainda fora do catálogo.
+    # O 2º turno entrou no catálogo como pleito próprio (3221) e tem
+    # ambiente próprio, `oficial2026t2`: `pleitos` mantém este banco só
+    # com o 1º turno.
+    #
+    # `congelado` (24/10/2026): a apuração de 04/10 acabou, e o banco dela
+    # entra no seletor de anos do painel como "2026 · 1º turno", só leitura,
+    # ao lado de 2018 e 2022 (metadados em data/db/oficial2026.meta.json).
     base: "https://resultados.tse.jus.br"
     ambiente: "oficial"
     official: true
+    congelado: true
+    pleitos: ["3220"]
     seed:
       ciclo: "ele2026"
       cd_pleito: "3220"
       elections: ["6257", "6259", "6261"]
+
+  oficial2026t2:
+    label: "Eleições 2026 — 2º turno (TSE, resultado oficial)"
+    # Códigos lidos do catálogo de produção em 24/10/2026 (gerado pelo TSE
+    # em 18/10/2026 12:38:11, f="o"): pleito 3221, data 25/10/2026, ciclo
+    # ele2026 (o mesmo do 1º turno), 6258 = Presidente (br + exterior),
+    # 6260 = Governador em AM, RN, DF, ES, AC e TO (469 municípios). O
+    # mesmo pleito traz suplementares municipais de ele2024 (6282–6293,
+    # Prefeito) e consultas populares — sem cargo de interesse, ficam de
+    # fora sozinhas. Banco, arquivo bruto e diário próprios: nada do 1º
+    # turno é relido nem misturado. Sem 2º turno proporcional.
+    base: "https://resultados.tse.jus.br"
+    ambiente: "oficial"
+    official: true
+    pleitos: ["3221"]
+    # A comparação ano a ano lê do 1º turno o que este banco não tem:
+    # Senado, Câmara e governador das 21 UFs decididas em 04/10.
+    primeiro_turno: "oficial2026"
+    seed:
+      ciclo: "ele2026"
+      cd_pleito: "3221"
+      elections: ["6258", "6260"]
 
   reprise2026:
     label: "REPRISE — 1º turno de 2026 em replay (ensaio)"

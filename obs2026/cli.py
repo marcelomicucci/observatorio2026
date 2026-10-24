@@ -16,6 +16,7 @@ Comandos de operação:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 from pathlib import Path
@@ -41,8 +42,9 @@ con = Console()
 #: Padrão desde 04/10/2026: o oficial. Com o simulado como padrão, um
 #: `servir` sem `--env` no dia da eleição pôs no ar os dados de teste de
 #: setembro. O simulado do TSE já responde 403; quem quiser o banco antigo
-#: pede `--env simulado2026`.
-ENV_OPT = typer.Option("oficial2026", "--env", "-e", help="ambiente")
+#: pede `--env simulado2026`. Desde 24/10/2026 o padrão é o 2º turno; o
+#: banco do 1º turno é `--env oficial2026`.
+ENV_OPT = typer.Option("oficial2026t2", "--env", "-e", help="ambiente")
 
 
 def br(n) -> str:
@@ -74,6 +76,11 @@ async def _discover(env, cfg, client: TseClient, archive: RawArchive):
         raise RuntimeError(f"EA11 indisponivel ({f.status}) em {t.url}")
     payload = json.loads(f.body.decode("utf-8"))
     ea11 = ea11_parser.parse(payload)
+    if env.pleitos:
+        # O arquivo bruto guarda o catálogo inteiro; daqui em diante só
+        # existem os pleitos do ambiente (o 2º turno é pleito à parte).
+        ea11 = dataclasses.replace(ea11, pleitos=tuple(
+            p for p in ea11.pleitos if env.aceita_pleito(p.cd)))
     archive.store(key=t.key, kind="ea11", url=t.url, status=f.status,
                   body=f.body, sha256=f.sha256, captured_at=f.captured_at,
                   source_generated_at=ea11.generated_at, idg=ea11.idg,

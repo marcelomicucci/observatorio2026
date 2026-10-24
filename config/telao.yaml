@@ -7,15 +7,21 @@
 #   cargo       presidente | governador | senador        (obrigatório)
 #   uf          sigla, obrigatória para governador e senador
 #   municipio   código TSE (5 dígitos) ou IBGE (7), OU nome + uf
-#   tipo        mapa | politico | composicao    (opcional, padrão mapa)
+#   tipo        mapa | politico | composicao | placar | ...
+#                                               (opcional, padrão mapa)
 #                 mapa        a tela de apuração de sempre
 #                 politico    presidente ou governador: mapa por partido e
 #                             mapa ideológico lado a lado, votos e governos
 #                             por bloco. Governador sem `uf`: os 27 estados
 #                 composicao  hemiciclo; exige `casa: senado` ou
 #                             `casa: camara` e dispensa `cargo`
+#                 placar      presidente, ou governador de uma `uf`: o
+#                             duelo dos dois primeiros numa tela só. Não
+#                             vale para senador (duas vagas)
 #   abrangencia mu | uf        (tipo politico) presidente por município ou
 #                              por estado; padrão mu
+#                              (tipo placar) mapa com ou sem municípios;
+#                              padrão uf em presidente e mu em governador
 #   camada      lider | apurar | partido | ideologia       (tipo mapa)
 #                 lider     quem lidera: cor do 1o, tom pela margem sobre o
 #                           2o, contorno amarelo se matematicamente definido
@@ -38,10 +44,50 @@
 # Nome não é chave: PAU D'ARCO existe em PA e em TO. Nome exige `uf`, e
 # ambiguidade é recusada em vez de resolvida por adivinhação (§2.1).
 #
-# Gravado pelo painel em 05/10/2026 16:58:29.
+# Ajustado para o 2º turno em 24/10/2026 (anterior em telao.anterior/):
+# presidente e governador das 6 UFs com 2º turno (AM, RN, DF, ES, AC, TO).
+# Sem Senado, Câmara, assembleias e blocos: não há esses cargos no 2º turno.
 
 padrao_segundos: 20
 camada_padrao: lider
 roteiro:
-- tipo: blocos
+- tipo: placar
+  cargo: presidente
+  segundos: 25
+- tipo: placar
+  cargo: presidente
+  abrangencia: mu
+  segundos: 25
+- tipo: duelo
+  cargo: presidente
+  segundos: 25
+- cargo: presidente
+  camada: lider
+  segundos: 20
+- tipo: participacao
+  cargo: presidente
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: am
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: rn
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: df
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: es
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: ac
+  segundos: 25
+- tipo: placar
+  cargo: governador
+  uf: to
   segundos: 25

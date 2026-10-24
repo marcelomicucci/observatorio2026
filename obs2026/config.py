@@ -73,6 +73,18 @@ class Environment:
     #: Eleição passada no formato do ao vivo (`history/congelado.py`), lida
     #: pelo seletor de anos. Só estes o painel pode pedir por `eleicao=`.
     congelado: bool = False
+    #: Pleitos do catálogo que este ambiente coleta. Vazio = todos do ciclo.
+    #: Desde 18/10/2026 o catálogo de produção traz o 2º turno como pleito
+    #: próprio (3221) no mesmo ciclo do 1º (3220): sem o filtro, os dois
+    #: turnos caem no mesmo banco e a API escolhe um deles sem critério.
+    pleitos: tuple[str, ...] = ()
+    #: Ambiente do 2º turno: o banco (congelado) do 1º turno do mesmo ano.
+    #: A comparação ano a ano lê dele o que o 2º turno não tem — Senado,
+    #: Câmara, governador das UFs decididas no 1º turno.
+    primeiro_turno: str | None = None
+
+    def aceita_pleito(self, cd: str) -> bool:
+        return not self.pleitos or str(cd) in self.pleitos
 
     @property
     def raw_root(self) -> Path:
@@ -246,6 +258,8 @@ def load_environment(name: str, config_dir: Path = CONFIG_DIR) -> Environment:
         aviso=e.get("aviso"),
         demonstracao=bool(e.get("demonstracao", False)),
         congelado=bool(e.get("congelado", False)),
+        pleitos=tuple(str(x) for x in e.get("pleitos") or ()),
+        primeiro_turno=e.get("primeiro_turno") or None,
     )
 
 

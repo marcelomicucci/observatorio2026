@@ -69,6 +69,35 @@ def test_ambiente_de_producao_usa_os_codigos_publicados_pelo_tse():
     assert {"6257", "6259"} <= set(env.seed_elections)
 
 
+def test_segundo_turno_e_pleito_proprio_com_banco_proprio():
+    """Desde 18/10/2026 o 2º turno é o pleito 3221, no mesmo ciclo do 1º.
+    Cada ambiente só aceita o seu pleito: sem isso os dois turnos caem no
+    mesmo banco e a API pega um dos dois presidentes sem critério."""
+    t1, t2 = load_environment("oficial2026"), load_environment("oficial2026t2")
+    assert t2.official and t2.ciclo == t1.ciclo == "ele2026"
+    assert t2.aceita_pleito("3221") and not t2.aceita_pleito("3220")
+    assert t1.aceita_pleito("3220") and not t1.aceita_pleito("3221")
+    assert t1.db_path != t2.db_path
+
+
+def test_ufs_do_governador_vem_do_ea12():
+    """No 2º turno o Governador só existe em 6 UFs: pedir as outras 21
+    seria 404 em série, a causa conhecida de bloqueio de IP."""
+    from obs2026.tse.catalog import Contest
+    from obs2026.tse.parsers import ea12
+    env = load_environment("oficial2026t2")
+    muns = ea12.parse(json.loads((FIX / "ea12_mun.json").read_text(
+        encoding="utf-8")), "21270").municipios
+    seis = {"am", "rn", "df", "es", "ac", "to"}
+    gov = Contest(election="6260", turno="2", cargo=env.cargos["governador"],
+                  cargo_nome="Governador",
+                  municipios=tuple(m for m in muns if m.uf in seis))
+    assert set(gov.ufs) == seis
+    pres = Contest(election="6258", turno="2", cargo=env.cargos["presidente"],
+                   cargo_nome="Presidente", municipios=tuple(muns))
+    assert "zz" in pres.ufs and len(pres.ufs) == 28
+
+
 def test_fase_oficial_do_tse_e_o():
     """Produção manda f='o'; simulado, f='s'. A barreira de ambiente
     recusa o cruzamento nos dois sentidos."""

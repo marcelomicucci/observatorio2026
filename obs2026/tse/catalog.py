@@ -53,11 +53,14 @@ class Contest:
         """UFs com arquivo de resultado para este cargo.
 
         Exterior (zz) só aparece em Presidente. Nunca gerar URL de Governador
-        ou Senador em zz.
+        ou Senador em zz. As UFs vêm do EA12 da eleição: no 2º turno de
+        2026 o Governador só existe em 6 UFs, e as outras 21 seriam 404 em
+        série.
         """
+        ufs = {m.uf for m in self.municipios}
         if self.cargo.includes_exterior:
-            return tuple(sorted({m.uf for m in self.municipios}))
-        return tuple(sorted(UF_DISPUTAS))
+            return tuple(sorted(ufs))
+        return tuple(sorted(ufs & UF_DISPUTAS))
 
 
 @dataclass

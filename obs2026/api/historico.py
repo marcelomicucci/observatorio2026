@@ -31,6 +31,8 @@ composição das 81 cadeiras é outra tela.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from fastapi import HTTPException, Query
 from sqlalchemy import select
 
@@ -159,10 +161,17 @@ def register(app) -> None:
                  for d in por_ano.values()]
         # O ano ao vivo não está no banco histórico: ele é a apuração de
         # agora, com outro estatuto (parcial, pode mudar).
+        # Desde 24/10/2026 o 1º turno de 2026 é banco fechado (`oficial2026`,
+        # congelado) e entra no seletor como os anos passados.
         env = M._ENV_NAME
+        t1 = "oficial2026"
         saida.append({"ano": 2026, "turnos": ["1"],
                       "cargos": ["1", "3", "5", "6"], "ao_vivo": True,
-                      "rotulo": "2026 (ao vivo)", "ambiente": env})
+                      "rotulo": "2026 (ao vivo)", "ambiente": env,
+                      "congelados": {
+                          "1": (t1 if env != t1 and M.ambiente_congelado(t1)
+                                else None),
+                          "2": None}})
         saida.sort(key=lambda x: -x["ano"])
         return M.envelope(saida, snapshots=[], estado="catalogo")
 
@@ -226,18 +235,59 @@ def register(app) -> None:
             "classificacao_motivo": motivo,
         }
 
-    def _do_ao_vivo(cargo, tipo, uf, municipio):
-        """O ano corrente, lido do banco ao vivo — sempre marcado parcial."""
-        from ..storage.models import (Candidate, Geography, ObservedResult,
-                                      UnitTotals)
-        from .app import get_session
+    def _primeiro_turno_2026() -> str | None:
+        """O banco do 1º turno de 2026, quando o servidor está no 2º.
 
-        gen = get_session()
-        s = next(gen)
+        Desde 24/10/2026 o 2º turno é ambiente próprio, sem Senado, Câmara
+        nem os governadores decididos em 04/10: a coluna 2026 da comparação
+        busca esses no 1º turno, fechado (`primeiro_turno` em sources.yaml).
+        """
+        from ..config import load_environment
+        t1 = load_environment(M._ENV_NAME).primeiro_turno
+        return t1 if t1 and M.ambiente_congelado(t1) else None
+
+    @contextmanager
+    def _sessao_2026(nome: str | None):
+        """Sessão no banco ao vivo ou, com `nome`, no do 1º turno — com
+        `env_atual()` apontando para ele, para `_contest_or_404` achar a
+        disputa certa."""
+        tk = M._ENV_PEDIDO.set(nome) if nome else None
+        gen = M.get_session()
         try:
+            yield next(gen), M.env_atual()
+        finally:
+            gen.close()
+            if tk is not None:
+                M._ENV_PEDIDO.reset(tk)
+
+    def _do_ao_vivo(cargo, tipo, uf, municipio, turno="1"):
+        """A coluna 2026. Senado e o 1º turno vêm do banco do 1º turno
+        quando o servidor está no 2º; o 2º turno vem do ao vivo e, onde ele
+        não tem a disputa (governador decidido em 04/10), do 1º, que foi o
+        final."""
+        t1 = _primeiro_turno_2026()
+        if t1 and (cargo == "5" or turno == "1"):
+            return _coluna_2026(cargo, tipo, uf, municipio, t1)
+        try:
+            d = _coluna_2026(cargo, tipo, uf, municipio, None)
+        except HTTPException:
+            d = None
+        if d is None and t1:
+            d = _coluna_2026(cargo, tipo, uf, municipio, t1)
+        return d
+
+    def _coluna_2026(cargo, tipo, uf, municipio, nome):
+        """Uma coluna de 2026 lida do banco ao vivo (`nome=None`) ou do 1º
+        turno. Parcial enquanto a apuração não fecha."""
+        from ..storage.models import (Candidate, Election, Geography,
+                                      ObservedResult)
+
+        with _sessao_2026(nome) as (s, env_nome):
             ct = M._contest_or_404(s, cargo, None)
+            turno_ct = str(s.execute(select(Election.turno).where(
+                Election.id == ct.election_id)).scalar() or "1")
             g = s.execute(select(Geography).where(
-                Geography.environment == M._ENV_NAME,
+                Geography.environment == env_nome,
                 Geography.tipo == tipo,
                 Geography.uf == (uf or "br"),
                 *( [Geography.cd_tse == municipio] if municipio else []
@@ -278,7 +328,7 @@ def register(app) -> None:
             apurado = (100.0 * t.secoes_totalizadas / t.secoes_total
                        if t.secoes_total else 0.0)
             return {
-                "ano": 2026, "turno": "1",
+                "ano": 2026, "turno": turno_ct,
                 # Parcial até a última seção: abstenção e brancos ainda vão
                 # mudar, e comparar com um ano fechado engana.
                 "parcial": t.andamento != "f",
@@ -306,8 +356,6 @@ def register(app) -> None:
                 "candidatos": topo,
                 "classificacao_motivo": motivo,
             }
-        finally:
-            gen.close()
 
     @app.get("/api/v1/comparativo")
     def comparativo(cargo: str = Query("1", pattern="^(1|3|5)$"),
@@ -324,7 +372,8 @@ def register(app) -> None:
         colunas = []
         with sessao() as s:
             for ano in pedidos:
-                d = (_do_ao_vivo(cargo, tipo, uf, municipio) if ano == 2026
+                d = (_do_ao_vivo(cargo, tipo, uf, municipio, turno)
+                     if ano == 2026
                      else _do_historico(s, ano, turno, cargo, tipo,
                                         uf, municipio))
                 if d is None:
@@ -374,16 +423,40 @@ def register(app) -> None:
         return [], None
 
     def _lideres_ao_vivo(cargo, uf, n, reg, lin):
-        """Quem lidera a UF agora, no banco ao vivo: os `n` primeiros."""
-        from ..storage.models import (Candidate, Geography, ObservedResult)
-        from .app import get_session
+        """Quem lidera a UF em 2026: os `n` primeiros.
 
-        gen = get_session()
-        s = next(gen)
+        Com o servidor no 2º turno: Senado sempre do 1º turno; governador
+        do 2º onde ele existe e já tem voto, senão do 1º — nas 21 UFs
+        decididas em 04/10 é o resultado final, e nas 6 do 2º turno é o
+        retrato de 04/10 até o primeiro voto, marcado parcial."""
+        t1 = _primeiro_turno_2026()
+        if t1 and cargo == "5":
+            return _lideres_2026(cargo, uf, n, reg, lin, t1)
         try:
+            d = _lideres_2026(cargo, uf, n, reg, lin, None)
+        except HTTPException:
+            d = None
+        if t1 and (d is None or not d["validos"]):
+            d1 = _lideres_2026(cargo, uf, n, reg, lin, t1)
+            if d1 is not None and d is not None:
+                # O 2º turno ainda sem voto: o 1º não é o final aqui.
+                d1["parcial"] = True
+                d1["aguardando_2o_turno"] = True
+            d = d1 or d
+        return d
+
+    def _lideres_2026(cargo, uf, n, reg, lin, nome):
+        """Os `n` primeiros da UF no banco ao vivo (`nome=None`) ou no do
+        1º turno."""
+        from ..storage.models import (Candidate, Election, Geography,
+                                      ObservedResult)
+
+        with _sessao_2026(nome) as (s, env_nome):
             ct = M._contest_or_404(s, cargo, None)
+            turno_ct = str(s.execute(select(Election.turno).where(
+                Election.id == ct.election_id)).scalar() or "1")
             g = s.execute(select(Geography).where(
-                Geography.environment == M._ENV_NAME, Geography.tipo == "uf",
+                Geography.environment == env_nome, Geography.tipo == "uf",
                 Geography.uf == uf)).scalars().first()
             if g is None:
                 return None
@@ -417,13 +490,12 @@ def register(app) -> None:
                     # provisório, e a série conta à parte.
                     "eleito": bool(cands[r.candidate_id].eleito),
                 } for r in linhas[:n]],
-                "turno": "1", "eleitorado": t.eleitorado_total,
+                "turno": turno_ct, "eleitorado": t.eleitorado_total,
                 "parcial": parcial,
+                "validos": t.validos_computados,
                 "apurado_pct": (100.0 * t.secoes_totalizadas / t.secoes_total
                                 if t.secoes_total else 0.0),
             }
-        finally:
-            gen.close()
 
     def _composicao_senado(entradas: list[dict], validos: list[str]):
         """As 81 cadeiras de cada ano: os eleitos naquele ano (já em
@@ -638,7 +710,8 @@ def register(app) -> None:
         leitor = getattr(app.state, "leitor_camara", None)
         if leitor is None:
             return None, None
-        por_uf = leitor().por_uf()
+        # No 2º turno não há Câmara: a de 2026 é a do 1º turno.
+        por_uf = leitor(_primeiro_turno_2026()).por_uf()
         if not por_uf:
             return None, None
         f = CAM.em_formacao(por_uf, PA.resolver, lambda _p: None)

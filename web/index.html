@@ -349,7 +349,7 @@ function mostrarNoTelaoAgora() {
       uf: ufDep, municipio: null,
       titulo: ufDep ? `Deputados federais — ${ufDep.toUpperCase()}`
         : (camara ? 'Câmara — composição' : 'Senado — composição')
-          + (eleicaoPedida() ? ` (${st.ano})` : '')}});
+          + (eleicaoPedida() ? ` (${rotuloAno(st.ano)})` : '')}});
     return;
   }
   canalTelao.postMessage({tipo: 'recorte', recorte: {tipo: 'mapa',
@@ -536,7 +536,7 @@ function whatsappDestaTela() {
     camada: MAPA.camadaCanonica(st.camada) || 'lider',
     eleicao: eleicaoPedida(),
   }}, `${cargo.nome} — ${st.uf ? st.uf.toUpperCase() : 'Brasil'}`
-      + (eleicaoPedida() ? ` (${st.ano})` : ''));
+      + (eleicaoPedida() ? ` (${rotuloAno(st.ano)})` : ''));
 }
 
 function retomarRoteiro() {
@@ -653,7 +653,7 @@ const ROTEIRO = {
     }
     // Eleição passada: o ano no título, para a tela não passar por 2026.
     if (it.eleicao) {
-      return this.titulo({...it, eleicao: null}) + ` (${it.eleicao.slice(3, 7)})`;
+      return this.titulo({...it, eleicao: null}) + ` (${(it.eleicao.match(/\d{4}/) || [''])[0]})`;
     }
     if (it.tipo === 'recordes') return 'Recordes da noite';
     if (it.tipo === 'comparativo' && it.cargo === '6') {
@@ -1078,10 +1078,19 @@ async function viewTelao() {
  * projeção, auditoria, telão e configuração continuam no ao vivo. Senado e
  * Câmara não têm 2º turno: para eles vale sempre o banco do 1º. */
 const VISOES_COM_ANO = new Set(['resultado', 'mapa']);
+/* 24/10: o 1º turno de 2026 entra no seletor como `2026-1T`. É o banco da
+ * apuração de 04/10 (`oficial2026`, só leitura); tem também deputado
+ * estadual, que os anos passados não têm. */
+const ANO_2026_1T = '2026-1T';
+function rotuloAno(a) { return a === ANO_2026_1T ? '2026 · 1º turno' : a; }
 function eleicaoPedida() {
   if (!st.ano || st.ano === '2026') return null;
   if (!VISOES_COM_ANO.has(st.visao || 'resultado')) return null;
   const c = cargoAtual();
+  if (st.ano === ANO_2026_1T) {
+    if (c.especial) return null;
+    return ((ANOS_CONGELADOS || {})[2026] || {})['1'] || 'oficial2026';
+  }
   if (c.especial || c.estadual) return null;
   const turno = (c.cd === '5' || c.proporcional) ? '1' : (st.turno || '2');
   return `tse${st.ano}t${turno}`;
@@ -1121,14 +1130,15 @@ async function anosCongelados() {
 function seletorAno() {
   const visao = st.visao || 'resultado';
   const c = cargoAtual();
-  if (c.especial || c.estadual) return null;
+  if (c.especial || (c.estadual && st.ano !== ANO_2026_1T)) return null;
   const caixa = el('span', {style: 'display:inline-flex;gap:6px;'
     + 'align-items:center;margin-left:auto;font-size:12.5px;'
     + 'color:var(--muted)'});
   if (!VISOES_COM_ANO.has(visao)) {
     if (st.ano && st.ano !== '2026') {
       caixa.append(el('span', {style: 'color:var(--alerta)'},
-        `${st.ano} só vale em Resultado e Mapa — esta aba mostra 2026`));
+        `${rotuloAno(st.ano)} só vale em Resultado e Mapa — esta aba mostra `
+        + '2026 ao vivo'));
     }
     return caixa;
   }
@@ -1142,12 +1152,17 @@ function seletorAno() {
   caixa.append('Eleição', sel);
   anosCongelados().then(anos => {
     for (const a of Object.keys(anos).sort().reverse()) {
-      sel.append(el('option', {value: a,
-        selected: st.ano === a ? '' : null}, a));
+      // 2026 só tem o 1º turno fechado; o ao vivo é a opção de cima.
+      const v = a === '2026' ? ANO_2026_1T : a;
+      if (a === '2026' && !anos[a]['1']) continue;
+      sel.append(el('option', {value: v,
+        selected: st.ano === v ? '' : null}, rotuloAno(v)));
     }
   });
   const passado = st.ano && st.ano !== '2026';
-  if (passado && !(c.cd === '5' || c.proporcional)) {
+  if (st.ano === ANO_2026_1T) {
+    caixa.append(el('span', {}, 'apuração de 04/10, encerrada'));
+  } else if (passado && !(c.cd === '5' || c.proporcional)) {
     const t = st.turno || '2';
     const bt = (v, rot, dica) => el('button', {
       role: 'tab', 'aria-selected': String(t === v), title: dica,
@@ -1481,7 +1496,9 @@ async function viewResultado() {
     out.push(el('div', {cls: 'nota'},
       el('b', {}, 'De onde vem cada coisa. '),
       `Votos, destinação, situação e nome de urna vêm dos arquivos do TSE `
-      + `de ${st.ano}. Foto, vice e perfil só existem para 2026.`));
+      + `de ${rotuloAno(st.ano)}.`
+      + (st.ano === ANO_2026_1T ? ' Foto, vice e perfil, os mesmos do ao vivo.'
+                                 : ' Foto, vice e perfil só existem para 2026.')));
     out.push(detalhesTecnicos(res, u));
     return el('div', {}, ...out);
   }
@@ -3882,7 +3899,9 @@ async function viewPanoramaAnos(cd) {
           + 'margin-right:5px'}),
         el('b', {}, v.nome),
         x.parcial ? el('span', {cls: 'tag warn', style: 'margin-left:5px'},
-          `lidera · ${pct(x.apurado_pct, 0)}`) : null),
+          // 2º turno ainda sem voto: o nome é o mais votado de 04/10.
+          x.aguardando_2o_turno ? '1º turno · 2º a apurar'
+            : `lidera · ${pct(x.apurado_pct, 0)}`) : null),
       el('div', {style: 'font-size:11.5px;color:var(--muted)'},
         v.partido,
         x.turno === '2' ? ' · 2º turno' : '',

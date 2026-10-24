@@ -66,6 +66,57 @@ def test_resultado_final_de_2022_le_o_banco_certo(cliente):
     assert r2["ambiente"]["nome"] == M._ENV_NAME
 
 
+@pytest.mark.skipif(not _montado("oficial2026"),
+                    reason="banco do 1º turno de 2026 ausente neste checkout")
+def test_primeiro_turno_de_2026_entra_no_seletor(cliente):
+    """24/10/2026: com o 2º turno no ar, o 1º turno vira opção do seletor,
+    lido do banco da apuração de 04/10 e só leitura."""
+    anos = {a["ano"]: a for a in cliente.get("/api/v1/anos").json()["dados"]}
+    assert anos[2026]["congelados"]["1"] == "oficial2026"
+    r = cliente.get("/api/v1/results?abrangencia=br&cargo=1"
+                    "&eleicao_passada=oficial2026").json()
+    amb = r["ambiente"]
+    assert amb["nome"] == "oficial2026"
+    assert amb["eleicao"]["ano"] == 2026 and amb["eleicao"]["turno"] == "1"
+    assert len(r["dados"][0]["candidatos"]) > 2        # 1º turno, não duelo
+    r = cliente.post("/api/v1/telao/roteiro?eleicao_passada=oficial2026",
+                     json={})
+    assert r.status_code == 400
+
+
+@pytest.mark.skipif(not (_montado("oficial2026") and M.load_environment(
+    "oficial2026t2").db_path.exists()),
+    reason="bancos de 2026 (1º e 2º turno) ausentes neste checkout")
+def test_comparativo_no_2o_turno_le_o_1o_onde_ele_e_o_resultado(cliente):
+    """24/10/2026: com o servidor no 2º turno, a coluna 2026 da comparação
+    lê do 1º turno o Senado, a Câmara, o turno 1 e o governador das UFs
+    decididas em 04/10; o 2º turno, do ao vivo."""
+    antes = M._ENV_NAME
+    M.configure("oficial2026t2")
+    try:
+        def col(q):
+            r = cliente.get(f"/api/v1/comparativo?{q}&anos=2026").json()
+            return r["dados"]["colunas"][0]
+        assert col("cargo=1&turno=1")["turno"] == "1"
+        assert col("cargo=1&turno=2")["turno"] == "2"
+        assert col("cargo=5&uf=mg")["turno"] == "1"
+        sp = col("cargo=3&uf=sp&turno=2")            # decidido em 04/10
+        assert sp["turno"] == "1" and not sp["parcial"]
+        assert col("cargo=3&uf=am&turno=2")["turno"] == "2"
+        gov = cliente.get("/api/v1/comparativo/governadores?cargo=3"
+                          "&anos=2026").json()["dados"]
+        por_uf = {u["uf"]: u["anos"]["2026"] for u in gov["ufs"]}
+        assert por_uf["sp"]["turno"] == "1" and por_uf["sp"]["eleito"]
+        assert por_uf["am"]["parcial"]               # 2º turno pendente
+        sen = cliente.get("/api/v1/comparativo/governadores?cargo=5"
+                          "&anos=2026").json()["dados"]
+        assert sen["agregado"]["2026"]["vagas"] == 54
+        cam = cliente.get("/api/v1/comparativo/camara?anos=2026").json()
+        assert cam["dados"]["colunas"]["2026"]["eleitos_tse"] == 513
+    finally:
+        M.configure(antes)
+
+
 def test_partido_de_2018_pela_linhagem():
     """PSL de 2018: sigla da época, cor do União (a série de hoje). O 25 de
     2018 é o DEM — também União —, nunca o PRD que usa o 25 em 2026."""
