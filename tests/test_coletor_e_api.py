@@ -80,6 +80,39 @@ def test_segundo_turno_e_pleito_proprio_com_banco_proprio():
     assert t1.db_path != t2.db_path
 
 
+def test_geografias_vem_de_todas_as_eleicoes(tmp_path):
+    """25/10/2026: no 2º turno o primeiro EA12 do catálogo é o do
+    Governador (6 UFs); cadastrar só dele deixou o Presidente sem 21 UFs,
+    sem exterior e sem 5.288 municípios no banco."""
+    from dataclasses import replace
+    from sqlalchemy import func, select
+    from obs2026.storage.db import create_all, make_engine, \
+        make_session_factory
+    from obs2026.storage.ingest import sync_catalog
+    from obs2026.storage.models import Geography
+    from obs2026.tse import catalog as CT
+    from obs2026.tse.parsers import ea11, ea12
+    from obs2026.tse.urls import UrlBuilder
+    env = load_environment("simulado2026")
+    cat11 = ea11.parse(json.loads((FIX / "ele-c.json").read_text(
+        encoding="utf-8")))
+    bruto = json.loads((FIX / "ea12_mun.json").read_text(encoding="utf-8"))
+    pres = ea12.parse(bruto, "21270")
+    seis = {"am", "rn", "df", "es", "ac", "to"}
+    gov = replace(ea12.parse(bruto, "21272"), municipios=tuple(
+        m for m in pres.municipios if m.uf in seis))
+    urls = UrlBuilder(env.base, env.ambiente, env.ciclo, env.allowed_hosts)
+    cat = CT.build(env, urls, cat11, {"21272": gov, "21270": pres})
+    eng = make_engine(sqlite_path=tmp_path / "t.sqlite")
+    create_all(eng)
+    with make_session_factory(eng)() as s:
+        sync_catalog(s, cat)
+        n = dict(s.execute(select(Geography.tipo, func.count())
+                           .group_by(Geography.tipo)).all())
+    assert n["mu"] == len(pres.municipios)
+    assert n["uf"] == len({m.uf for m in pres.municipios})   # 27 + zz
+
+
 def test_ufs_do_governador_vem_do_ea12():
     """No 2º turno o Governador só existe em 6 UFs: pedir as outras 21
     seria 404 em série, a causa conhecida de bloqueio de IP."""

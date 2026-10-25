@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from ..engine import pending as pend
 from ..quality.checks import check_ea20
 from ..tse.catalog import Catalog
-from ..tse.parsers.ea12 import Ea12
+from ..tse.parsers.ea12 import Municipio
 from ..tse.parsers.ea20 import Ea20
 from .models import (Candidate, Contest, Election, Geography, ObservedResult,
                      SourceSnapshot, UnitTotals)
@@ -79,19 +79,27 @@ def sync_catalog(s: Session, cat: Catalog) -> dict:
                 )
                 stats["contests"] += int(novo)
 
-    ea12: Ea12 = next(iter(cat.ea12_por_eleicao.values()))
+    # Todas as eleições, não só a primeira: no 2º turno de 2026 a primeira
+    # do catálogo é a de Governador, que só existe em 6 UFs, e o
+    # Presidente ficava sem 21 UFs, sem exterior e sem 5.288 municípios
+    # no banco (visto às 17:30 de 25/10/2026). Mesmo município em duas
+    # eleições é a mesma geografia: o primeiro EA12 que o traz vale.
+    municipios: dict[tuple[str, str], Municipio] = {}
+    for ea12 in cat.ea12_por_eleicao.values():
+        for m in ea12.municipios:
+            municipios.setdefault((m.uf, m.cd), m)
     _get_or_create(s, Geography,
                    defaults={"nome": "Brasil", "nome_fold": "BRASIL",
                              "cd_ibge": None},
                    environment=env.name, tipo="br", uf="br", cd_tse="br")
     stats["geographies"] += 1
-    for uf in sorted({m.uf for m in ea12.municipios}):
+    for uf in sorted({uf for uf, _cd in municipios}):
         _get_or_create(s, Geography,
                        defaults={"nome": uf.upper(), "nome_fold": uf.upper(),
                                  "exterior": uf == "zz"},
                        environment=env.name, tipo="uf", uf=uf, cd_tse=uf)
         stats["geographies"] += 1
-    for m in ea12.municipios:
+    for m in municipios.values():
         _, novo = _get_or_create(
             s, Geography,
             defaults={"cd_ibge": m.cd_ibge, "nome": m.nome,
