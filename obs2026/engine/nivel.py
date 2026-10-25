@@ -61,6 +61,15 @@ def faixa(d: dict, nivel: int) -> tuple[float | None, float | None]:
 #: colocado. Mediana e faixa continuam saindo.
 PROB_APURADO_MIN = 6.0
 
+#: Piso próprio por cargo. Presidente em 2,5%: decisão do usuário na noite
+#: do 2º turno (25/10/2026, 17h15), com a apuração já em andamento e dois
+#: nomes na disputa. Os demais cargos seguem no piso de 05/10.
+PROB_APURADO_MIN_CARGO = {"1": 2.5}
+
+
+def piso_probabilidade(cargo: str | None = None) -> float:
+    return PROB_APURADO_MIN_CARGO.get(str(cargo or ""), PROB_APURADO_MIN)
+
 #: A partir daqui a faixa para de encolher: mantém a largura que tinha no
 #: último registro abaixo do limite. Acima de 95% a faixa caía para 0,1 pp e
 #: deixava de conter o resultado (81% de cobertura entre 95% e 99% apurado,
@@ -69,8 +78,9 @@ PROB_APURADO_MIN = 6.0
 TRAVA_LARGURA_APURADO = 95.0
 
 
-def publica_probabilidade(apurado_pct: float | None) -> bool:
-    return (apurado_pct or 0.0) >= PROB_APURADO_MIN
+def publica_probabilidade(apurado_pct: float | None,
+                          cargo: str | None = None) -> bool:
+    return (apurado_pct or 0.0) >= piso_probabilidade(cargo)
 
 
 def travar_largura(atual: dict, referencia: dict | None) -> dict:

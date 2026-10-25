@@ -46,11 +46,11 @@ def register(app) -> None:
     from ..engine.denominators import Base as DenBase
     from ..storage.raw import RawArchive
 
-    def _regra_probabilidade(apurado: float) -> dict:
+    def _regra_probabilidade(apurado: float, cargo: str) -> dict:
         """Por que a probabilidade saiu ou não, para a tela dizer."""
-        return {"publicada": NV.publica_probabilidade(apurado),
+        return {"publicada": NV.publica_probabilidade(apurado, cargo),
                 "apurado_pct": apurado,
-                "apurado_min_pct": NV.PROB_APURADO_MIN}
+                "apurado_min_pct": NV.piso_probabilidade(cargo)}
 
     def _chamada_de(r, ct) -> dict:
         """A mesma chamada, quando a resposta vem de um registro do diário."""
@@ -111,7 +111,8 @@ def register(app) -> None:
         """Monta a resposta a partir de um registro do diário, no mesmo
         formato do cálculo ao vivo — quem consome não precisa saber."""
         publicavel = r.estado_publicacao == "projecao_disponivel"
-        com_prob = publicavel and NV.publica_probabilidade(r.cobertura_pct)
+        com_prob = publicavel and NV.publica_probabilidade(r.cobertura_pct,
+                                                    r.cargo)
         ref = _referencia_trava(r.ambiente, (r.cargo, r.unidade, r.modelo),
                                 r.cobertura_pct, r.pendente_max)
         linhas = [{
@@ -147,7 +148,8 @@ def register(app) -> None:
             extra={
                 "publicavel": publicavel,
                 "origem": "registro",
-                "probabilidade": _regra_probabilidade(r.cobertura_pct),
+                "probabilidade": _regra_probabilidade(r.cobertura_pct,
+                                                      r.cargo),
                 "faixa_travada": bool(ref),
                 "registrado_em": r.momento,
                 "idade_s": round(idade, 1),
@@ -267,7 +269,8 @@ def register(app) -> None:
         maioria = fc.prob_maioria_absoluta()
         apurado = (100.0 * ctx.eleitorado_apurado / ctx.eleitorado_total
                    if ctx.eleitorado_total else 0.0)
-        com_prob = publicavel and NV.publica_probabilidade(apurado)
+        com_prob = publicavel and NV.publica_probabilidade(apurado,
+                                                            ct.cargo_cd)
         ref = _referencia_trava(
             env.name, (ct.cargo_cd, uf.lower() if uf else "br", modelo),
             apurado, ctx.pendente_max)
@@ -322,7 +325,7 @@ def register(app) -> None:
                     "divulgada (§4.7)."),
             extra={
                 "publicavel": publicavel,
-                "probabilidade": _regra_probabilidade(apurado),
+                "probabilidade": _regra_probabilidade(apurado, ct.cargo_cd),
                 "faixa_travada": bool(ref),
                 "nivel_intervalo": nivel,
                 "chamada": _chamada(env, ct, uf, modelo, ctx.nomes),

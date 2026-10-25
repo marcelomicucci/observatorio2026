@@ -588,6 +588,15 @@ def test_probabilidade_so_a_partir_de_6_por_cento_apurado():
     assert not NV.publica_probabilidade(None)
 
 
+def test_presidente_publica_probabilidade_a_partir_de_2_5_por_cento():
+    """Decisão de 25/10/2026, noite do 2º turno: só o presidente desce."""
+    from obs2026.engine import nivel as NV
+    assert not NV.publica_probabilidade(2.49, "1")
+    assert NV.publica_probabilidade(2.5, "1")
+    assert not NV.publica_probabilidade(2.5, "3")
+    assert NV.publica_probabilidade(6.0, "3")
+
+
 def test_faixa_trava_a_largura_a_partir_de_95_por_cento():
     """A mediana é a de agora; a largura, no mínimo a do último registro
     abaixo de 95% apurado."""

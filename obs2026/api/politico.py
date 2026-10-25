@@ -457,7 +457,7 @@ def register(app) -> None:
                 # (engine/nivel.py); mediana e faixa saem sempre.
                 publicavel = reg.estado_publicacao == "projecao_disponivel"
                 com_prob = publicavel and NV.publica_probabilidade(
-                    reg.cobertura_pct)
+                    reg.cobertura_pct, ct.cargo_cd)
                 idade = (agora - datetime.fromisoformat(reg.momento)
                          ).total_seconds()
                 for c in reg.candidatos:
