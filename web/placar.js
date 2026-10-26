@@ -446,13 +446,14 @@ const PLACAR = (() => {
     const NOME_CARGO = GOV ? 'Governador' : 'Presidente';
     let get = null;
 
-    /* Projeção em cache de 60 s e sem segurar a tela, como no telão: cada pedido
+    /* Projeção em cache de 10 s e sem segurar a tela, como no telão: cada pedido
      * roda 1.200 simulações no servidor, e pedi-la a cada releitura de 10 s
      * empilharia cálculo em cima da coleta. Se não respondeu em 1,5 s, o apurado
      * entra sem ela e a resposta fica guardada para a releitura seguinte. */
     let cacheProj = null;
     function projecaoEmCache() {
-      if (!cacheProj || Date.now() - cacheProj.t >= 60000) {
+      // 10 s, como no telão: o mesmo registro em todas as telas (25/10).
+      if (!cacheProj || Date.now() - cacheProj.t >= 10000) {
         cacheProj = {t: Date.now(),
           p: get(`/projection?${QS}&sims=1200&registrar=false`)
             .catch(() => null)};
@@ -465,12 +466,12 @@ const PLACAR = (() => {
      * projeção, como foram registrados (§5.2 — nada é recalculado). Vem da
      * tabela pronta (`/serie-apuracao`), alimentada a cada projeção gravada:
      * a rota antiga relia o diário inteiro e levava de 5 a 7 s. Mesmo assim
-     * fica fora da carga da tela e em cache de 60 s — o gráfico é acessório e
+     * fica fora da carga da tela e em cache de 10 s — o gráfico é acessório e
      * o diário só ganha linha a cada 2 minutos. */
     let cacheSerie = null;
     let serieAtual;
     function serieEmCache() {
-      if (!cacheSerie || Date.now() - cacheSerie.t >= 60000) {
+      if (!cacheSerie || Date.now() - cacheSerie.t >= 10000) {
         cacheSerie = {t: Date.now(),
           p: get(`/serie-apuracao?${QS}&top=2`).then(r => r.dados || null)
             .catch(() => null)};
@@ -830,6 +831,14 @@ const PLACAR = (() => {
         if (velha()) return null;
         poe(corpo, colEsq, caixaMapa, colDir);
         entrar();
+        // No telão (cabeçalho, faixa de alertas e rodapé) a caixa da
+        // projeção deixava o gráfico com 60 px de altura, ilegível (25/10,
+        // 19h40). Ela repete a linha da projeção do placar: sai quando não
+        // cabe junto com o gráfico.
+        const caixaPj = colEsq.querySelector('.caixa.projecao');
+        if (caixaPj && alvoGrafico.getBoundingClientRect().height < 120) {
+          caixaPj.remove();
+        }
         // Depois de entrar na página: o gráfico mede a própria caixa.
         graficoApuracao(alvoGrafico, serieAtual, [A, B]);
         const aSerie = serieEmCache().then(sr => {

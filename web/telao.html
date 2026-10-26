@@ -537,7 +537,10 @@ let cargaAtual = 0;
  * registra a cada 2 minutos — e cada pedido roda 1.200 simulações no
  * servidor. Pedi-la a cada 10 s tiraria processador da coleta justamente no
  * pico. */
-const PROJ_TTL_MS = 60000;
+// 10 s (25/10/2026): com 60 s cada tela guardava um registro de momento
+// diferente, e a mesma projeção aparecia com valores distintos. A rota
+// serve o último registro do diário (0,05 s); não recalcula.
+const PROJ_TTL_MS = 10000;
 /* A projeção é acessória e nunca segura a tela: se não respondeu neste
  * prazo, o apurado entra sem ela e a resposta, quando chegar, fica no cache
  * para a releitura seguinte (10 s). Em 04/10/2026, antes do primeiro voto,
@@ -1217,6 +1220,22 @@ async function carregarBlocos(minhaCarga, desatualizada) {
   telaResumo(corpo, assin, TELAS.blocos(d), r.source_generated_at,
     ['majoritárias em votos válidos · casas em cadeiras · traço branco = '
      + 'maioria', notaClassificacao(meta)].filter(Boolean).join('  ·  '));
+}
+
+async function carregarTurnos(minhaCarga, desatualizada) {
+  const corpo = document.getElementById('corpo');
+  document.getElementById('titulo').textContent = 'Presidente';
+  document.getElementById('onde').textContent =
+    'estado a estado · 1º turno × 2º turno';
+  document.getElementById('vagas').hidden = true;
+  const r = await get('/comparativo/turnos');
+  if (desatualizada()) return;
+  faixaAmbiente(r.ambiente);
+  const assin = 'turnos|' + JSON.stringify(r.dados.ufs.map(
+    u => u.t2 && [u.t2.a, u.t2.b]));
+  if (assin === assinaturaPolitica && corpo.dataset.tipo === 'resumo') return;
+  telaResumo(corpo, assin, TELAS.turnos(r.dados), null,
+    '1º turno: apuração de 04/10, encerrada · 2º turno: ao vivo');
 }
 
 async function carregarParticipacao(minhaCarga, desatualizada) {
@@ -1975,6 +1994,7 @@ async function carregar() {
     composicao: carregarComposicao, recordes: carregarRecordes,
     comparativo: carregarComparativo, panorama: carregarPanorama,
     duelo: carregarDuelo, participacao: carregarParticipacao,
+    turnos: carregarTurnos,
     estado: carregarEstado, blocos: carregarBlocos,
     placar: carregarPlacar};
   if (ESPECIAIS[recorte.tipo]) {
@@ -2018,12 +2038,21 @@ async function carregar() {
   corpoMapa.dataset.tipo = 'mapa';
   const cargo = CARGOS[recorte.cargo] || CARGOS['1'];
   const mun = recorte.municipio || null;
-  const uf = mun ? recorte.uf : (cargo.abr === 'uf' ? recorte.uf : null);
+  // Presidente numa UF (25/10/2026): o estado dividido por municípios,
+  // como recorte do voto. Antes a UF era descartada e a tela voltava ao
+  // Brasil, sem jeito de mandar o mapa municipal de um estado.
+  const uf = recorte.uf || null;
+  const presUF = cargo.abr === 'br' && !!uf && !mun;
+  const avisoRecorte = mun ? recorte.aviso_recorte
+    : presUF ? (recorte.aviso_recorte
+      || 'Recorte do voto. A disputa é decidida no total do Brasil — '
+         + 'liderar aqui não é ser eleito por aqui.') : null;
   const corpo = document.getElementById('corpo');
 
   document.getElementById('titulo').textContent = cargo.nome;
   document.getElementById('onde').textContent =
     mun ? (recorte.titulo || 'recorte municipal')
+    : presUF ? `${uf.toUpperCase()} · recorte do voto`
     : cargo.abr === 'br' ? 'Brasil · inclui o exterior'
     : (uf ? uf.toUpperCase() : 'escolha uma UF no controle');
   const tv = document.getElementById('vagas');
@@ -2042,17 +2071,20 @@ async function carregar() {
     const qs = `cargo=${recorte.cargo}` + (uf ? `&uf=${uf}` : '')
       + (mun ? `&municipio=${mun}` : '');
     const [res, cands, def, mapa, proj] = await Promise.all([
-      get(`/results?abrangencia=${mun ? 'mu' : cargo.abr}&${qs}`),
+      get(`/results?abrangencia=${mun ? 'mu' : presUF ? 'uf' : cargo.abr}`
+          + `&${qs}`),
       get(`/candidates?${qs}`),
       get(`/decided?${qs}`).catch(() => null),
       // No recorte municipal o mapa mostra a UF inteira: um município
       // sozinho não diz nada sobre onde ele fica.
       get(`/map-layers?cargo=${recorte.cargo}&abrangencia=`
-          + (cargo.abr === 'br' && !mun ? 'uf' : 'mu')
+          + (cargo.abr === 'br' && !mun && !presUF ? 'uf' : 'mu')
           + (uf ? `&uf=${uf}` : ''))
         .catch(() => null),
       // Projeção é acessória no telão: se falhar, o apurado continua.
-      projecaoEmCache(qs),
+      // Presidente numa UF não tem projeção registrada: pedi-la faria o
+      // servidor simular na hora, com a coleta no ar.
+      presUF ? Promise.resolve(null) : projecaoEmCache(qs),
     ]);
 
     if (desatualizada()) return;   // outra tela ja assumiu
@@ -2158,8 +2190,8 @@ async function carregar() {
             : null),
       // §3: liderar um território não é ser eleito por ele. Num telão esse
       // aviso é obrigatório, não opcional.
-      mun && recorte.aviso_recorte
-        ? el('div', {cls: 'recorte'}, recorte.aviso_recorte) : null);
+      avisoRecorte
+        ? el('div', {cls: 'recorte'}, avisoRecorte) : null);
 
     if (desatualizada()) return;
     const caixaMapa = el('div', {cls: 'mapa'});

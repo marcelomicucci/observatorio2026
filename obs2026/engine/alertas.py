@@ -107,6 +107,9 @@ class Acompanhador:
                 apurado_pct=round(apurado, 2), peso=PESO[tipo]))
 
         com = f"com {apurado:.0f}% apurado".replace(".", ",")
+        # No 2º turno não há "no 1º turno": eleger é o resultado final
+        # (a faixa dizia "eleito no 1º turno" na noite de 25/10/2026).
+        no_1t = "" if str(getattr(r, "turno", "1")) == "2" else " no 1º turno"
         encerrada = bool(r.secoes_total) and \
             r.secoes_totalizadas >= r.secoes_total
 
@@ -121,8 +124,8 @@ class Acompanhador:
             if vagas == 1 and eleitos:
                 c = eleitos[0]
                 diz("matematico", "conta",
-                    f"{nome[c.sqcand]} está matematicamente eleito no 1º "
-                    f"turno — {_pct(fatia[c.sqcand])} {com}")
+                    f"{nome[c.sqcand]} está matematicamente eleito{no_1t} "
+                    f"— {_pct(fatia[c.sqcand])} {com}")
             elif vagas > 1:
                 for c in eleitos:
                     diz("matematico", "conta",
@@ -177,8 +180,8 @@ class Acompanhador:
                     [f"{nome[c.sqcand]} ({_pct(fatia[c.sqcand])})"
                      for c in cs[:vagas]]) + f" ficam com as {vagas} vagas")
             elif 2 * cs[0].votos_observados > C:
-                txt = (f"100% apurado: {nome[cs[0].sqcand]} vence no 1º "
-                       f"turno com {_pct(fatia[cs[0].sqcand])}")
+                txt = (f"100% apurado: {nome[cs[0].sqcand]} vence{no_1t} "
+                       f"com {_pct(fatia[cs[0].sqcand])}")
             elif len(cs) > 1:
                 txt = ("100% apurado: 2º turno entre "
                        f"{nome[cs[0].sqcand]} ({_pct(fatia[cs[0].sqcand])}) e "

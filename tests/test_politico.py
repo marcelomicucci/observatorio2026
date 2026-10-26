@@ -679,6 +679,27 @@ def test_alertas_saem_uma_vez_e_na_ordem_dos_fatos():
     assert "vence no 1º turno" in a[0].texto and "eleit" not in a[0].texto
 
 
+def test_alertas_do_2o_turno_nao_dizem_1o_turno():
+    """25/10/2026: a faixa disse "Lula está matematicamente eleito no 1º
+    turno" na noite do 2º."""
+    from obs2026.engine import alertas as AL
+    el, fora = "matematicamente_eleito", "matematicamente_eliminado"
+    ac = AL.Acompanhador()
+    r = _reg_alerta("t1", {"ana": (350, fora, 0, 0), "bia": (640, el, 1, 1)},
+                    apurado=96, pendente=20, cargo="1", unidade="br")
+    r.turno = "2"
+    a = ac.alimentar(r)
+    assert [x.tipo for x in a] == ["matematico"]
+    assert "1º turno" not in a[0].texto and "eleito" in a[0].texto
+    r = _reg_alerta("t2", {"ana": (360, fora, 0, 0), "bia": (650, el, 1, 1)},
+                    apurado=100, pendente=0, secoes=(100, 100), cargo="1",
+                    unidade="br")
+    r.turno = "2"
+    a = ac.alimentar(r)
+    assert [x.tipo for x in a] == ["encerrada"]
+    assert "1º turno" not in a[0].texto and "vence com" in a[0].texto
+
+
 def test_alerta_de_segundo_turno_exige_que_ninguem_alcance_a_maioria():
     from obs2026.engine import alertas as AL
     s2 = "matematicamente_no_segundo_turno"

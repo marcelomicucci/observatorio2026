@@ -86,7 +86,10 @@ TIPOS = ("mapa", "politico", "composicao", "recordes", "comparativo",
          #                 `abrangencia: mu | uf` põe ou tira os municípios
          #                 do mapa (padrão: uf em presidente, mu em
          #                 governador)
-         "placar")
+         "placar",
+         # 25/10/2026: presidente estado a estado, 1º turno × 2º turno
+         # (`/comparativo/turnos`). Só presidente, sem `uf`.
+         "turnos")
 CASAS = ("senado", "camara", "assembleia")
 #: Nomes de antes da fusão das camadas do mapa. Continuam aceitos para que
 #: nenhum roteiro já escrito quebre, mas são traduzidos aqui — o telão
@@ -282,6 +285,10 @@ def register(app) -> None:
                 if cd not in ("3", "5"):
                     erro = ("panorama é de governador ou senador: os 27 "
                             "estados numa tela")
+            elif tipo == "turnos":
+                uf = None
+                if cd != "1":
+                    erro = "1º × 2º turno por estado é de presidente"
             elif tipo == "duelo":
                 uf = None
                 if cd != "1":
@@ -352,7 +359,11 @@ def register(app) -> None:
 
             # Recorte que não decide a disputa: presidente num município,
             # governador num município. O aviso não é configurável (§3).
-            nao_decisorio = bool(municipio_cd)
+            # Presidente numa UF (25/10/2026) é recorte do voto como o
+            # municipal: a disputa é decidida no total do Brasil.
+            nao_decisorio = bool(municipio_cd) or (
+                tipo == "mapa" and ABRANGENCIA.get(cd) == "br"
+                and bool(uf))
 
             titulo_livre = (str(item["titulo"]).strip()
                             if item.get("titulo") else None)
@@ -369,6 +380,8 @@ def register(app) -> None:
                 titulo = ("Governadores" if cd == "3" else "Senadores")                     + " — os 27 estados"
             elif tipo == "duelo":
                 titulo = "Presidente — estado a estado"
+            elif tipo == "turnos":
+                titulo = "Presidente — 1º × 2º turno por estado"
             elif tipo == "placar":
                 titulo = ("Presidente — placar" if cd == "1"
                           else f"Governador — placar ({(uf or '').upper()})")

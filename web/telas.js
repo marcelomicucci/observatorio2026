@@ -212,6 +212,104 @@ const TELAS = (() => {
         coluna(us.slice(0, metade)), coluna(us.slice(metade))));
   }
 
+  /* --------------------------------------------------------------- turnos
+   * Presidente estado a estado, 1º turno contra 2º (25/10/2026). `d` vem de
+   * /comparativo/turnos: os dois nomes do 2º turno e, por UF, o percentual
+   * de cada um sobre os válidos de cada turno. No 1º turno havia outros
+   * nomes: por isso os dois não somam 100% ali. */
+  function turnos(d) {
+    const [a, b] = d.candidatos.map(c => ({...c, nome: nomeProprio(c.nome)}));
+    const ordem = REGIOES.flatMap(([, ufs]) => ufs).concat(['zz']);
+    const por = Object.fromEntries(d.ufs.map(u => [u.uf, u]));
+    const us = ordem.map(uf => por[uf]).filter(Boolean);
+    const metade = Math.ceil(us.length / 2);
+    const sinal = v => v == null ? '—'
+      : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1)
+        .replace('.', ',');
+    const barra = (t, forte) => {
+      const pa = t && t.a, pb = t && t.b;
+      return h('div', `display:grid;grid-template-columns:${U(2.9)} 1fr `
+        + `${U(2.9)};align-items:center;gap:${U(.3)};`
+        + 'font-variant-numeric:tabular-nums;'
+        + (forte ? '' : 'opacity:.72'),
+        h('span', `text-align:right;font-size:${U(.82)};font-weight:`
+          + (pa != null && pb != null && pa > pb ? '800' : '500'),
+          pct(pa, 1)),
+        h('div', `display:flex;height:${U(.7)};border-radius:${U(.2)};`
+          + 'overflow:hidden;background:#2a313d',
+          h('i', `display:block;width:${pa || 0}%;background:${a.cor}`),
+          h('i', 'display:block;flex:1'),
+          h('i', `display:block;width:${pb || 0}%;background:${b.cor}`)),
+        h('span', `font-size:${U(.82)};font-weight:`
+          + (pa != null && pb != null && pb > pa ? '800' : '500'),
+          pct(pb, 1)));
+    };
+    const grade = `display:grid;grid-template-columns:${U(7.2)} 1fr 1fr `
+      + `${U(4.6)};align-items:center;gap:${U(.7)};min-height:0`;
+    const linha = u => {
+      const nome = NOME_UF[u.uf] || (u.uf === 'zz' ? 'Exterior'
+                                                   : u.uf.toUpperCase());
+      const da = u.t1 && u.t2 && u.t1.a != null && u.t2.a != null
+        ? u.t2.a - u.t1.a : null;
+      const db = u.t1 && u.t2 && u.t1.b != null && u.t2.b != null
+        ? u.t2.b - u.t1.b : null;
+      const virou = u.t1 && u.t2 && u.t1.a != null && u.t1.b != null
+        && u.t2.a != null && u.t2.b != null
+        && (u.t1.a > u.t1.b) !== (u.t2.a > u.t2.b);
+      return h('div', grade,
+        h('div', `font-size:${U(.88)};font-weight:650;${elipse}`,
+          nome, virou ? h('span', `color:${COR.turno};margin-left:${U(.3)}`,
+            '↺') : null),
+        barra(u.t1, false), barra(u.t2, true),
+        h('div', `font-size:${U(.72)};line-height:1.2;text-align:right;`
+          + 'font-variant-numeric:tabular-nums',
+          h('div', `color:${a.cor};font-weight:700`, sinal(da)),
+          h('div', `color:${b.cor};font-weight:700`, sinal(db))));
+    };
+    const cab = h('div', grade + `;font-size:${U(.62)};color:${COR.fraco};`
+      + 'text-transform:uppercase;letter-spacing:.05em',
+      h('div', ''), h('div', 'text-align:center', '1º turno'),
+      h('div', 'text-align:center;color:#c7ced9', '2º turno'),
+      h('div', 'text-align:right', 'pp'));
+    const coluna = lista => h('div', 'display:grid;min-height:0;'
+      + `grid-template-rows:auto repeat(${metade},minmax(0,1fr));`
+      + `gap:${U(.22)}`, cab.cloneNode(true), lista.map(linha));
+    const frente = (t, c) => us.filter(u => u.uf !== 'zz' && u[t]
+      && u[t].a != null && u[t].b != null
+      && (c === a ? u[t].a > u[t].b : u[t].b > u[t].a)).length;
+    const viradas = us.filter(u => u.uf !== 'zz' && u.t1 && u.t2
+      && u.t1.a != null && u.t2.a != null
+      && (u.t1.a > u.t1.b) !== (u.t2.a > u.t2.b)).length;
+    const br = d.brasil || {};
+    const lado = (c, alinh) => h('div', `display:flex;flex-direction:column;`
+      + `align-items:${alinh};gap:${U(.15)}`,
+      h('div', `display:flex;align-items:center;gap:${U(.5)};`
+        + `font-size:${U(1.15)};font-weight:700`, bola(c.cor), c.nome,
+        h('span', `color:${COR.fraco};font-weight:500;font-size:${U(.85)}`,
+          c.partido)),
+      h('div', `font-size:${U(.8)};color:${COR.fraco}`,
+        `à frente em ${frente('t1', c)} UFs no 1º turno · `
+        + `${frente('t2', c)} no 2º`));
+    const meio = h('div', `text-align:center;font-size:${U(.82)};`
+      + `color:#c7ced9;line-height:1.35`,
+      h('div', '', 'Brasil: ', h('b', '', pct(br.t1 && br.t1.a, 1)), ' × ',
+        h('b', '', pct(br.t1 && br.t1.b, 1)), ' no 1º turno · ',
+        h('b', '', pct(br.t2 && br.t2.a, 1)), ' × ',
+        h('b', '', pct(br.t2 && br.t2.b, 1)), ' no 2º'),
+      h('div', `color:${COR.fraco};font-size:${U(.7)}`,
+        viradas ? `↺ ${viradas} UF${viradas > 1 ? 's trocaram' : ' trocou'} de `
+          + 'líder entre os turnos' : 'nenhuma UF trocou de líder',
+        ' · % dos válidos; no 1º turno havia outros nomes'));
+    return h('div', `display:flex;flex-direction:column;gap:${U(.6)};`
+      + 'height:100%',
+      h('div', 'display:flex;justify-content:space-between;'
+        + `align-items:center;gap:${U(1)}`,
+        lado(a, 'flex-start'), meio, lado(b, 'flex-end')),
+      h('div', caixa + `;flex:1;min-height:0;padding:${U(.7)} ${U(1)};`
+        + `display:grid;grid-template-columns:1fr 1fr;gap:${U(2.2)}`,
+        coluna(us.slice(0, metade)), coluna(us.slice(metade))));
+  }
+
   /* -------------------------------------------------------- participacao
    * `c`: uma coluna da rota /comparativo (eleitorado, comparecimento,
    * abstenções, brancos, nulos, válidos). */
@@ -623,5 +721,6 @@ const TELAS = (() => {
         caixaAssembleia(d.assembleia, d.comIdeo)));
   }
 
-  return {panorama, duelo, participacao, estado, assembleias, blocos};
+  return {panorama, duelo, turnos, participacao, estado, assembleias,
+          blocos};
 })();

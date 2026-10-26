@@ -276,7 +276,7 @@ def register(app) -> None:
             d = _coluna_2026(cargo, tipo, uf, municipio, t1)
         return d
 
-    def _coluna_2026(cargo, tipo, uf, municipio, nome):
+    def _coluna_2026(cargo, tipo, uf, municipio, nome, n=3):
         """Uma coluna de 2026 lida do banco ao vivo (`nome=None`) ou do 1º
         turno. Parcial enquanto a apuração não fecha."""
         from ..storage.models import (Candidate, Election, Geography,
@@ -309,7 +309,7 @@ def register(app) -> None:
             reg, motivo = _classificacao_do_ano(2026)
             lin = LIN.load()
             topo = []
-            for r in linhas[:3]:
+            for r in linhas[:n]:
                 c = cands[r.candidate_id]
                 p = PA.resolver(c.partido_numero, c.partido_sigla)
                 topo.append({
@@ -564,6 +564,58 @@ def register(app) -> None:
             }
             saida += comp
         return {"entradas": saida, "por_ano": por_ano}
+
+    _turnos_memo: dict = {}
+
+    @app.get("/api/v1/comparativo/turnos")
+    def comparativo_turnos():
+        """Presidente estado a estado: 1º turno contra 2º (25/10/2026).
+
+        O 1º turno vem do banco fechado de 04/10 (`primeiro_turno` do
+        ambiente); o 2º, do ao vivo. Os dois nomes são os do 2º turno, pelo
+        número do partido; no 1º, o percentual é sobre os válidos de todos
+        os concorrentes daquele turno. Guardado por 30 s: são 56 leituras.
+        """
+        import time
+        agora = time.monotonic()
+        memo = _turnos_memo.get("r")
+        if memo and agora - memo[0] < 30:
+            return memo[1]
+        t1 = _primeiro_turno_2026()
+        if not t1:
+            raise HTTPException(404, "sem banco do 1º turno para comparar")
+        br2 = _coluna_2026("1", "br", None, None, None, n=2)
+        if not br2 or len(br2["candidatos"]) < 2:
+            raise HTTPException(404, "2º turno ainda sem candidatos")
+        dois = [(c["nome"], c["partido_numero"], c["partido"],
+                 c["partido_cor"]) for c in br2["candidatos"]]
+        br1 = _coluna_2026("1", "br", None, None, t1, n=20)
+
+        def pcts(col):
+            if not col:
+                return None
+            por = {c["partido_numero"]: c["pct_validos"]
+                   for c in col["candidatos"]}
+            return {"a": por.get(dois[0][1]), "b": por.get(dois[1][1]),
+                    "apurado_pct": col["apurado_pct"],
+                    "parcial": col["parcial"],
+                    "eleitorado": col["eleitorado"]}
+
+        ufs = []
+        for uf in UFS_BR + ("zz",):
+            c1 = _coluna_2026("1", "uf", uf, None, t1, n=20)
+            c2 = _coluna_2026("1", "uf", uf, None, None, n=2)
+            if c1 is None and c2 is None:
+                continue
+            ufs.append({"uf": uf, "t1": pcts(c1), "t2": pcts(c2)})
+        corpo = M.envelope(
+            {"candidatos": [{"nome": n, "numero": num, "partido": sg,
+                             "cor": cor} for n, num, sg, cor in dois],
+             "brasil": {"t1": pcts(br1), "t2": pcts(br2)},
+             "ufs": ufs},
+            snapshots=[], estado="comparativo")
+        _turnos_memo["r"] = (agora, corpo)
+        return corpo
 
     @app.get("/api/v1/comparativo/governadores")
     def comparativo_governadores(anos: str = "2018,2022,2026",

@@ -634,6 +634,7 @@ const ROTEIRO = {
         + ' — os 27 estados';
     }
     if (it.tipo === 'duelo') return 'Presidente — estado a estado';
+    if (it.tipo === 'turnos') return 'Presidente — 1º × 2º turno por estado';
     if (it.tipo === 'placar') {
       return (it.cargo === '3'
         ? `Governador — placar (${(it.uf || '').toUpperCase()})`
@@ -873,6 +874,8 @@ function editorRoteiro() {
       ['Governadores: os 27 estados', {tipo: 'panorama', cargo: '3'}],
       ['Senadores: os 27 estados', {tipo: 'panorama', cargo: '5'}],
       ['Presidente: estado a estado', {tipo: 'duelo', cargo: '1'}],
+      ['Presidente: 1º × 2º turno por estado',
+       {tipo: 'turnos', cargo: '1'}],
       ['Presidente: ausentes, brancos e nulos',
        {tipo: 'participacao', cargo: '1'}],
       // As duas abaixo usam a UF escolhida na pesquisa.
