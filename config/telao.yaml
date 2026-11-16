@@ -44,50 +44,18 @@
 # Nome não é chave: PAU D'ARCO existe em PA e em TO. Nome exige `uf`, e
 # ambiguidade é recusada em vez de resolvida por adivinhação (§2.1).
 #
-# Ajustado para o 2º turno em 24/10/2026 (anterior em telao.anterior/):
-# presidente e governador das 6 UFs com 2º turno (AM, RN, DF, ES, AC, TO).
-# Sem Senado, Câmara, assembleias e blocos: não há esses cargos no 2º turno.
+# Gravado pelo painel em 25/10/2026 22:09:56.
 
 padrao_segundos: 20
 camada_padrao: lider
 roteiro:
 - tipo: placar
   cargo: presidente
-  segundos: 25
+  segundos: 10
 - tipo: placar
   cargo: presidente
   abrangencia: mu
-  segundos: 25
-- tipo: duelo
+  segundos: 10
+- tipo: turnos
   cargo: presidente
-  segundos: 25
-- cargo: presidente
-  camada: lider
-  segundos: 20
-- tipo: participacao
-  cargo: presidente
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: am
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: rn
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: df
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: es
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: ac
-  segundos: 25
-- tipo: placar
-  cargo: governador
-  uf: to
   segundos: 25

@@ -13,10 +13,10 @@
 #   coleta.encerrar_ao_finalizar  o coletor se desliga sozinho 10 min depois
 #                              de o TSE encerrar Brasil e todas as UFs
 #
-# Gravado em 05/10/2026 17:18:11.
+# Gravado em 25/10/2026 17:20:35.
 
 modelo_projecao: m33
 coleta:
-  pular_finalizados: true
+  pular_finalizados: false
   deputados_federais: true
   encerrar_ao_finalizar: true
