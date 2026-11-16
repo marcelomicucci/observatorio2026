@@ -1,14 +1,37 @@
-# Observatório Eleitoral 2026
+<div align="center">
 
-**A noite da eleição, antes de ela terminar.**
+# 🗳️ Observatório Eleitoral 2026
 
-O Observatório acompanha a apuração do TSE voto a voto, mostra no mapa quem
-lidera em cada canto do país e calcula para onde o resultado caminha — com a
-margem de erro à vista e com cada projeção guardada, para conferir depois se
-ela estava certa.
+### A noite da eleição, antes de ela terminar.
 
-Estreou na noite de 4 de outubro de 2026, no 1º turno. Volta ao ar em 25 de
-outubro, no 2º.
+**Acompanha a apuração do TSE urna a urna, mostra no mapa quem lidera em cada canto do Brasil
+e calcula para onde o resultado caminha — com a margem de erro à vista e cada projeção gravada para conferência.**
+
+[📄 Ler o paper](docs/paper/Observatorio_Eleitoral_2026_V5.pdf) ·
+[🚀 Como rodar](#como-rodar) ·
+[🧠 Metodologia](docs/METODOLOGIA.md) ·
+[⚖️ Licença](LICENSE)
+
+![Presidente, 2º turno — painel do Observatório](docs/img/01-presidente-2o-turno.jpg)
+
+</div>
+
+---
+
+## Em números
+
+| | |
+|---|---|
+| **55** disputas acompanhadas ao mesmo tempo no 1º turno | presidente, 27 governos e 27 Senados |
+| **26.835** projeções gravadas numa noite | um diário que só aceita acréscimo |
+| **1,4 ponto** de erro médio da projeção, com menos de 6% apurado | contra 2,5 da contagem parcial |
+| **0,8 ponto** de erro na eleição presidencial | contra 4,6 da contagem parcial |
+| **+5.500** municípios projetados individualmente | mapas até o nível municipal |
+| **0** divergência contábil na coleta | invariantes conferidas em cada arquivo |
+
+> Estreou na noite de 4 de outubro de 2026 (1º turno) e operou de novo em 25 de outubro (2º turno).
+> O estudo completo, com método, validação e limitações, está no
+> **[paper (PDF)](docs/paper/Observatorio_Eleitoral_2026_V5.pdf)**.
 
 ---
 
@@ -22,19 +45,19 @@ mundo faz a mesma pergunta: **isso vai continuar assim?**
 Quase nunca continua. As urnas não chegam misturadas: chegam primeiro as de
 alguns lugares, depois as de outros, e cada lugar vota de um jeito. O
 percentual das 19h não é um retrato do país — é um retrato de *quem já foi
-contado*. Quem acompanhou 2022 lembra de ver um candidato liderar por horas e
-ser ultrapassado no fim da noite. Nada tinha mudado na eleição; só a ordem em
-que os votos chegaram.
+contado*.
 
 ## O que o Observatório faz de diferente
 
 Em vez de esticar o percentual já contado, ele olha para **o que ainda falta
-contar**. Para cada um dos mais de 5.500 municípios pendentes, estima quanta
-gente votou e em quem, usando o que já chegou de lugares parecidos e como
-aquele município votou na eleição anterior. Só depois soma tudo.
+contar**. Para cada município pendente, estima quanta gente votou e em quem,
+usando o que já chegou de lugares parecidos e como aquele município votou na
+eleição anterior. Só depois soma tudo.
 
 O resultado é uma frase que a apuração sozinha não consegue dizer: *"o
 candidato tem 47% agora, mas deve terminar entre 49% e 52%"*.
+
+![Primeiras urnas do 1º turno: a projeção já separa o que a contagem parcial confunde](docs/img/09-primeiras-urnas-presidente.jpg)
 
 ## Funcionou?
 
@@ -43,18 +66,19 @@ Na noite de 4 de outubro, com menos de 6% dos votos contados:
 | | erro médio em relação ao resultado final |
 |---|---|
 | o percentual apurado, como aparece na TV | 2,5 pontos |
-| a projeção do Observatório | 1,4 ponto |
+| a projeção do Observatório | **1,4 ponto** |
 | **presidente** — percentual apurado | 4,6 pontos |
 | **presidente** — projeção do Observatório | **0,8 ponto** |
 
-Foram 55 disputas acompanhadas ao mesmo tempo — presidente, 27 governos e 27
-eleições para o Senado — e mais de 26 mil projeções registradas ao longo da
-noite. Depois dos primeiríssimos votos, nenhuma vez o sistema deu 90% ou mais
-de chance a quem acabou perdendo.
+Depois dos primeiríssimos votos, nenhuma vez o sistema deu 90% ou mais de
+chance a quem acabou perdendo. E onde errou, está escrito: as faixas de
+incerteza saíram largas demais — o modelo foi mais cauteloso do que precisava.
+Isso foi medido, corrigido e assinado antes do 2º turno.
 
-E onde errou, está escrito: as faixas de incerteza saíram largas demais — o
-modelo foi mais cauteloso do que precisava. Isso foi medido, corrigido e
-assinado antes do 2º turno.
+No 2º turno, o vencedor projetado saiu às 20h52 e a faixa publicada já continha o
+resultado final desde 0,13% de apuração.
+
+![Vencedor projetado, com as regras que o justificam à vista](docs/img/03-vencedor-projetado.jpg)
 
 ## Três coisas que ele nunca mistura
 
@@ -66,30 +90,41 @@ assinado antes do 2º turno.
 
 "Eleito", sem adjetivo, é palavra do TSE. O Observatório só aponta um
 "vencedor projetado" quando a chance passa de 99%, se mantém assim por três
-rodadas seguidas e já há pelo menos 20% apurado. Uma chamada errada custa
-mais do que dez chamadas atrasadas.
+rodadas seguidas e já há pelo menos 20% apurado. **Uma chamada errada custa
+mais do que dez chamadas atrasadas.**
 
 ## Ele presta contas
 
 Toda projeção é gravada no instante em que é feita, num diário que só aceita
 acréscimo — nada é corrigido depois. No fim da noite, um gráfico mostra, para
 cada candidato, a linha do que foi apurado e a linha do que foi projetado.
-Se o modelo presta, a projetada nasce perto do resultado final e fica lá,
-enquanto a apurada caminha até encontrá-la. Qualquer pessoa pode conferir.
+Qualquer pessoa pode conferir.
+
+![Presidente, 2º turno, apuração final](docs/img/02-presidente-apuracao-final.jpg)
 
 ## Não é só quem ganhou
 
-- **Mapas** do país, de cada estado e de cada município: quem lidera, por
-  partido e por campo ideológico.
-- **O novo desenho do poder**: como ficam o Senado, a Câmara dos Deputados e
-  as 27 assembleias legislativas, em esquerda, centro e direita.
+<table>
+<tr>
+<td width="50%"><img src="docs/img/05-governador-por-municipio.jpg" alt="Governador do Pará, mapa por município"><br><sub><b>Mapas até o município</b> — quem lidera, por candidato, partido ou campo ideológico.</sub></td>
+<td width="50%"><img src="docs/img/08-27-governos.jpg" alt="Os 27 governos estaduais"><br><sub><b>Os 27 governos</b> numa única tela, com projeção e chance de cada candidato.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/img/06-senado-composicao.jpg" alt="Composição do Senado"><br><sub><b>O novo desenho do poder</b> — Senado, Câmara e assembleias em esquerda, centro e direita.</sub></td>
+<td width="50%"><img src="docs/img/07-camara-composicao.jpg" alt="Composição da Câmara dos Deputados"><br><sub><b>Câmara dos Deputados</b> se formando em tempo real, cadeira a cadeira.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/img/11-1o-x-2o-turno-por-estado.jpg" alt="Comparação entre 1º e 2º turno por estado"><br><sub><b>1º × 2º turno</b> estado a estado: quem ganhou e quem perdeu terreno.</sub></td>
+<td width="50%"><img src="docs/img/10-participacao.jpg" alt="Participação efetiva do eleitorado"><br><sub><b>Participação de verdade</b> — abstenção, brancos e nulos somados na mesma conta.</sub></td>
+</tr>
+</table>
+
 - **Comparação com 2018 e 2022**: o que mudou em cada estado, em cada
   bancada, em cada partido.
-- **Participação de verdade**: abstenção, brancos e nulos somados na mesma
-  conta — porque a abstenção sozinha esconde se o eleitor de fato escolheu
-  alguém.
 - **Alertas da noite**: quem foi matematicamente eleito, onde haverá 2º
   turno, onde a liderança virou.
+- **Recordes da noite**: o município mais rápido, a maior votação, a menor
+  diferença.
 
 ## Feito para uma sala cheia
 
@@ -120,7 +155,7 @@ E não esconde incerteza — quando não dá para afirmar, a tela diz que não d
 | **Classificação ideológica** | assinada, com versão por ano (2018, 2022, 2026) e linhagem partidária |
 | **Históricos** | 2014 (Senado), 2018 e 2022 importados e conferidos contra o oficial |
 | **Testes** | 223 passando, 1 pulado |
-| **2º turno (25/10/2026)** | códigos de eleição do TSE (6258/6260) ainda a conferir no catálogo; a seleção de turno no painel e no telão não foi exercitada com dado real |
+| **2º turno (25/10/2026)** | operado em ambiente próprio (pleito 3221, eleições 6258/6260); presidente e 6 governos; seletor de turno exercitado com dado real |
 
 ## Stack
 
@@ -425,9 +460,27 @@ resultado.
 - Feito e operado em Windows; a captura de telas procura Chrome ou Edge nos
   caminhos padrão do sistema.
 
+## Como citar
+
+> MICUCCI XAVIER, Marcelo. *Projeção eleitoral em tempo real com regularização
+> hierárquica e simulação de Monte Carlo: o caso do Observatório Eleitoral nas
+> eleições brasileiras de 2026.* Grupo Rhes, 2026.
+> [PDF](docs/paper/Observatorio_Eleitoral_2026_V5.pdf)
+
 ## Autoria
 
-Projeto de Marcelo Micucci, que assina a classificação ideológica, a linhagem
-partidária e a homologação do modelo. Os dados são da divulgação pública do
-Tribunal Superior Eleitoral; a malha territorial e os dados econômicos, do
-IBGE. As projeções não são resultado oficial.
+Projeto de Marcelo Micucci Xavier ([ORCID 0009-0004-2377-5818](https://orcid.org/0009-0004-2377-5818)),
+que assina a classificação ideológica, a linhagem partidária e a homologação
+do modelo. Os dados são da divulgação pública do Tribunal Superior Eleitoral;
+a malha territorial e os dados econômicos, do IBGE. As projeções não são
+resultado oficial.
+
+## Licença
+
+**Uso pessoal e não comercial, com crédito obrigatório.** Você pode estudar,
+rodar e adaptar o Observatório para uso pessoal, acadêmico e educacional, desde
+que cite o autor. É proibido vender, licenciar, hospedar como serviço pago ou
+incorporar a produto ou serviço comercial — o código original ou qualquer versão
+alterada. Texto completo em [LICENSE](LICENSE).
+
+Copyright © 2026 Marcelo Micucci Xavier.

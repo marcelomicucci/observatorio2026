@@ -1,0 +1,86 @@
+LICENÇA DE USO PESSOAL E NÃO COMERCIAL — OBSERVATÓRIO ELEITORAL 2026
+(Personal, Non-Commercial Use License — English version below)
+
+Copyright (c) 2026 Marcelo Micucci Xavier. Todos os direitos reservados,
+exceto os concedidos expressamente abaixo.
+
+"Software" significa o código-fonte, os arquivos de configuração, a
+documentação, o paper e as imagens deste repositório.
+
+1. CONCESSÃO
+   Fica concedida a qualquer pessoa uma licença gratuita, não exclusiva,
+   intransferível e revogável para baixar, executar, estudar e modificar o
+   Software, exclusivamente para USO PESSOAL, ACADÊMICO OU EDUCACIONAL, sem
+   fins comerciais.
+
+2. CRÉDITO OBRIGATÓRIO
+   Toda cópia, trecho, versão modificada, publicação, apresentação, artigo ou
+   obra que use ou derive do Software deve manter este aviso de licença e
+   indicar de forma visível a autoria: "Observatório Eleitoral 2026 — Marcelo
+   Micucci Xavier" (https://github.com/marcelomicucci/observatorio2026).
+   Trabalhos acadêmicos devem citar o paper que acompanha o Software.
+
+3. PROIBIÇÕES
+   Sem autorização prévia, por escrito, do autor, é proibido:
+   a) vender, sublicenciar, alugar ou de qualquer modo comercializar o
+      Software ou qualquer obra derivada dele;
+   b) usar o Software, ou obra derivada, em produto, serviço, consultoria,
+      plataforma, veículo de comunicação ou atividade que gere receita ou
+      vantagem comercial, direta ou indireta, inclusive oferecê-lo como
+      serviço (SaaS, hospedagem, painéis para clientes);
+   c) alterar o Software com o fim de comercializá-lo ou de integrá-lo a
+      oferta comercial;
+   d) remover ou ocultar os avisos de autoria e de licença;
+   e) apresentar o Software ou obra derivada como de autoria de terceiros;
+   f) sugerir que o autor endossa uma obra derivada, uma projeção ou um
+      resultado divulgado por terceiros.
+
+4. DADOS DE TERCEIROS
+   Os dados do Tribunal Superior Eleitoral (TSE), do IBGE e do Senado Federal
+   incluídos neste repositório pertencem às respectivas fontes e seguem os
+   termos de uso delas; esta licença não os abrange. A classificação
+   ideológica e a linhagem partidária são trabalho analítico assinado do autor
+   e estão cobertas por esta licença.
+
+5. SEM GARANTIA E AVISO ELEITORAL
+   O Software é fornecido "no estado em que se encontra", sem garantia de
+   qualquer espécie. As projeções são estimativas estatísticas e NÃO são
+   resultado oficial; quem proclama resultados é a Justiça Eleitoral. O autor
+   não responde por danos decorrentes do uso do Software.
+
+6. VIGÊNCIA
+   A licença termina automaticamente se qualquer condição acima for
+   descumprida. Direitos não concedidos expressamente ficam reservados.
+   Pedidos de uso comercial: contato com o autor pelo perfil do repositório.
+
+--------------------------------------------------------------------------
+ENGLISH VERSION (courtesy translation; the Portuguese text prevails)
+
+Copyright (c) 2026 Marcelo Micucci Xavier. All rights reserved except as
+expressly granted below.
+
+1. Grant. Anyone may download, run, study and modify the Software, free of
+   charge, solely for PERSONAL, ACADEMIC or EDUCATIONAL use, without any
+   commercial purpose. The license is non-exclusive, non-transferable and
+   revocable.
+2. Attribution required. Every copy, excerpt, modified version or work that
+   uses or derives from the Software must keep this notice and visibly credit
+   "Observatório Eleitoral 2026 — Marcelo Micucci Xavier"
+   (https://github.com/marcelomicucci/observatorio2026). Academic work must
+   cite the accompanying paper.
+3. Prohibited without the author's prior written permission: (a) selling,
+   sublicensing, renting or otherwise commercializing the Software or any
+   derivative; (b) using it in any product, service, consulting, platform,
+   media outlet or activity that generates direct or indirect revenue or
+   commercial advantage, including offering it as a service; (c) modifying it
+   in order to commercialize it or integrate it into a commercial offering;
+   (d) removing authorship or license notices; (e) presenting it as the work
+   of others; (f) implying the author's endorsement of derivatives or of
+   third-party projections.
+4. Third-party data (TSE, IBGE, Federal Senate) belongs to its sources and is
+   not covered by this license. The ideological classification and party
+   lineage are the author's signed analytical work and are covered.
+5. No warranty. Provided "as is". Projections are statistical estimates, not
+   official results.
+6. Termination. This license ends automatically upon any breach. All rights
+   not expressly granted are reserved.
